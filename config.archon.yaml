@@ -1,0 +1,35 @@
+byok:
+  # Role assignments
+  primary: anthropic
+  coding: openai
+  vision: openai
+  fast: groq
+  embedding: ollama
+  fallback: openrouter
+
+  # Cost controls
+  budget_per_task_usd: 0.50
+  budget_per_month_usd: 50.00
+  prefer_cheapest: false
+  free_tier_first: false
+
+  # Local config
+  ollama_base_url: http://localhost:11434/v1
+  ollama_embedding_model: nomic-embed-text
+  ollama_vision_model: llava:34b
+
+  # OpenRouter config
+  openrouter_base_url: https://openrouter.ai/api/v1
+  openrouter_fallback_chain:
+    - anthropic/claude-sonnet-4-5
+    - openai/gpt-4o
+    - meta-llama/llama-4-maverick:free
+
+  # Custom / self-hosted
+  custom_endpoints: []
+  # - name: my-vllm-server
+  #   base_url: http://192.168.1.100:8000/v1
+  #   api_key: none
+  #   models: [llama3.3-70b-instruct]
+  #   roles: [fast, coding]
+
