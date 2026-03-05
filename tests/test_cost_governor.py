@@ -42,4 +42,3 @@ def test_unregistered_task_raises_key_error() -> None:
     governor = CostGovernor()
     with pytest.raises(KeyError):
         governor.snapshot("missing-task")
-

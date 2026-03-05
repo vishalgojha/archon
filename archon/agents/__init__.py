@@ -13,6 +13,7 @@ from archon.agents.growth import (
     ProspectorAgent,
     RevenueIntelAgent,
 )
+from archon.agents.outbound import EmailAgent, WebChatAgent
 from archon.agents.researcher import ResearcherAgent
 from archon.agents.synthesizer import SynthesizerAgent
 
@@ -31,4 +32,6 @@ __all__ = [
     "RevenueIntelAgent",
     "PartnerAgent",
     "ChurnDefenseAgent",
+    "EmailAgent",
+    "WebChatAgent",
 ]

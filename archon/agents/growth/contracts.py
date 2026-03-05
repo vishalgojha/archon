@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-
 OutreachChannel = Literal["whatsapp_sms", "email", "linkedin", "in_app", "voice", "partner"]
 
 
@@ -38,4 +37,3 @@ def serialize_actions(actions: list[GrowthAction]) -> list[dict[str, Any]]:
     """Convert dataclass actions into metadata-safe dictionaries."""
 
     return [asdict(action) for action in actions]
-

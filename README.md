@@ -55,6 +55,14 @@ POST /v1/tasks
 `mode="debate"` (default) runs the adversarial truth swarm.
 `mode="growth"` runs the 7-agent sales/distribution growth swarm.
 
+6. Outbound channels (approval-gated):
+
+- `POST /v1/outbound/email`
+- `POST /v1/outbound/webchat`
+
+Both endpoints enforce JWT auth, per-tier rate limits, and `ApprovalGate` controls.
+Use `auto_approve: true` only for explicit operator-triggered sends.
+
 ## Architecture (Implemented Bootstrap)
 
 ```text

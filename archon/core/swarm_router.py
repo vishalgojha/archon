@@ -47,4 +47,3 @@ class SwarmRouter:
             fact_checker=FactCheckerAgent(self.provider_router),
             synthesizer=SynthesizerAgent(self.provider_router),
         )
-

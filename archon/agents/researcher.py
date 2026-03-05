@@ -55,4 +55,3 @@ class ResearcherAgent(BaseAgent):
                 "cost_usd": response.usage.cost_usd,
             },
         )
-

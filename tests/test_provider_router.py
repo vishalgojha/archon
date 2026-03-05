@@ -53,7 +53,9 @@ def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch
     config = ArchonConfig()
     router = ProviderRouter(config=config, cost_governor=governor, live_mode=False)
 
-    response = asyncio.run(router.invoke(role="coding", prompt="Write a SQL query", task_id="task-1"))
+    response = asyncio.run(
+        router.invoke(role="coding", prompt="Write a SQL query", task_id="task-1")
+    )
     snapshot = governor.snapshot("task-1")
 
     assert response.provider == "openai"
@@ -62,4 +64,3 @@ def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch
     assert snapshot["remaining_usd"] < snapshot["budget_usd"]
 
     asyncio.run(router.aclose())
-

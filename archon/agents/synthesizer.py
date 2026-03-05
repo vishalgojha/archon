@@ -61,4 +61,3 @@ def _extract_confidence(text: str) -> int | None:
         return None
     value = int(match.group(1))
     return max(0, min(100, value))
-

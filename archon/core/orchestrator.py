@@ -6,14 +6,15 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 
+from archon.agents.outbound import EmailAgent, WebChatAgent
 from archon.config import ArchonConfig
+from archon.core.approval_gate import ApprovalDecision, ApprovalGate
 from archon.core.cost_governor import BudgetExceededError, CostGovernor
 from archon.core.debate_engine import DebateEngine
 from archon.core.growth_router import GrowthSwarmRouter
 from archon.core.memory_store import MemoryStore
 from archon.core.swarm_router import SwarmRouter
 from archon.providers import ProviderRouter
-
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 TaskMode = Literal["debate", "growth"]
@@ -52,6 +53,9 @@ class Orchestrator:
         )
         self.swarm_router = SwarmRouter(self.provider_router)
         self.growth_router = GrowthSwarmRouter(self.provider_router)
+        self.approval_gate = ApprovalGate()
+        self.email_agent = EmailAgent(self.provider_router, self.approval_gate)
+        self.webchat_agent = WebChatAgent(self.provider_router, self.approval_gate)
         self.debate_engine = DebateEngine()
         self.memory_store = MemoryStore()
 
@@ -93,7 +97,9 @@ class Orchestrator:
                 raise BudgetExceededError("Budget too constrained to spawn required debate agents.")
 
             swarm = self.swarm_router.build_debate_swarm()
-            outcome = await self.debate_engine.run(goal=goal, swarm=swarm, task_id=effective_task_id)
+            outcome = await self.debate_engine.run(
+                goal=goal, swarm=swarm, task_id=effective_task_id
+            )
             debate_payload = self.debate_engine.to_event_payload(outcome)
             budget_snapshot = self.cost_governor.snapshot(effective_task_id)
 
@@ -185,6 +191,34 @@ class Orchestrator:
         if event_sink:
             await event_sink(event)
 
+    async def execute_approved_action(
+        self,
+        *,
+        action_type: str,
+        payload: dict[str, Any],
+        event_sink: EventSink | None = None,
+        timeout_seconds: float | None = None,
+    ) -> ApprovalDecision:
+        """Run one approval-gated action decision."""
+
+        decision = await self.approval_gate.guard(
+            action_type=action_type,
+            payload=payload,
+            event_sink=event_sink,
+            timeout_seconds=timeout_seconds,
+        )
+        await self._emit(
+            event_sink,
+            {
+                "type": "approval_resolved",
+                "request_id": decision.request_id,
+                "action_type": action_type,
+                "approved": decision.approved,
+                "approver": decision.approver,
+            },
+        )
+        return decision
+
     async def _run_growth_swarm(
         self,
         *,
@@ -226,8 +260,14 @@ class Orchestrator:
 
         confidence = round(sum(result.confidence for result in reports) / len(reports))
         top_actions = sorted(actions, key=lambda item: int(item.get("priority", 99)))[:3]
-        summary_bits = [str(item.get("objective", "")).strip() for item in top_actions if item.get("objective")]
-        summary = "; ".join(summary_bits) if summary_bits else "No actionable recommendations were generated."
+        summary_bits = [
+            str(item.get("objective", "")).strip() for item in top_actions if item.get("objective")
+        ]
+        summary = (
+            "; ".join(summary_bits)
+            if summary_bits
+            else "No actionable recommendations were generated."
+        )
         final_answer = (
             f"Growth swarm completed {len(reports)} agent analyses and generated "
             f"{len(actions)} recommended actions. Top priorities: {summary}"
@@ -248,6 +288,19 @@ class Orchestrator:
             ],
             "recommended_actions": actions,
         }
+
+        guarded_action = context.get("guarded_action")
+        if isinstance(guarded_action, dict):
+            action_type = str(guarded_action.get("action_type", "")).strip()
+            action_payload = guarded_action.get("payload", {})
+            if action_type:
+                decision = await self.execute_approved_action(
+                    action_type=action_type,
+                    payload=action_payload if isinstance(action_payload, dict) else {},
+                    event_sink=event_sink,
+                )
+                payload["guarded_action_decision"] = decision.to_event_payload()
+
         return {
             "final_answer": final_answer,
             "confidence": confidence,

@@ -74,4 +74,3 @@ class ICPAgent(BaseAgent):
                 "actions": serialize_actions(actions),
             },
         )
-

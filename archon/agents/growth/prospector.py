@@ -75,4 +75,3 @@ class ProspectorAgent(BaseAgent):
                 "actions": serialize_actions(actions),
             },
         )
-

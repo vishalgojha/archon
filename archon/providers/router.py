@@ -8,8 +8,8 @@ from typing import Any
 
 import httpx
 
-from archon.config import ArchonConfig, SUPPORTED_PROVIDERS
-from archon.core.cost_governor import BudgetExceededError, CostGovernor
+from archon.config import SUPPORTED_PROVIDERS, ArchonConfig
+from archon.core.cost_governor import CostGovernor
 from archon.providers.types import ProviderResponse, ProviderSelection, ProviderUsage
 
 
@@ -212,9 +212,7 @@ class ProviderRouter:
             self._cost_governor.add_cost(task_id=task_id, cost_usd=response.usage.cost_usd)
         return response
 
-    def _provider_priority_chain(
-        self, role: str, provider_override: str | None
-    ) -> list[str]:
+    def _provider_priority_chain(self, role: str, provider_override: str | None) -> list[str]:
         if provider_override:
             return [provider_override]
 
@@ -238,7 +236,11 @@ class ProviderRouter:
         self, provider_name: str, role: str, model_override: str | None
     ) -> ProviderSelection | None:
         custom = next(
-            (endpoint for endpoint in self._config.byok.custom_endpoints if endpoint.name == provider_name),
+            (
+                endpoint
+                for endpoint in self._config.byok.custom_endpoints
+                if endpoint.name == provider_name
+            ),
             None,
         )
         if custom:
@@ -289,9 +291,7 @@ class ProviderRouter:
             return None
         return value
 
-    def _resolve_model(
-        self, provider: str, role: str, model_override: str | None
-    ) -> str:
+    def _resolve_model(self, provider: str, role: str, model_override: str | None) -> str:
         if model_override:
             return model_override
 
@@ -350,9 +350,7 @@ class ProviderRouter:
         message = choice.get("message") or {}
         text = message.get("content", "")
         if isinstance(text, list):
-            text = " ".join(
-                part.get("text", "") for part in text if isinstance(part, dict)
-            ).strip()
+            text = " ".join(part.get("text", "") for part in text if isinstance(part, dict)).strip()
 
         usage_data = data.get("usage") or {}
         prompt_tokens = int(usage_data.get("prompt_tokens") or _estimate_tokens(prompt))
@@ -389,9 +387,7 @@ class ProviderRouter:
 
         data = res.json()
         parts = data.get("content") or []
-        text = " ".join(
-            part.get("text", "") for part in parts if isinstance(part, dict)
-        ).strip()
+        text = " ".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
         usage_data = data.get("usage") or {}
         prompt_tokens = int(usage_data.get("input_tokens") or _estimate_tokens(prompt))
         completion_tokens = int(usage_data.get("output_tokens") or _estimate_tokens(text))
@@ -434,9 +430,7 @@ class ProviderRouter:
 
         usage_data = data.get("usageMetadata") or {}
         prompt_tokens = int(usage_data.get("promptTokenCount") or _estimate_tokens(prompt))
-        completion_tokens = int(
-            usage_data.get("candidatesTokenCount") or _estimate_tokens(text)
-        )
+        completion_tokens = int(usage_data.get("candidatesTokenCount") or _estimate_tokens(text))
         usage = self._usage_for("gemini", prompt_tokens, completion_tokens)
         return ProviderResponse(
             text=text,
@@ -464,4 +458,3 @@ def _estimate_tokens(text: str) -> int:
         return 1
     # Fast approximation for cost governance when token data is unavailable.
     return max(1, int(math.ceil(len(text) / 4)))
-

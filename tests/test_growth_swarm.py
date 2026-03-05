@@ -39,8 +39,12 @@ def test_growth_agents_produce_action_metadata(monkeypatch: pytest.MonkeyPatch) 
             await swarm.prospector.run("Grow qualified pipeline", {"market": "India"}, "g-1"),
             await swarm.icp.run("Refine targeting", {"wins": ["clinic-a"]}, "g-2"),
             await swarm.outreach.run("Increase demos", {"sector": "pharmacy"}, "g-3"),
-            await swarm.nurture.run("Recover warm leads", {"funnel_events": {"stalled": 12}}, "g-4"),
-            await swarm.revenue_intel.run("Find bottlenecks", {"funnel": {"mql_to_sql": 0.34}}, "g-5"),
+            await swarm.nurture.run(
+                "Recover warm leads", {"funnel_events": {"stalled": 12}}, "g-4"
+            ),
+            await swarm.revenue_intel.run(
+                "Find bottlenecks", {"funnel": {"mql_to_sql": 0.34}}, "g-5"
+            ),
             await swarm.partner.run("Expand channel network", {"region": "India"}, "g-6"),
             await swarm.churn_defense.run("Reduce churn", {"risk_accounts": ["acct-1"]}, "g-7"),
         ]
@@ -53,4 +57,3 @@ def test_growth_agents_produce_action_metadata(monkeypatch: pytest.MonkeyPatch) 
         assert result.metadata["actions"]
 
     asyncio.run(provider_router.aclose())
-

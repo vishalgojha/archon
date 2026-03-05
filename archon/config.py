@@ -8,7 +8,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-
 SUPPORTED_PROVIDERS = {
     "anthropic",
     "openai",
@@ -91,4 +90,3 @@ def load_archon_config(path: str | Path = "config.archon.yaml") -> ArchonConfig:
     with config_path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f) or {}
     return ArchonConfig.model_validate(raw)
-

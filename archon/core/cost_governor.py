@@ -74,7 +74,9 @@ class CostGovernor:
         state.spent_usd = round(state.spent_usd + float(cost_usd), 6)
 
         soft_limit_hit = False
-        if not state.soft_limit_notified and state.spent_usd >= (state.budget_usd * self.soft_limit_ratio):
+        if not state.soft_limit_notified and state.spent_usd >= (
+            state.budget_usd * self.soft_limit_ratio
+        ):
             state.soft_limit_notified = True
             soft_limit_hit = True
 
@@ -113,4 +115,3 @@ class CostGovernor:
         if not state:
             raise KeyError(f"Task '{task_id}' is not registered in CostGovernor.")
         return state
-

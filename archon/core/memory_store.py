@@ -75,8 +75,7 @@ class MemoryStore:
     def _initialize_sync(self) -> None:
         conn = sqlite3.connect(self.db_path)
         try:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS memory_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     task TEXT NOT NULL,
@@ -88,8 +87,7 @@ class MemoryStore:
                     reuse_conditions TEXT NOT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-                """
-            )
+                """)
             conn.commit()
         finally:
             conn.close()
@@ -124,7 +122,10 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-            return int(cursor.lastrowid)
+            row_id = cursor.lastrowid
+            if row_id is None:
+                raise RuntimeError("SQLite insert did not return a row id.")
+            return int(row_id)
         finally:
             conn.close()
 
@@ -160,4 +161,3 @@ class MemoryStore:
             return output
         finally:
             conn.close()
-

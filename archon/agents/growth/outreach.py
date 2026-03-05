@@ -72,4 +72,3 @@ class OutreachAgent(BaseAgent):
                 "actions": serialize_actions(actions),
             },
         )
-

@@ -70,4 +70,3 @@ class NurtureAgent(BaseAgent):
                 "actions": serialize_actions(actions),
             },
         )
-

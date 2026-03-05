@@ -118,4 +118,3 @@ class DebateEngine:
                 for r in outcome.rounds
             ],
         }
-

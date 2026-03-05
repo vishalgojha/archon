@@ -1,7 +1,12 @@
 """Growth Swarm agents for sales and distribution autonomy."""
 
 from archon.agents.growth.churn_defense import ChurnDefenseAgent
-from archon.agents.growth.contracts import FunnelSignal, GrowthAction, OutreachChannel, serialize_actions
+from archon.agents.growth.contracts import (
+    FunnelSignal,
+    GrowthAction,
+    OutreachChannel,
+    serialize_actions,
+)
 from archon.agents.growth.icp import ICPAgent
 from archon.agents.growth.nurture import NurtureAgent
 from archon.agents.growth.outreach import OutreachAgent
@@ -22,4 +27,3 @@ __all__ = [
     "PartnerAgent",
     "ChurnDefenseAgent",
 ]
-

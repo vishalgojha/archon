@@ -1,0 +1,119 @@
+"""JWT authentication middleware for tenant-scoped API access."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from typing import Any, Literal
+
+import jwt
+from fastapi import HTTPException, Request, WebSocket
+from jwt import InvalidTokenError
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+TierName = Literal["free", "growth", "business", "enterprise"]
+SUPPORTED_TIERS: set[str] = {"free", "growth", "business", "enterprise"}
+
+
+@dataclass(slots=True)
+class AuthContext:
+    """Authenticated tenant context injected into request state."""
+
+    tenant_id: str
+    tier: TierName
+    claims: dict[str, Any]
+
+
+@dataclass(slots=True)
+class AuthSettings:
+    """JWT settings loaded from environment."""
+
+    secret: str = "archon-dev-secret-change-me-32-bytes"
+    algorithm: str = "HS256"
+    issuer: str | None = None
+    audience: str | None = None
+
+    @classmethod
+    def from_env(cls) -> "AuthSettings":
+        defaults = cls()
+        return cls(
+            secret=os.getenv("ARCHON_JWT_SECRET", defaults.secret),
+            algorithm=os.getenv("ARCHON_JWT_ALGORITHM", defaults.algorithm),
+            issuer=os.getenv("ARCHON_JWT_ISSUER") or None,
+            audience=os.getenv("ARCHON_JWT_AUDIENCE") or None,
+        )
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """HTTP middleware that enforces JWT bearer auth for protected routes."""
+
+    def __init__(self, app, settings: AuthSettings, exempt_paths: set[str] | None = None) -> None:
+        super().__init__(app)
+        self._settings = settings
+        self._exempt_paths = exempt_paths or set()
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in self._exempt_paths:
+            return await call_next(request)
+
+        token = _extract_bearer_token(request.headers.get("Authorization"))
+        if not token:
+            return JSONResponse(status_code=401, content={"detail": "Missing bearer token."})
+
+        try:
+            request.state.auth = decode_auth_token(token, self._settings)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return await call_next(request)
+
+
+def decode_auth_token(token: str, settings: AuthSettings) -> AuthContext:
+    """Decode and validate JWT claims into tenant auth context."""
+
+    options: dict[str, Any] = {"require": ["sub", "tier"]}
+    decode_kwargs: dict[str, Any] = {"algorithms": [settings.algorithm], "options": options}
+    if settings.issuer:
+        decode_kwargs["issuer"] = settings.issuer
+    if settings.audience:
+        decode_kwargs["audience"] = settings.audience
+
+    try:
+        claims = jwt.decode(token, settings.secret, **decode_kwargs)
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
+
+    tier = str(claims.get("tier", "")).lower()
+    if tier not in SUPPORTED_TIERS:
+        raise HTTPException(status_code=403, detail=f"Unsupported tier '{tier}'.")
+    tenant = str(claims["sub"]).strip()
+    if not tenant:
+        raise HTTPException(status_code=403, detail="Token missing subject.")
+
+    return AuthContext(
+        tenant_id=tenant,
+        tier=tier,  # type: ignore[arg-type]
+        claims=claims,
+    )
+
+
+def websocket_auth_context(websocket: WebSocket, settings: AuthSettings) -> AuthContext:
+    """Authenticate WebSocket using bearer header or `token` query parameter."""
+
+    auth_header = websocket.headers.get("authorization")
+    token = _extract_bearer_token(auth_header)
+    if not token:
+        token = websocket.query_params.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token for websocket.")
+    return decode_auth_token(token, settings)
+
+
+def _extract_bearer_token(value: str | None) -> str | None:
+    if not value:
+        return None
+    parts = value.strip().split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None

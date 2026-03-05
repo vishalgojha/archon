@@ -43,4 +43,3 @@ class CriticAgent(BaseAgent):
                 "cost_usd": response.usage.cost_usd,
             },
         )
-

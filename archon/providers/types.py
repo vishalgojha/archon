@@ -38,4 +38,3 @@ class ProviderResponse:
     model: str
     usage: ProviderUsage
     raw: dict[str, Any] = field(default_factory=dict)
-

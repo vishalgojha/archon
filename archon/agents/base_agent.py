@@ -68,4 +68,3 @@ class BaseAgent(ABC):
             >>> result.agent
             'ResearcherAgent'
         """
-
