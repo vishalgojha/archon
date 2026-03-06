@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Literal, cast
 
 import uvicorn
@@ -25,6 +27,10 @@ from archon.interfaces.api.rate_limit import (
     limit_for_key,
     set_rate_limit_store,
 )
+from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
+from archon.web.injection_generator import InjectionGenerator
+from archon.web.intent_classifier import IntentClassifier, SiteIntent
+from archon.web.site_crawler import SiteCrawler
 from archon.interfaces.webchat.server import mount_webchat
 
 
@@ -92,6 +98,41 @@ class WebChatOutboundResponse(BaseModel):
     result: dict[str, Any]
 
 
+class ConsoleAgentUpdateRequest(BaseModel):
+    """Payload for updating one agent Python file."""
+
+    content: str = Field(default="")
+
+
+class ConsoleProviderSecret(BaseModel):
+    """Provider secret mutation payload."""
+
+    api_key: str | None = None
+
+
+class ConsoleBudgetConfig(BaseModel):
+    """Budget settings payload for console config."""
+
+    daily_limit_usd: float | None = None
+    monthly_limit_usd: float | None = None
+    per_request_limit_usd: float | None = None
+
+
+class ConsoleConfigRequest(BaseModel):
+    """Tenant-scoped console config payload."""
+
+    providers: dict[str, ConsoleProviderSecret] = Field(default_factory=dict)
+    budget: ConsoleBudgetConfig = Field(default_factory=ConsoleBudgetConfig)
+
+
+class ConsoleCrawlRequest(BaseModel):
+    """Console crawl + embed generation payload."""
+
+    url: str = Field(min_length=1)
+    api_key: str | None = None
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 def _to_response(result: OrchestrationResult) -> TaskResponse:
     return TaskResponse(
         task_id=result.task_id,
@@ -111,6 +152,8 @@ async def lifespan(app: FastAPI):
     app.state.orchestrator = Orchestrator(load_archon_config(config_path))
     app.state.auth_settings = AuthSettings.from_env()
     app.state.started_monotonic = time.monotonic()
+    if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
+        app.state.console_tenant_config = {}
     if getattr(app.state, "webchat_app", None) is not None:
         app.state.webchat_app.state.runtime.orchestrator = app.state.orchestrator
     try:
@@ -139,6 +182,7 @@ app.state.limiter = limiter
 app.state.rate_limit_store = InMemoryTierRateLimitStore.from_env()
 set_rate_limit_store(app.state.rate_limit_store)
 app.state.started_monotonic = time.monotonic()
+app.state.console_tenant_config = {}
 _rate_limit_handler = cast(
     Callable[[Request, Exception], Response],
     _rate_limit_exceeded_handler,
@@ -217,6 +261,182 @@ async def agents_status() -> dict[str, Any]:
         "agents": deduped,
         "edges": [{"source": "orchestrator", "target": name} for name in deduped],
         "updated_at": time.time(),
+    }
+
+
+@app.get("/console/agents")
+async def console_agents_tree(request: Request) -> dict[str, Any]:
+    """Return ARCHON agents directory tree for the console editor."""
+
+    del request
+    root = _console_agents_root()
+    if not root.exists():
+        return {"root": "archon/agents", "tree": []}
+    return {
+        "root": "archon/agents",
+        "tree": _console_tree_entries(root, root),
+    }
+
+
+@app.get("/console/agents/{path:path}")
+async def console_agent_file(path: str, request: Request) -> dict[str, Any]:
+    """Load one agent source file by relative path."""
+
+    del request
+    target = _console_resolve_agent_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    if target.suffix != ".py":
+        raise HTTPException(status_code=404, detail="Only Python files are editable.")
+    rel = target.relative_to(_console_agents_root()).as_posix()
+    content = target.read_text(encoding="utf-8")
+    return {
+        "path": rel,
+        "content": content,
+        "read_only": _console_is_read_only(rel),
+    }
+
+
+@app.put("/console/agents/{path:path}")
+async def console_save_agent_file(
+    path: str,
+    payload: ConsoleAgentUpdateRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Persist one agent source file after Python syntax validation."""
+
+    del request
+    target = _console_resolve_agent_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    rel = target.relative_to(_console_agents_root()).as_posix()
+    if _console_is_read_only(rel):
+        raise HTTPException(status_code=403, detail="This file is read-only in console mode.")
+    try:
+        ast.parse(payload.content, filename=rel)
+    except SyntaxError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "syntax_error",
+                "message": exc.msg,
+                "line": exc.lineno,
+                "offset": exc.offset,
+            },
+        ) from exc
+    target.write_text(payload.content, encoding="utf-8")
+    return {
+        "status": "saved",
+        "path": rel,
+        "bytes": len(payload.content.encode("utf-8")),
+    }
+
+
+@app.get("/console/providers/validate")
+async def console_providers_validate(request: Request) -> dict[str, Any]:
+    """Return tenant-scoped provider readiness badges for console BYOK UI."""
+
+    tenant_id = request.state.auth.tenant_id
+    rows = [_provider_status_row(app, tenant_id, name) for name in sorted(PROVIDER_ENV_KEY)]
+    return {"providers": rows}
+
+
+@app.post("/console/providers/test/{name}")
+async def console_provider_test(name: str, request: Request) -> dict[str, Any]:
+    """Run one lightweight provider health check for console UI."""
+
+    normalized = str(name).strip().lower()
+    if normalized not in PROVIDER_ENV_KEY:
+        raise HTTPException(status_code=404, detail=f"Unknown provider '{normalized}'.")
+    tenant_id = request.state.auth.tenant_id
+    row = _provider_status_row(app, tenant_id, normalized)
+    return {
+        "provider": normalized,
+        "ok": row["status"] == "healthy",
+        "status": row["status"],
+        "detail": row["detail"],
+        "base_url": row["base_url"],
+        "checked_at": time.time(),
+    }
+
+
+@app.post("/console/config")
+async def console_save_config(
+    payload: ConsoleConfigRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Persist tenant-scoped BYOK secrets + budget constraints for console flows."""
+
+    tenant_id = request.state.auth.tenant_id
+    bucket = _console_tenant_bucket(app, tenant_id)
+    providers = bucket.setdefault("providers", {})
+    budget = bucket.setdefault("budget", {})
+
+    for raw_name, provider_payload in payload.providers.items():
+        normalized = str(raw_name).strip().lower()
+        if normalized not in PROVIDER_ENV_KEY:
+            raise HTTPException(status_code=404, detail=f"Unknown provider '{normalized}'.")
+        key = provider_payload.api_key
+        key = key.strip() if isinstance(key, str) else None
+        if key:
+            providers[normalized] = {"api_key": key, "updated_at": time.time()}
+        else:
+            providers.pop(normalized, None)
+
+    if payload.budget.daily_limit_usd is not None:
+        budget["daily_limit_usd"] = float(payload.budget.daily_limit_usd)
+    if payload.budget.monthly_limit_usd is not None:
+        budget["monthly_limit_usd"] = float(payload.budget.monthly_limit_usd)
+        app.state.orchestrator.config.byok.budget_per_month_usd = float(payload.budget.monthly_limit_usd)
+    if payload.budget.per_request_limit_usd is not None:
+        budget["per_request_limit_usd"] = float(payload.budget.per_request_limit_usd)
+        app.state.orchestrator.config.byok.budget_per_task_usd = float(payload.budget.per_request_limit_usd)
+
+    bucket["updated_at"] = time.time()
+    provider_rows = [_provider_status_row(app, tenant_id, name) for name in sorted(PROVIDER_ENV_KEY)]
+    return {"status": "saved", "providers": provider_rows, "budget": budget, "updated_at": bucket["updated_at"]}
+
+
+@app.post("/console/crawl")
+async def console_crawl(
+    payload: ConsoleCrawlRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Crawl a site, infer intent, and generate ARCHON embed snippet."""
+
+    url = str(payload.url).strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=422, detail="url must start with http:// or https://")
+
+    crawler = SiteCrawler(max_concurrent=3, delay_between_requests_ms=0)
+    try:
+        crawl_result = await crawler.crawl(url, max_pages=6, max_depth=1)
+    finally:
+        await crawler.aclose()
+
+    if not crawl_result.pages:
+        raise HTTPException(status_code=422, detail="No crawlable pages found for URL.")
+
+    classifier = IntentClassifier()
+    site_intent = await classifier.classify_site(crawl_result)
+
+    tenant_id = request.state.auth.tenant_id
+    api_key = str(payload.api_key or "").strip() or _tenant_provider_key(app, tenant_id, "openrouter")
+    if not api_key:
+        api_key = f"tenant-{tenant_id}"
+
+    script_src = f"{str(request.base_url).rstrip('/')}/webchat/static/archon-chat.js"
+    generator = InjectionGenerator(script_src=script_src)
+    embed = generator.generate(api_key=api_key, site_intent=site_intent, options=payload.options)
+    return {
+        "url": url,
+        "site_intent": _site_intent_to_payload(site_intent),
+        "embed": {
+            "script_tag": embed.script_tag,
+            "snippet": generator.generate_full_snippet(embed),
+            "suggested_mode": embed.suggested_mode,
+            "suggested_greeting": embed.suggested_greeting,
+        },
     }
 
 
@@ -479,3 +699,130 @@ def _to_unix_timestamp(raw: str) -> float:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp()
+
+
+def _console_agents_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "agents"
+
+
+def _console_tenant_bucket(app: FastAPI, tenant_id: str) -> dict[str, Any]:
+    store = getattr(app.state, "console_tenant_config", None)
+    if not isinstance(store, dict):
+        store = {}
+        app.state.console_tenant_config = store
+    bucket = store.setdefault(tenant_id, {})
+    if not isinstance(bucket, dict):
+        bucket = {}
+        store[tenant_id] = bucket
+    bucket.setdefault("providers", {})
+    bucket.setdefault("budget", {})
+    return bucket
+
+
+def _tenant_provider_key(app: FastAPI, tenant_id: str, provider_name: str) -> str:
+    bucket = _console_tenant_bucket(app, tenant_id)
+    providers = bucket.get("providers")
+    if isinstance(providers, dict):
+        candidate = providers.get(provider_name, {})
+        if isinstance(candidate, dict):
+            value = str(candidate.get("api_key", "")).strip()
+            if value:
+                return value
+    env_name = PROVIDER_ENV_KEY.get(provider_name)
+    if env_name:
+        env_value = str(os.getenv(env_name, "")).strip()
+        if env_value:
+            return env_value
+    if provider_name == "ollama":
+        return "ollama"
+    return ""
+
+
+def _provider_status_row(app: FastAPI, tenant_id: str, provider_name: str) -> dict[str, Any]:
+    key = _tenant_provider_key(app, tenant_id, provider_name)
+    has_key = bool(key)
+    status = "healthy" if has_key else "missing_key"
+    source = "tenant_config" if has_key else "none"
+    if not has_key:
+        env_name = PROVIDER_ENV_KEY.get(provider_name)
+        if env_name and str(os.getenv(env_name, "")).strip():
+            source = "env"
+    return {
+        "name": provider_name,
+        "status": status,
+        "has_key": has_key,
+        "source": source,
+        "base_url": DEFAULT_BASE_URL.get(provider_name, ""),
+        "detail": "Provider key configured." if has_key else "Missing provider key.",
+    }
+
+
+def _console_resolve_agent_path(path: str) -> Path:
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw:
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    if raw.startswith("../") or "/../" in f"/{raw}/":
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    root = _console_agents_root().resolve()
+    target = (root / candidate).resolve()
+    if target != root and root not in target.parents:
+        raise HTTPException(status_code=404, detail="Agent file not found.")
+    return target
+
+
+def _console_is_read_only(relative_path: str) -> bool:
+    normalized = str(relative_path or "").replace("\\", "/").lstrip("./")
+    protected_names = {
+        "orchestrator.py",
+        "debate_engine.py",
+        "swarm_router.py",
+        "growth_router.py",
+    }
+    if normalized.startswith("core/"):
+        return True
+    return any(normalized.endswith(name) for name in protected_names)
+
+
+def _console_tree_entries(root: Path, current: Path) -> list[dict[str, Any]]:
+    nodes: list[dict[str, Any]] = []
+    for child in sorted(current.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+        if child.name.startswith(".") or child.name == "__pycache__":
+            continue
+        rel = child.relative_to(root).as_posix()
+        if child.is_dir():
+            nodes.append(
+                {
+                    "name": child.name,
+                    "path": rel,
+                    "type": "directory",
+                    "children": _console_tree_entries(root, child),
+                }
+            )
+        elif child.suffix == ".py":
+            nodes.append(
+                {
+                    "name": child.name,
+                    "path": rel,
+                    "type": "file",
+                    "read_only": _console_is_read_only(rel),
+                }
+            )
+    return nodes
+
+
+def _site_intent_to_payload(site_intent: SiteIntent) -> dict[str, Any]:
+    confidences = [
+        float(page_intent.confidence)
+        for page_intent in site_intent.page_intents
+        if page_intent.category == site_intent.primary
+    ]
+    confidence = sum(confidences) / len(confidences) if confidences else 0.0
+    return {
+        "primary": site_intent.primary,
+        "secondary": site_intent.secondary,
+        "confidence": round(confidence, 3),
+        "page_count": len(site_intent.page_intents),
+    }

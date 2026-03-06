@@ -10,6 +10,8 @@ from archon.agents.outbound.email_agent import EmailSendResult, OutboundEmail
 from archon.agents.outbound.webchat_agent import WebChatMessage, WebChatSendResult
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.web.intent_classifier import PageIntent, SiteIntent
+from archon.web.site_crawler import CrawlResult, PageData
 
 
 def _auth_headers(*, tenant: str = "tenant-test", tier: str = "business") -> dict[str, str]:
@@ -270,3 +272,109 @@ def test_memory_timeline_endpoint_filters_by_session(
     assert entry["memory_id"] == "1"
     assert entry["content"] == "Outcome A"
     assert entry["role"] == "assistant"
+
+
+def test_console_agents_tree_returns_directory_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    with TestClient(app) as client:
+        response = client.get("/console/agents", headers=_auth_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["root"] == "archon/agents"
+    assert isinstance(payload["tree"], list)
+    assert any(node["type"] in {"directory", "file"} for node in payload["tree"])
+
+
+def test_console_agent_file_read_valid_and_invalid_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    with TestClient(app) as client:
+        ok_response = client.get("/console/agents/researcher.py", headers=_auth_headers())
+        missing_response = client.get("/console/agents/not-a-real-file.py", headers=_auth_headers())
+
+    assert ok_response.status_code == 200
+    ok_payload = ok_response.json()
+    assert ok_payload["path"] == "researcher.py"
+    assert "class ResearcherAgent" in ok_payload["content"]
+    assert missing_response.status_code == 404
+
+
+def test_console_agent_save_rejects_python_syntax_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    with TestClient(app) as client:
+        response = client.put(
+            "/console/agents/researcher.py",
+            json={"content": "def broken(:\n    pass\n"},
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["detail"]["error"] == "syntax_error"
+
+
+def test_console_provider_test_endpoint_returns_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    with TestClient(app) as client:
+        response = client.post("/console/providers/test/openrouter", headers=_auth_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "openrouter"
+    assert payload["ok"] is True
+    assert payload["status"] == "healthy"
+
+
+def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    class _FakeCrawler:
+        async def crawl(self, url: str, max_pages: int, max_depth: int) -> CrawlResult:
+            del max_pages, max_depth
+            return CrawlResult(
+                pages=[
+                    PageData(
+                        url=url,
+                        title="Example SaaS",
+                        text_content="Start free trial and pricing plans available.",
+                        meta_description="Example meta",
+                        h1s=["Welcome"],
+                        links=[],
+                        load_ms=10.0,
+                    )
+                ]
+            )
+
+        async def aclose(self) -> None:
+            return None
+
+    class _FakeClassifier:
+        async def classify_site(self, crawl_result: CrawlResult) -> SiteIntent:
+            del crawl_result
+            return SiteIntent(
+                primary="saas",
+                secondary=["docs"],
+                page_intents=[PageIntent(category="saas", confidence=0.91, signals={"reason": "test"})],
+            )
+
+    monkeypatch.setattr("archon.interfaces.api.server.SiteCrawler", lambda *args, **kwargs: _FakeCrawler())
+    monkeypatch.setattr("archon.interfaces.api.server.IntentClassifier", lambda *args, **kwargs: _FakeClassifier())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/console/crawl",
+            json={"url": "https://example.com"},
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["site_intent"]["primary"] == "saas"
+    assert "script_tag" in payload["embed"]
+    assert "<script" in payload["embed"]["script_tag"]
