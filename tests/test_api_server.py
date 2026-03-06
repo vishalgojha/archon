@@ -210,3 +210,63 @@ def test_outbound_webchat_auto_approve_sends_with_mock_transport(
     payload = response.json()
     assert payload["status"] == "sent"
     assert payload["result"]["metadata"]["provider"] == "fake-webchat"
+
+
+def test_health_endpoint_returns_status_version_and_uptime() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["version"] == app.version
+    assert isinstance(payload["uptime_s"], (int, float))
+    assert payload["uptime_s"] >= 0
+
+
+def test_memory_timeline_endpoint_filters_by_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    rows = [
+        {
+            "id": 1,
+            "task": "session task",
+            "context": {"session_id": "session-abc"},
+            "actions_taken": ["ResearcherAgent"],
+            "causal_reasoning": "Reason A",
+            "actual_outcome": "Outcome A",
+            "delta": "Delta A",
+            "reuse_conditions": "Reuse A",
+            "created_at": "2026-03-06 10:00:00",
+        },
+        {
+            "id": 2,
+            "task": "other task",
+            "context": {"session_id": "session-other"},
+            "actions_taken": ["CriticAgent"],
+            "causal_reasoning": "Reason B",
+            "actual_outcome": "Outcome B",
+            "delta": "Delta B",
+            "reuse_conditions": "Reuse B",
+            "created_at": "2026-03-06 10:01:00",
+        },
+    ]
+
+    with TestClient(app) as client:
+        async def fake_list_recent(*, limit: int) -> list[dict[str, object]]:
+            assert limit >= 2
+            return rows
+
+        monkeypatch.setattr(app.state.orchestrator.memory_store, "list_recent", fake_list_recent)
+        response = client.get("/memory/timeline", params={"session_id": "session-abc", "limit": 10})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "entries" in payload
+    assert len(payload["entries"]) == 1
+    entry = payload["entries"][0]
+    assert entry["memory_id"] == "1"
+    assert entry["content"] == "Outcome A"
+    assert entry["role"] == "assistant"

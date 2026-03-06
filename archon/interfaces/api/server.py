@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, Callable, Literal, cast
 
 import uvicorn
@@ -23,6 +25,7 @@ from archon.interfaces.api.rate_limit import (
     limit_for_key,
     set_rate_limit_store,
 )
+from archon.interfaces.webchat.server import mount_webchat
 
 
 class TaskRequest(BaseModel):
@@ -107,6 +110,9 @@ async def lifespan(app: FastAPI):
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
     app.state.orchestrator = Orchestrator(load_archon_config(config_path))
     app.state.auth_settings = AuthSettings.from_env()
+    app.state.started_monotonic = time.monotonic()
+    if getattr(app.state, "webchat_app", None) is not None:
+        app.state.webchat_app.state.runtime.orchestrator = app.state.orchestrator
     try:
         yield
     finally:
@@ -114,18 +120,43 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ARCHON API", version="0.1.0", lifespan=lifespan)
-_exempt_paths = {"/healthz", "/openapi.json", "/docs", "/redoc"}
+_exempt_paths = {
+    "/health",
+    "/healthz",
+    "/memory/timeline",
+    "/agents/status",
+    "/webchat",
+    "/webchat/token",
+    "/webchat/upgrade",
+    "/openapi.json",
+    "/docs",
+    "/redoc",
+}
 app.add_middleware(AuthMiddleware, settings=AuthSettings.from_env(), exempt_paths=_exempt_paths)
 
 limiter = create_limiter()
 app.state.limiter = limiter
 app.state.rate_limit_store = InMemoryTierRateLimitStore.from_env()
 set_rate_limit_store(app.state.rate_limit_store)
+app.state.started_monotonic = time.monotonic()
 _rate_limit_handler = cast(
     Callable[[Request, Exception], Response],
     _rate_limit_exceeded_handler,
 )
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+app.state.webchat_app = mount_webchat(app, path="/webchat")
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    """Runtime health with version and uptime."""
+
+    started = float(getattr(app.state, "started_monotonic", time.monotonic()))
+    return {
+        "status": "ok",
+        "version": app.version,
+        "uptime_s": max(0.0, time.monotonic() - started),
+    }
 
 
 @app.get("/healthz")
@@ -133,6 +164,60 @@ async def healthcheck() -> dict[str, str]:
     """Simple readiness probe endpoint."""
 
     return {"status": "ok"}
+
+
+@app.get("/memory/timeline")
+async def memory_timeline(
+    session_id: str = "",
+    limit: int = 50,
+) -> dict[str, list[dict[str, Any]]]:
+    """Return recent memory entries formatted for dashboard timeline rendering."""
+
+    bounded_limit = max(1, min(200, int(limit)))
+    fetch_limit = max(bounded_limit, 200 if session_id else bounded_limit)
+    orchestrator: Orchestrator = app.state.orchestrator
+    rows = await orchestrator.memory_store.list_recent(limit=fetch_limit)
+    if session_id:
+        rows = [row for row in rows if _memory_matches_session(row, session_id)]
+    entries = [_timeline_entry(row) for row in rows[:bounded_limit]]
+    return {"entries": entries}
+
+
+@app.get("/agents/status")
+async def agents_status() -> dict[str, Any]:
+    """Return idle baseline status for registered swarm/outbound agents."""
+
+    orchestrator: Orchestrator = app.state.orchestrator
+    debate = orchestrator.swarm_router.build_debate_swarm()
+    growth = orchestrator.growth_router.build_growth_swarm()
+    instances = [
+        debate.researcher,
+        debate.critic,
+        debate.devils_advocate,
+        debate.fact_checker,
+        debate.synthesizer,
+        growth.prospector,
+        growth.icp,
+        growth.outreach,
+        growth.nurture,
+        growth.revenue_intel,
+        growth.partner,
+        growth.churn_defense,
+        orchestrator.email_agent,
+        orchestrator.webchat_agent,
+    ]
+    deduped: dict[str, dict[str, Any]] = {}
+    for agent in instances:
+        deduped[agent.name] = {
+            "status": "idle",
+            "startedAt": None,
+            "role": getattr(agent, "role", "fast"),
+        }
+    return {
+        "agents": deduped,
+        "edges": [{"source": "orchestrator", "target": name} for name in deduped],
+        "updated_at": time.time(),
+    }
 
 
 @app.post("/v1/tasks", response_model=TaskResponse)
@@ -333,3 +418,64 @@ def run() -> None:
     host = os.getenv("ARCHON_HOST", "127.0.0.1")
     port = int(os.getenv("ARCHON_PORT", "8000"))
     uvicorn.run("archon.interfaces.api.server:app", host=host, port=port, reload=False)
+
+
+def _memory_matches_session(row: dict[str, Any], session_id: str) -> bool:
+    context = row.get("context")
+    if not isinstance(context, dict):
+        return False
+    if str(context.get("session_id", "")).strip() == session_id:
+        return True
+    nested = context.get("input_context")
+    if isinstance(nested, dict) and str(nested.get("session_id", "")).strip() == session_id:
+        return True
+    return False
+
+
+def _timeline_entry(row: dict[str, Any]) -> dict[str, Any]:
+    memory_id = str(row.get("id", ""))
+    created_at = str(row.get("created_at", "")).strip()
+    actual_outcome = str(row.get("actual_outcome", "")).strip()
+    task = str(row.get("task", "")).strip()
+    causal_reasoning = str(row.get("causal_reasoning", "")).strip()
+    return {
+        "memory_id": memory_id,
+        "timestamp": _to_unix_timestamp(created_at),
+        "role": "assistant",
+        "content": actual_outcome or task,
+        "causal_links": [
+            {
+                "chain_id": f"chain-{memory_id}",
+                "effect": (actual_outcome or task)[:80],
+            }
+        ],
+        "causal_chain": [
+            {
+                "chain_id": f"chain-{memory_id}",
+                "cause": causal_reasoning,
+                "effect": actual_outcome or task,
+                "confidence": 1.0,
+            }
+        ],
+        "metadata": {
+            "task": task,
+            "delta": row.get("delta"),
+            "reuse_conditions": row.get("reuse_conditions"),
+        },
+    }
+
+
+def _to_unix_timestamp(raw: str) -> float:
+    text = str(raw).strip()
+    if not text:
+        return time.time()
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            dt = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return time.time()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
