@@ -18,9 +18,30 @@
     return raw;
   }
 
+  function resolveApiBase() {
+    const stored = String(localStorage.getItem("archon.api_base") || "").trim();
+    if (stored) {
+      return stored.replace(/\/$/, "");
+    }
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return window.location.origin.replace(/\/$/, "");
+    }
+    return "http://127.0.0.1:8000";
+  }
+
   function wsBaseUrl() {
+    const base = resolveApiBase();
+    if (base.startsWith("wss://") || base.startsWith("ws://")) {
+      return base;
+    }
+    if (base.startsWith("https://")) {
+      return `wss://${base.slice("https://".length)}`;
+    }
+    if (base.startsWith("http://")) {
+      return `ws://${base.slice("http://".length)}`;
+    }
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${protocol}//${window.location.host}`;
+    return `${protocol}//${base.replace(/^(https?:\/\/|wss?:\/\/)/, "")}`;
   }
 
   function toApprovalEvent(event) {
