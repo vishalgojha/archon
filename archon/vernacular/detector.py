@@ -114,7 +114,9 @@ class LanguageDetector:
     def detect(self, text: str) -> DetectionResult:
         source = (text or "").strip()
         if not source:
-            return DetectionResult(language_code="unknown", confidence=0.0, script="unknown", uncertain=True)
+            return DetectionResult(
+                language_code="unknown", confidence=0.0, script="unknown", uncertain=True
+            )
 
         script = _detect_script(source)
         uncertain = len(source) < 20
@@ -163,7 +165,7 @@ class LanguageDetector:
 
         prompt = (
             "Detect the ISO-639-1 language code for this text. "
-            "Return JSON only: {\"language_code\":\"xx\",\"confidence\":0.0-1.0}.\n"
+            'Return JSON only: {"language_code":"xx","confidence":0.0-1.0}.\n'
             f"Text: {text[:600]}"
         )
         response_text = _invoke_router_text(self.router, role=self.llm_role, prompt=prompt)
@@ -198,7 +200,9 @@ def _normalize_language_code(raw: str) -> str:
     return base if re.match(r"^[a-z]{2}$", base) else "unknown"
 
 
-def _invoke_router_text(router: ProviderRouter, *, role: str, prompt: str, system_prompt: str | None = None) -> str:
+def _invoke_router_text(
+    router: ProviderRouter, *, role: str, prompt: str, system_prompt: str | None = None
+) -> str:
     try:
         asyncio.get_running_loop()
         # Called from async context without async API; avoid nested loop deadlocks.

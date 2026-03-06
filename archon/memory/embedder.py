@@ -167,4 +167,3 @@ def _coerce_vector(value: Any) -> list[float]:
         except (TypeError, ValueError):
             return []
     return output
-

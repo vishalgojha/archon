@@ -97,12 +97,16 @@ class VoiceAgent(BaseAgent):
             result = CallResult("", "failed", error="Recipient is empty.")
             self._audit("call", target, result.status, result.call_sid, result.error)
             return result
-        denied = await self._guard_send(target, twiml, event_sink=event_sink, timeout_seconds=timeout_seconds)
+        denied = await self._guard_send(
+            target, twiml, event_sink=event_sink, timeout_seconds=timeout_seconds
+        )
         if denied is not None:
             self._audit("call", target, denied.status, denied.call_sid, denied.error)
             return denied
         if not self.account_sid or not self.auth_token or not self.from_number:
-            result = CallResult("", "failed", error="Twilio config missing account_sid/auth_token/from_number.")
+            result = CallResult(
+                "", "failed", error="Twilio config missing account_sid/auth_token/from_number."
+            )
             self._audit("call", target, result.status, result.call_sid, result.error)
             return result
 
@@ -110,7 +114,9 @@ class VoiceAgent(BaseAgent):
         payload = {"To": target, "From": self.from_number, "Twiml": twiml}
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(url, data=payload, auth=(self.account_sid, self.auth_token))
+                response = await client.post(
+                    url, data=payload, auth=(self.account_sid, self.auth_token)
+                )
             if response.status_code in {200, 201}:
                 data = _safe_json(response)
                 result = CallResult(
@@ -144,7 +150,9 @@ class VoiceAgent(BaseAgent):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 recording_response = await client.get(
                     download_url,
-                    auth=(self.account_sid, self.auth_token) if self.account_sid and self.auth_token else None,
+                    auth=(self.account_sid, self.auth_token)
+                    if self.account_sid and self.auth_token
+                    else None,
                 )
                 recording_response.raise_for_status()
                 audio_bytes = recording_response.content

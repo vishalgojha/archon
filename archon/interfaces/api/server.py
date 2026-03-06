@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from pydantic import BaseModel, Field
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 
 from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalRequiredError
@@ -27,11 +28,11 @@ from archon.interfaces.api.rate_limit import (
     limit_for_key,
     set_rate_limit_store,
 )
+from archon.interfaces.webchat.server import mount_webchat
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 from archon.web.injection_generator import InjectionGenerator
 from archon.web.intent_classifier import IntentClassifier, SiteIntent
 from archon.web.site_crawler import SiteCrawler
-from archon.interfaces.webchat.server import mount_webchat
 
 
 class TaskRequest(BaseModel):
@@ -131,6 +132,17 @@ class ConsoleCrawlRequest(BaseModel):
     url: str = Field(min_length=1)
     api_key: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
+
+
+class FederationTaskRequest(BaseModel):
+    """Federated task payload exchanged between ARCHON peers."""
+
+    task_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    required_capabilities: list[str] = Field(default_factory=list)
+    requester_instance_id: str = Field(min_length=1)
+    deadline_s: float = Field(default=30.0, gt=0.0)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 def _to_response(result: OrchestrationResult) -> TaskResponse:
@@ -387,14 +399,25 @@ async def console_save_config(
         budget["daily_limit_usd"] = float(payload.budget.daily_limit_usd)
     if payload.budget.monthly_limit_usd is not None:
         budget["monthly_limit_usd"] = float(payload.budget.monthly_limit_usd)
-        app.state.orchestrator.config.byok.budget_per_month_usd = float(payload.budget.monthly_limit_usd)
+        app.state.orchestrator.config.byok.budget_per_month_usd = float(
+            payload.budget.monthly_limit_usd
+        )
     if payload.budget.per_request_limit_usd is not None:
         budget["per_request_limit_usd"] = float(payload.budget.per_request_limit_usd)
-        app.state.orchestrator.config.byok.budget_per_task_usd = float(payload.budget.per_request_limit_usd)
+        app.state.orchestrator.config.byok.budget_per_task_usd = float(
+            payload.budget.per_request_limit_usd
+        )
 
     bucket["updated_at"] = time.time()
-    provider_rows = [_provider_status_row(app, tenant_id, name) for name in sorted(PROVIDER_ENV_KEY)]
-    return {"status": "saved", "providers": provider_rows, "budget": budget, "updated_at": bucket["updated_at"]}
+    provider_rows = [
+        _provider_status_row(app, tenant_id, name) for name in sorted(PROVIDER_ENV_KEY)
+    ]
+    return {
+        "status": "saved",
+        "providers": provider_rows,
+        "budget": budget,
+        "updated_at": bucket["updated_at"],
+    }
 
 
 @app.post("/console/crawl")
@@ -421,7 +444,9 @@ async def console_crawl(
     site_intent = await classifier.classify_site(crawl_result)
 
     tenant_id = request.state.auth.tenant_id
-    api_key = str(payload.api_key or "").strip() or _tenant_provider_key(app, tenant_id, "openrouter")
+    api_key = str(payload.api_key or "").strip() or _tenant_provider_key(
+        app, tenant_id, "openrouter"
+    )
     if not api_key:
         api_key = f"tenant-{tenant_id}"
 
@@ -632,6 +657,111 @@ async def send_outbound_webchat(
     )
 
 
+@app.post("/federation/tasks/bid")
+async def federation_bid(payload: FederationTaskRequest, request: Request) -> dict[str, Any]:
+    """Return local bid for an incoming federated task."""
+
+    del request
+    required = [str(item).strip().lower() for item in payload.required_capabilities if str(item)]
+    local_capabilities = {"debate", "growth", "analysis", "reasoning", "translation"}
+    missing = [item for item in required if item not in local_capabilities]
+    can_fulfill = not missing
+
+    estimated_cost = round(0.02 * max(1, len(required)), 6)
+    estimated_time = round(2.0 + (0.75 * max(1, len(required))), 3)
+    confidence = 0.9 if can_fulfill else 0.15
+    bid = {
+        "peer_id": str(os.getenv("ARCHON_INSTANCE_ID", "local-instance")),
+        "can_fulfill": can_fulfill,
+        "estimated_cost_usd": estimated_cost,
+        "estimated_time_s": estimated_time,
+        "confidence": confidence,
+    }
+    await _emit_analytics_event(
+        {
+            "event_type": "federation_bid_requested",
+            "task_id": payload.task_id,
+            "requester_instance_id": payload.requester_instance_id,
+            "can_fulfill": can_fulfill,
+            "missing_capabilities": missing,
+        }
+    )
+    return bid
+
+
+@app.post("/federation/tasks/execute")
+async def federation_execute(
+    payload: FederationTaskRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Execute federated task locally and stream result tokens back to requester."""
+
+    del request
+    orchestrator: Orchestrator = app.state.orchestrator
+
+    async def _event_stream():
+        started = time.monotonic()
+        success = True
+        result_text = ""
+        spent_usd = 0.0
+        try:
+            result = await orchestrator.execute(
+                goal=payload.description,
+                mode="debate",
+                context={
+                    "federation_task_id": payload.task_id,
+                    "requester_instance_id": payload.requester_instance_id,
+                    "federation_context": payload.context,
+                },
+            )
+            result_text = str(result.final_answer or "")
+            spent_usd = float(result.budget.get("spent_usd", 0.0) or 0.0)
+            for token in _tokenize_federation(result_text):
+                yield json.dumps({"type": "token", "content": token}) + "\n"
+            yield (
+                json.dumps(
+                    {
+                        "type": "result",
+                        "task_id": payload.task_id,
+                        "result": result_text,
+                        "cost_usd": spent_usd,
+                        "time_s": round(max(0.0, time.monotonic() - started), 6),
+                        "success": True,
+                    }
+                )
+                + "\n"
+            )
+        except Exception as exc:
+            success = False
+            yield (
+                json.dumps(
+                    {
+                        "type": "result",
+                        "task_id": payload.task_id,
+                        "result": "",
+                        "cost_usd": spent_usd,
+                        "time_s": round(max(0.0, time.monotonic() - started), 6),
+                        "success": False,
+                        "error": str(exc),
+                    }
+                )
+                + "\n"
+            )
+        finally:
+            await _emit_analytics_event(
+                {
+                    "event_type": "federation_task_executed",
+                    "task_id": payload.task_id,
+                    "requester_instance_id": payload.requester_instance_id,
+                    "success": success,
+                    "cost_usd": spent_usd,
+                    "result_chars": len(result_text),
+                }
+            )
+
+    return StreamingResponse(_event_stream(), media_type="application/x-ndjson")
+
+
 def run() -> None:
     """Console script entrypoint used by `archon-server`."""
 
@@ -826,3 +956,32 @@ def _site_intent_to_payload(site_intent: SiteIntent) -> dict[str, Any]:
         "confidence": round(confidence, 3),
         "page_count": len(site_intent.page_intents),
     }
+
+
+def _tokenize_federation(text: str) -> list[str]:
+    chunks: list[str] = []
+    parts = str(text or "").split(" ")
+    for index, word in enumerate(parts):
+        suffix = " " if index < len(parts) - 1 else ""
+        if word or suffix:
+            chunks.append(word + suffix)
+    return chunks
+
+
+async def _emit_analytics_event(payload: dict[str, Any]) -> None:
+    collector = getattr(app.state, "analytics_collector", None)
+    if collector is None:
+        return
+    record = getattr(collector, "record", None)
+    if not callable(record):
+        return
+    try:
+        maybe = record(
+            tenant_id="system",
+            event_type="state_change",
+            properties=dict(payload),
+        )
+        if hasattr(maybe, "__await__"):
+            await maybe
+    except Exception:
+        return

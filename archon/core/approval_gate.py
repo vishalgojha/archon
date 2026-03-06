@@ -171,7 +171,9 @@ class ApprovalGate:
             action_id=action_id,
             action=action,
             risk_level=self.requires_approval_registry[action],
-            context={k: v for k, v in context.items() if k not in {"event_sink", "timeout_seconds"}},
+            context={
+                k: v for k, v in context.items() if k not in {"event_sink", "timeout_seconds"}
+            },
             created_at=time.time(),
             event=asyncio.Event(),
         )
@@ -213,7 +215,9 @@ class ApprovalGate:
             )
             raise ApprovalDeniedError(action_id=action_id, action=action, reason="missing_decision")
         if not decision.approved:
-            raise ApprovalDeniedError(action_id=action_id, action=action, reason=decision.notes or "denied")
+            raise ApprovalDeniedError(
+                action_id=action_id, action=action, reason=decision.notes or "denied"
+            )
         return action_id
 
     async def guard(
@@ -246,10 +250,14 @@ class ApprovalGate:
             return mode
         return False
 
-    def approve(self, action_id: str, *, approver: str | None = None, notes: str | None = None) -> bool:
+    def approve(
+        self, action_id: str, *, approver: str | None = None, notes: str | None = None
+    ) -> bool:
         """Approve action. Example: `gate.approve('id')`."""
 
-        return self._resolve(action_id, approved=True, approver=approver, reason=notes or "approved")
+        return self._resolve(
+            action_id, approved=True, approver=approver, reason=notes or "approved"
+        )
 
     def deny(
         self,
@@ -293,18 +301,24 @@ class ApprovalGate:
 
         return [item["action_id"] for item in self.pending_actions]
 
-    def _resolve(self, action_id: str, *, approved: bool, approver: str | None, reason: str) -> bool:
+    def _resolve(
+        self, action_id: str, *, approved: bool, approver: str | None, reason: str
+    ) -> bool:
         with self._lock:
             pending = self._pending.get(action_id)
             if pending is None or pending.decision is not None:
                 return False
-            pending.decision = ApprovalDecision(action_id, pending.action, approved, approver, reason)
+            pending.decision = ApprovalDecision(
+                action_id, pending.action, approved, approver, reason
+            )
             decision = pending.decision
         self._finalize(decision, risk_level=pending.risk_level, reason=reason)
         pending.event.set()
         return True
 
-    def _finalize(self, decision: ApprovalDecision, *, risk_level: RiskLevel | None, reason: str) -> None:
+    def _finalize(
+        self, decision: ApprovalDecision, *, risk_level: RiskLevel | None, reason: str
+    ) -> None:
         entry = ApprovalAuditEntry(
             action_id=decision.request_id,
             action=decision.action_type,
@@ -319,7 +333,9 @@ class ApprovalGate:
             self._resolved[decision.request_id] = decision
 
 
-def requires_gate(action_name: str) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+def requires_gate(
+    action_name: str,
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Decorator that gates async methods. Example: `@requires_gate('file_write')`."""
 
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -330,8 +346,12 @@ def requires_gate(action_name: str) -> Callable[[Callable[P, Awaitable[R]]], Cal
             if gate is None and self_obj is not None:
                 gate = getattr(self_obj, "approval_gate", None) or getattr(self_obj, "gate", None)
             if not isinstance(gate, ApprovalGate):
-                raise RuntimeError("requires_gate expects ApprovalGate on self.approval_gate or kwargs.")
-            context = dict(kwargs.get("context", {})) if isinstance(kwargs.get("context"), dict) else {}
+                raise RuntimeError(
+                    "requires_gate expects ApprovalGate on self.approval_gate or kwargs."
+                )
+            context = (
+                dict(kwargs.get("context", {})) if isinstance(kwargs.get("context"), dict) else {}
+            )
             if callable(kwargs.get("event_sink")):
                 context["event_sink"] = kwargs["event_sink"]
             if kwargs.get("timeout_seconds") is not None:
@@ -348,4 +368,3 @@ def requires_gate(action_name: str) -> Callable[[Callable[P, Awaitable[R]]], Cal
         return wrapper
 
     return decorator
-

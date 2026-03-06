@@ -42,7 +42,9 @@ class _FakeResponse:
         return self.payload or {}
 
 
-def _device_token(*, token_id: str = "tok-1", tenant_id: str = "tenant-1", platform: str = "android") -> DeviceToken:
+def _device_token(
+    *, token_id: str = "tok-1", tenant_id: str = "tenant-1", platform: str = "android"
+) -> DeviceToken:
     return DeviceToken(
         token_id=token_id,
         tenant_id=tenant_id,
@@ -134,7 +136,9 @@ def test_apns_backend_headers_and_jwt_format(monkeypatch: pytest.MonkeyPatch) ->
     token = backend._generate_jwt()
     result = backend.send(
         _device_token(platform="ios"),
-        Notification(title="Approval required", body="ARCHON needs action", data={"action_id": "a-1"}),
+        Notification(
+            title="Approval required", body="ARCHON needs action", data={"action_id": "a-1"}
+        ),
     )
 
     assert token.count(".") == 2
@@ -160,10 +164,14 @@ def test_apns_backend_development_vs_production_endpoint(monkeypatch: pytest.Mon
     monkeypatch.setenv("APNS_KEY_FILE", str(_tmp_file("apns", ".p8")))
 
     monkeypatch.setenv("APNS_ENV", "development")
-    APNsBackend(bundle_id="com.archon.test").send(_device_token(platform="ios"), Notification(title="t", body="b"))
+    APNsBackend(bundle_id="com.archon.test").send(
+        _device_token(platform="ios"), Notification(title="t", body="b")
+    )
 
     monkeypatch.setenv("APNS_ENV", "production")
-    APNsBackend(bundle_id="com.archon.test").send(_device_token(platform="ios"), Notification(title="t", body="b"))
+    APNsBackend(bundle_id="com.archon.test").send(
+        _device_token(platform="ios"), Notification(title="t", body="b")
+    )
 
     assert "api.development.push.apple.com" in urls[0]
     assert "api.push.apple.com" in urls[1]
@@ -183,7 +191,9 @@ def test_device_registry_register_upsert_subset_and_prune() -> None:
 
     old_timestamp = time.time() - (120 * 24 * 60 * 60)
     with sqlite3.connect(path) as conn:
-        conn.execute("UPDATE device_tokens SET last_seen = ? WHERE token = ?", (old_timestamp, "token-a"))
+        conn.execute(
+            "UPDATE device_tokens SET last_seen = ? WHERE token = ?", (old_timestamp, "token-a")
+        )
 
     removed = registry.prune_stale(days=90)
     assert removed == 1

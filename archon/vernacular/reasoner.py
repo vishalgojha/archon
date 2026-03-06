@@ -109,7 +109,9 @@ class VernacularReasoner:
         )
 
     def adapt_prompt(self, prompt: str, language_code: str) -> str:
-        profile = CULTURAL_PROFILES.get(_normalize_language_code(language_code), CULTURAL_PROFILES["en"])
+        profile = CULTURAL_PROFILES.get(
+            _normalize_language_code(language_code), CULTURAL_PROFILES["en"]
+        )
         adaptation_lines = [
             f"[Cultural profile: {profile.language_code}]",
             f"- Use {profile.formality} register.",

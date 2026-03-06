@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 from xml.etree import ElementTree
@@ -121,7 +121,15 @@ class SignalDetector:
             return points[:6]
 
         # Fallback: capture pain-like wording even without exact keyword phrase.
-        fallback_tokens = ["manual", "repetitive", "time", "copy", "spreadsheet", "tedious", "automation"]
+        fallback_tokens = [
+            "manual",
+            "repetitive",
+            "time",
+            "copy",
+            "spreadsheet",
+            "tedious",
+            "automation",
+        ]
         for sentence in sentences:
             lower = sentence.lower()
             if any(token in lower for token in fallback_tokens):
@@ -137,7 +145,7 @@ class SignalDetector:
 
         prompt = (
             "Score relevance from 0 to 1 for whether this post describes painful manual work that could be automated. "
-            "Return JSON only: {\"score\": 0.0}.\n"
+            'Return JSON only: {"score": 0.0}.\n'
             f"Title: {post.title}\n"
             f"Body: {post.body[:1000]}"
         )
@@ -390,7 +398,9 @@ class ResponseComposer:
 
         paragraphs = paragraphs[:4]
         if len(paragraphs) < 2:
-            paragraphs.append("If you want, I can outline a concrete migration path from manual to semi-automated.")
+            paragraphs.append(
+                "If you want, I can outline a concrete migration path from manual to semi-automated."
+            )
 
         if source == "reddit":
             body = "\n\n".join(paragraphs)
@@ -481,7 +491,11 @@ class CommunityAgent:
         reddit_cfg = sources_config.get("reddit") or {}
         subreddits = reddit_cfg.get("subreddits") or []
         if subreddits:
-            posts.extend(self.reddit_collector.collect(list(subreddits), limit=int(reddit_cfg.get("limit", 25))))
+            posts.extend(
+                self.reddit_collector.collect(
+                    list(subreddits), limit=int(reddit_cfg.get("limit", 25))
+                )
+            )
 
         hn_cfg = sources_config.get("hn") or {}
         query = str(hn_cfg.get("query") or "").strip()
@@ -491,7 +505,9 @@ class CommunityAgent:
         rss_cfg = sources_config.get("rss") or {}
         feeds = rss_cfg.get("feed_urls") or []
         if feeds:
-            posts.extend(self.rss_collector.collect(list(feeds), limit=int(rss_cfg.get("limit", 25))))
+            posts.extend(
+                self.rss_collector.collect(list(feeds), limit=int(rss_cfg.get("limit", 25)))
+            )
 
         return posts
 
@@ -509,14 +525,20 @@ class CommunityAgent:
         }
 
         try:
-            maybe = self.approval_gate.check(action="send_message", context=context, action_id=action_id)
+            maybe = self.approval_gate.check(
+                action="send_message", context=context, action_id=action_id
+            )
             _run_maybe_awaitable(maybe)
             return True
         except Exception:
             return False
 
-    def _publish(self, post: CommunityPost, draft: DraftResponse, sources_config: dict[str, Any]) -> None:
-        source_publishers = sources_config.get("publishers") if isinstance(sources_config, dict) else None
+    def _publish(
+        self, post: CommunityPost, draft: DraftResponse, sources_config: dict[str, Any]
+    ) -> None:
+        source_publishers = (
+            sources_config.get("publishers") if isinstance(sources_config, dict) else None
+        )
         if isinstance(source_publishers, dict):
             callback = source_publishers.get(post.source)
             if callable(callback):

@@ -87,7 +87,7 @@ def truncate_note(text: str, max_len: int) -> str:
         return cleaned
     if max_len <= 3:
         return cleaned[:max_len]
-    return f"{cleaned[:max_len - 3]}..."
+    return f"{cleaned[: max_len - 3]}..."
 
 
 def extract_elements(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -103,9 +103,13 @@ def profile_from_payload(payload: dict[str, Any], *, fallback_urn: str) -> Linke
     first = str(payload.get("firstName") or payload.get("localizedFirstName") or "").strip()
     last = str(payload.get("lastName") or payload.get("localizedLastName") or "").strip()
     skills_raw = payload.get("skills") if isinstance(payload.get("skills"), list) else []
-    skills = [str(item.get("name") if isinstance(item, dict) else item).strip() for item in skills_raw]
+    skills = [
+        str(item.get("name") if isinstance(item, dict) else item).strip() for item in skills_raw
+    ]
     return LinkedInProfile(
-        urn=to_urn(str(payload.get("urn") or payload.get("entityUrn") or payload.get("id") or fallback_urn)),
+        urn=to_urn(
+            str(payload.get("urn") or payload.get("entityUrn") or payload.get("id") or fallback_urn)
+        ),
         name=str(payload.get("name") or f"{first} {last}".strip()).strip(),
         headline=str(payload.get("headline") or "").strip(),
         company=str(payload.get("company") or payload.get("companyName") or "").strip(),
@@ -127,4 +131,3 @@ def profile_context(profile: LinkedInProfile) -> dict[str, Any]:
         "summary": profile.summary,
         "skills": ", ".join(profile.skills),
     }
-

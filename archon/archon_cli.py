@@ -240,7 +240,9 @@ def peers_list_command(config_path: str) -> None:
             await registry.aclose()
 
     peers = asyncio.run(_run())
-    rows = [[peer.peer_id, peer.address, ",".join(peer.capabilities), peer.version] for peer in peers]
+    rows = [
+        [peer.peer_id, peer.address, ",".join(peer.capabilities), peer.version] for peer in peers
+    ]
     if not rows:
         printer.print("No peers found.")
         return

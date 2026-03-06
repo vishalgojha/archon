@@ -189,4 +189,3 @@ def _average(values: list[float]) -> float:
 
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
-

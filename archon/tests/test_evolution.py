@@ -23,7 +23,9 @@ from archon.evolution.engine import (
 )
 
 
-def _workflow(workflow_id: str, *, version: int = 1, agent: str = "researcher") -> WorkflowDefinition:
+def _workflow(
+    workflow_id: str, *, version: int = 1, agent: str = "researcher"
+) -> WorkflowDefinition:
     return WorkflowDefinition(
         workflow_id=workflow_id,
         name=f"Workflow {workflow_id}",
@@ -277,9 +279,11 @@ def test_immutable_audit_trail_append_verify_history_and_export() -> None:
     assert len(lines) == 3
 
     with sqlite3.connect(audit.db_path) as conn:
-        conn.execute("UPDATE audit_entries SET payload_json = ? WHERE entry_id = ?", ('{"tampered":true}', "e2"))
+        conn.execute(
+            "UPDATE audit_entries SET payload_json = ? WHERE entry_id = ?",
+            ('{"tampered":true}', "e2"),
+        )
         conn.commit()
 
     assert audit.verify_integrity() is False
     audit.close()
-

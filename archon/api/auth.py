@@ -292,7 +292,9 @@ async def require_tenant(
     except TenantTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing tenant token.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing tenant token."
+        )
 
     try:
         context = tenant_context_from_token(token)

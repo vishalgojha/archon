@@ -10,7 +10,9 @@ from typing import Any, Literal
 from archon.providers import ProviderRouter
 from archon.web.site_crawler import CrawlResult, PageData
 
-IntentCategory = Literal["ecommerce", "saas", "blog", "lead_gen", "portfolio", "docs", "news", "unknown"]
+IntentCategory = Literal[
+    "ecommerce", "saas", "blog", "lead_gen", "portfolio", "docs", "news", "unknown"
+]
 
 _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "ecommerce": ("buy now", "add to cart", "checkout", "shop", "product", "price", "shipping"),
@@ -62,7 +64,9 @@ class IntentClassifier:
                 signal_map[category] = matches
 
         if not score_map:
-            return PageIntent(category="unknown", confidence=0.15, signals={"reason": "no_keyword_signals"})
+            return PageIntent(
+                category="unknown", confidence=0.15, signals={"reason": "no_keyword_signals"}
+            )
 
         ranked = sorted(score_map.items(), key=lambda row: row[1], reverse=True)
         top_category, top_score = ranked[0]
@@ -78,7 +82,11 @@ class IntentClassifier:
             return PageIntent(
                 category="unknown",
                 confidence=0.35,
-                signals={"reason": "ambiguous_keyword_signals", "scores": score_map, "matches": signal_map},
+                signals={
+                    "reason": "ambiguous_keyword_signals",
+                    "scores": score_map,
+                    "matches": signal_map,
+                },
             )
 
         confidence = min(0.98, 0.45 + (top_score * 0.12))
@@ -95,7 +103,9 @@ class IntentClassifier:
         for page in crawl_result.pages:
             page_intents.append(await self.classify_page(page))
 
-        counter: Counter[str] = Counter(intent.category for intent in page_intents if intent.category != "unknown")
+        counter: Counter[str] = Counter(
+            intent.category for intent in page_intents if intent.category != "unknown"
+        )
         if not counter:
             return SiteIntent(primary="unknown", secondary=[], page_intents=page_intents)
 
@@ -189,4 +199,3 @@ def _clamp_confidence(value: Any) -> float:
     except (TypeError, ValueError):
         parsed = 0.5
     return round(max(0.0, min(1.0, parsed)), 3)
-

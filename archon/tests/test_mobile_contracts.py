@@ -212,7 +212,9 @@ def _reduce_mobile_event_py(
     if event_type in {"approval_result", "approval_resolved"}:
         request_id = str(event.get("request_id") or event.get("action_id") or "").strip()
         if request_id:
-            next_approvals = [item for item in next_approvals if item.get("action_id") != request_id]
+            next_approvals = [
+                item for item in next_approvals if item.get("action_id") != request_id
+            ]
 
     return {
         "pendingApprovals": next_approvals,
@@ -221,7 +223,9 @@ def _reduce_mobile_event_py(
     }
 
 
-def _save_session_py(storage: MockAsyncStorage, token_key: str, session_key: str, token: str, session_id: str) -> None:
+def _save_session_py(
+    storage: MockAsyncStorage, token_key: str, session_key: str, token: str, session_id: str
+) -> None:
     storage.multi_set([(token_key, token), (session_key, session_id)])
 
 
@@ -301,7 +305,9 @@ def test_invoice_card_schema_validation() -> None:
     assert len(parsed.line_items) == 2
 
     with pytest.raises(ValidationError):
-        InvoiceCardSchema.model_validate({"due_date": "2026-03-20", "line_items": [], "currency": "USD"})
+        InvoiceCardSchema.model_validate(
+            {"due_date": "2026-03-20", "line_items": [], "currency": "USD"}
+        )
 
 
 def test_report_card_schema_validation() -> None:

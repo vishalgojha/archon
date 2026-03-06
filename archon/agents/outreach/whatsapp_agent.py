@@ -83,7 +83,9 @@ class WhatsAppAgent(BaseAgent):
             self._audit("text", result, body)
             return result
 
-        denied = await self._guard_send(target, body, event_sink=event_sink, timeout_seconds=timeout_seconds)
+        denied = await self._guard_send(
+            target, body, event_sink=event_sink, timeout_seconds=timeout_seconds
+        )
         if denied is not None:
             self._audit("text", denied, body)
             return denied
@@ -153,7 +155,9 @@ class WhatsAppAgent(BaseAgent):
                 context = {personalization_key: to}
             body = personalize(body_template, context)
             results.append(
-                await self.send_text(to, body, event_sink=event_sink, timeout_seconds=timeout_seconds)
+                await self.send_text(
+                    to, body, event_sink=event_sink, timeout_seconds=timeout_seconds
+                )
             )
             await asyncio.sleep(0)
         return results

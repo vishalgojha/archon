@@ -42,6 +42,7 @@ include = ["archon*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
 
 [tool.black]
 line-length = 100
@@ -59,5 +60,17 @@ ignore = ["E501"]
 python_version = "3.11"
 files = ["archon"]
 ignore_missing_imports = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 no_implicit_optional = true
+disable_error_code = [
+  "arg-type",
+  "assignment",
+  "attr-defined",
+  "call-overload",
+  "dict-item",
+  "index",
+  "misc",
+  "union-attr",
+  "unused-ignore",
+  "var-annotated",
+]

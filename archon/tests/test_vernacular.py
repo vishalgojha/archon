@@ -7,9 +7,14 @@ from dataclasses import dataclass
 import pytest
 
 import archon.vernacular.detector as detector_mod
-from archon.vernacular.detector import DetectionResult, LanguageDetector, SUPPORTED_LANGUAGES
+from archon.vernacular.detector import SUPPORTED_LANGUAGES, DetectionResult, LanguageDetector
 from archon.vernacular.pipeline import VernacularPipeline
-from archon.vernacular.reasoner import CULTURAL_PROFILES, VALID_FORMALITY, ReasoningResult, VernacularReasoner
+from archon.vernacular.reasoner import (
+    CULTURAL_PROFILES,
+    VALID_FORMALITY,
+    ReasoningResult,
+    VernacularReasoner,
+)
 from archon.vernacular.translator import TranslationResult, Translator
 
 
@@ -41,11 +46,17 @@ class _FailingRouter:
         raise RuntimeError("router unavailable")
 
 
-def test_language_detector_english_detected_from_langdetect(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.98)])
+def test_language_detector_english_detected_from_langdetect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.98)]
+    )
 
     detector = LanguageDetector(router=None)
-    result = detector.detect("This is an example sentence with enough words for language detection.")
+    result = detector.detect(
+        "This is an example sentence with enough words for language detection."
+    )
 
     assert result.language_code == "en"
     assert result.script == "latin"
@@ -53,12 +64,16 @@ def test_language_detector_english_detected_from_langdetect(monkeypatch: pytest.
     assert result.is_certain is True
 
 
-def test_language_detector_llm_fallback_when_langdetect_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_language_detector_llm_fallback_when_langdetect_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(detector_mod, "_langdetect_detect_langs", None)
     router = _FakeRouter(text='{"language_code":"es","confidence":0.92}')
     detector = LanguageDetector(router=router)
 
-    result = detector.detect("Este texto usa palabras en español para comprobar detección alternativa.")
+    result = detector.detect(
+        "Este texto usa palabras en español para comprobar detección alternativa."
+    )
 
     assert router.calls == 1
     assert result.language_code == "es"
@@ -66,7 +81,9 @@ def test_language_detector_llm_fallback_when_langdetect_missing(monkeypatch: pyt
 
 
 def test_language_detector_short_text_uncertain_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.99)])
+    monkeypatch.setattr(
+        detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.99)]
+    )
     detector = LanguageDetector()
 
     result = detector.detect("hello")
@@ -77,7 +94,9 @@ def test_language_detector_short_text_uncertain_flag(monkeypatch: pytest.MonkeyP
 
 
 def test_language_detector_detect_batch_count(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.91)])
+    monkeypatch.setattr(
+        detector_mod, "_langdetect_detect_langs", lambda _text: [_FakeLangProb("en", 0.91)]
+    )
     detector = LanguageDetector()
 
     rows = detector.detect_batch(["One", "Two", "Three"])
@@ -164,7 +183,9 @@ class _CountingDetector:
         del text
         self.calls += 1
         script = "latin" if self.language_code in {"en", "es", "fr", "de", "pt"} else "unknown"
-        return DetectionResult(language_code=self.language_code, confidence=0.93, script=script, uncertain=False)
+        return DetectionResult(
+            language_code=self.language_code, confidence=0.93, script=script, uncertain=False
+        )
 
 
 class _StubReasoner:
@@ -177,7 +198,9 @@ class _StubReasoner:
 
     def reason(self, prompt: str, language_code: str, context=None) -> ReasoningResult:  # type: ignore[no-untyped-def]
         del context
-        return ReasoningResult(content=f"{self.content}: {prompt}", language_code=language_code, confidence=0.9)
+        return ReasoningResult(
+            content=f"{self.content}: {prompt}", language_code=language_code, confidence=0.9
+        )
 
 
 class _StubTranslator:
@@ -185,7 +208,12 @@ class _StubTranslator:
         self.text = text
 
     def translate(self, text: str, source_lang: str, target_lang: str) -> TranslationResult:
-        return TranslationResult(text=f"{self.text} ({target_lang})", source=source_lang, target=target_lang, method="llm")
+        return TranslationResult(
+            text=f"{self.text} ({target_lang})",
+            source=source_lang,
+            target=target_lang,
+            method="llm",
+        )
 
 
 def test_pipeline_native_reasoning_path_when_supported() -> None:

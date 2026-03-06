@@ -257,6 +257,7 @@ def test_memory_timeline_endpoint_filters_by_session(
     ]
 
     with TestClient(app) as client:
+
         async def fake_list_recent(*, limit: int) -> list[dict[str, object]]:
             assert limit >= 2
             return rows
@@ -360,11 +361,17 @@ def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyP
             return SiteIntent(
                 primary="saas",
                 secondary=["docs"],
-                page_intents=[PageIntent(category="saas", confidence=0.91, signals={"reason": "test"})],
+                page_intents=[
+                    PageIntent(category="saas", confidence=0.91, signals={"reason": "test"})
+                ],
             )
 
-    monkeypatch.setattr("archon.interfaces.api.server.SiteCrawler", lambda *args, **kwargs: _FakeCrawler())
-    monkeypatch.setattr("archon.interfaces.api.server.IntentClassifier", lambda *args, **kwargs: _FakeClassifier())
+    monkeypatch.setattr(
+        "archon.interfaces.api.server.SiteCrawler", lambda *args, **kwargs: _FakeCrawler()
+    )
+    monkeypatch.setattr(
+        "archon.interfaces.api.server.IntentClassifier", lambda *args, **kwargs: _FakeClassifier()
+    )
 
     with TestClient(app) as client:
         response = client.post(

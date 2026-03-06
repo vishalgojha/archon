@@ -134,7 +134,11 @@ class _DeterministicEmbedder:
 def test_memory_store_add_search_tenant_isolation_causal_and_forget() -> None:
     tmp = _tmp_dir("_tmp_memory_store")
     db_path = str(tmp / "memory.sqlite3")
-    store = MemoryStore(db_path=db_path, embedder=_DeterministicEmbedder(), vector_index=VectorIndex(backend="python"))
+    store = MemoryStore(
+        db_path=db_path,
+        embedder=_DeterministicEmbedder(),
+        vector_index=VectorIndex(backend="python"),
+    )
     try:
         m1 = store.add(
             content="alpha launch docs",
@@ -166,7 +170,9 @@ def test_memory_store_add_search_tenant_isolation_causal_and_forget() -> None:
         assert all(row.memory.tenant_id == "tenant-a" for row in hits_a)
         assert all(row.memory.memory_id != m2.memory_id for row in hits_a)
 
-        chain_1 = store.add_causal_link("signup friction", "drop in conversion", 0.92, [m1.memory_id], tenant_id="tenant-a")
+        chain_1 = store.add_causal_link(
+            "signup friction", "drop in conversion", 0.92, [m1.memory_id], tenant_id="tenant-a"
+        )
         chain_2 = store.add_causal_link(
             "drop in conversion",
             "revenue decline",
@@ -183,7 +189,9 @@ def test_memory_store_add_search_tenant_isolation_causal_and_forget() -> None:
         assert [row.session_id for row in context] == ["s-a", "s-a"]
 
         store.forget(m1.memory_id)
-        post_forget = store.search("alpha question", tenant_id="tenant-a", top_k=10, min_similarity=0.0)
+        post_forget = store.search(
+            "alpha question", tenant_id="tenant-a", top_k=10, min_similarity=0.0
+        )
         assert all(row.memory.memory_id != m1.memory_id for row in post_forget)
 
         with sqlite3_connect(db_path) as conn:

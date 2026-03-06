@@ -47,7 +47,9 @@ class LinkedInAgent(BaseAgent):
         super().__init__(router, name=name or "LinkedInAgent")
         self.approval_gate = approval_gate
         self.researcher = researcher or ProfileResearcher()
-        self.connection_agent = connection_agent or ConnectionAgent(approval_gate, self.researcher.access_token)
+        self.connection_agent = connection_agent or ConnectionAgent(
+            approval_gate, self.researcher.access_token
+        )
         self.message_agent = message_agent or MessageAgent(
             approval_gate,
             self.researcher.access_token,
@@ -77,7 +79,13 @@ class LinkedInAgent(BaseAgent):
             event_sink=event_sink,
             timeout_seconds=timeout_seconds,
         )
-        self._audit("connection_request", profile.urn, result.status, result.provider_request_id, result.error)
+        self._audit(
+            "connection_request",
+            profile.urn,
+            result.status,
+            result.provider_request_id,
+            result.error,
+        )
         return result
 
     async def research_and_message(
@@ -149,7 +157,9 @@ class LinkedInAgent(BaseAgent):
         result = await self.research_and_message(
             str(context.get("linkedin_url", "")),
             str(context.get("message_template", "")),
-            context.get("personalization") if isinstance(context.get("personalization"), dict) else None,
+            context.get("personalization")
+            if isinstance(context.get("personalization"), dict)
+            else None,
             event_sink=context.get("event_sink"),
         )
         return AgentResult(

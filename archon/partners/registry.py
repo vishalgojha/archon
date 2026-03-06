@@ -122,7 +122,9 @@ class PartnerRegistry:
             ).fetchone()
         return self._to_partner(record)
 
-    def list(self, status_filter: str | None = None, tier_filter: str | None = None) -> list[Partner]:
+    def list(
+        self, status_filter: str | None = None, tier_filter: str | None = None
+    ) -> list[Partner]:
         query = (
             "SELECT partner_id, name, email, tier, referral_code, created_at, status, metadata "
             "FROM partners"

@@ -2,9 +2,9 @@
 
 from archon.agents.outreach.email_agent import (
     EmailAgent,
-    SMTPBackend,
     SendGridBackend,
     SendResult,
+    SMTPBackend,
     UnsubscribeStore,
     build_unsubscribe_footer,
     personalize,

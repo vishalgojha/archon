@@ -15,7 +15,7 @@ import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from archon.config import ArchonConfig, SUPPORTED_PROVIDERS
+from archon.config import SUPPORTED_PROVIDERS, ArchonConfig
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 
 RoleName = Literal["primary", "coding", "vision", "fast", "embedding", "fallback"]
@@ -177,9 +177,7 @@ class ValidationReport:
 
     @property
     def failed_provider_checks(self) -> list[ProviderHealth]:
-        return [
-            item for item in self.provider_health if item.status not in NON_FAILURE_STATUSES
-        ]
+        return [item for item in self.provider_health if item.status not in NON_FAILURE_STATUSES]
 
     def to_json(self) -> str:
         return json.dumps(
@@ -431,9 +429,7 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
             "embedding": byok.get("embedding", defaults.embedding),
             "fallback": byok.get("fallback", defaults.fallback),
             "ollama_base_url": byok.get("ollama_base_url", defaults.ollama_base_url),
-            "openrouter_base_url": byok.get(
-                "openrouter_base_url", defaults.openrouter_base_url
-            ),
+            "openrouter_base_url": byok.get("openrouter_base_url", defaults.openrouter_base_url),
             "custom_endpoints": byok.get("custom_endpoints", []),
         }
 
@@ -467,7 +463,9 @@ def _colorize_status(status: ProviderStatus) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate ARCHON config and provider health.")
-    parser.add_argument("--config", default="config.archon.yaml", help="Path to ARCHON YAML config.")
+    parser.add_argument(
+        "--config", default="config.archon.yaml", help="Path to ARCHON YAML config."
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",

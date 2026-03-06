@@ -213,4 +213,3 @@ def _mss_frame_to_png(frame: Any) -> bytes:
         image.save(output, format="PNG")
         return output.getvalue()
     return bytes(frame.rgb)
-

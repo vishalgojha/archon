@@ -81,7 +81,9 @@ class PatternSharer:
         epsilon = max(float(epsilon), 1e-6)
         sensitivity = self.max_score - self.min_score
         scale = sensitivity / epsilon
-        noisy_avg = _clip(pattern.avg_score + _laplace(self._rng, scale), self.min_score, self.max_score)
+        noisy_avg = _clip(
+            pattern.avg_score + _laplace(self._rng, scale), self.min_score, self.max_score
+        )
         noisy_count = max(1, int(round(pattern.sample_count + _laplace(self._rng, scale))))
         return replace(pattern, avg_score=noisy_avg, sample_count=noisy_count)
 
@@ -172,4 +174,3 @@ def _extract_peer_address(peer: Any) -> str | None:
     if isinstance(peer, dict) and isinstance(peer.get("address"), str):
         return peer["address"]
     return None
-

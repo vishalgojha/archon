@@ -4,19 +4,34 @@ from __future__ import annotations
 
 import os
 import socketserver
+import sqlite3
 import threading
 import time
+import uuid
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Iterator
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+import archon.vernacular.detector as vernacular_detector_mod
+from archon.agents.community.community_agent import (
+    CommunityAgent,
+    CommunityPost,
+    ResponseComposer,
+    SignalDetector,
+)
+from archon.agents.content.content_agent import ContentAgent, PublishTarget
 from archon.agents.outbound.email_agent import SMTPConfig, SMTPEmailTransport
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.partners.viral_loop import ViralLoop, visitor_fingerprint
 from archon.validate_config import validate_config
+from archon.vernacular.detector import LanguageDetector
+from archon.vernacular.pipeline import VernacularPipeline
+from archon.vernacular.reasoner import VernacularReasoner
 
 
 def _auth_token(*, tenant: str = "tenant-integration", tier: str = "business") -> str:
@@ -394,6 +409,214 @@ def test_validate_config_dry_run_schema_and_budget_sanity() -> None:
     assert not any("Budget sanity failed" in item for item in report.errors)
 
 
+def test_vernacular_pipeline_smoke_english_detect_and_spanish_native_reasoning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Vernacular smoke: detect English correctly and route Spanish to native reasoning."""
+
+    class _LangProb:
+        def __init__(self, lang: str, prob: float) -> None:
+            self.lang = lang
+            self.prob = prob
+
+    def _fake_detect_langs(text: str) -> list[_LangProb]:
+        lowered = text.lower()
+        if "necesito" in lowered or "flujo de trabajo" in lowered:
+            return [_LangProb("es", 0.97)]
+        return [_LangProb("en", 0.98)]
+
+    class _Router:
+        async def invoke(self, *, role: str, prompt: str, system_prompt: str | None = None):  # type: ignore[no-untyped-def]
+            del role, prompt
+
+            class _Response:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            if "(es)" in str(system_prompt or ""):
+                return _Response("Respuesta nativa en español para el flujo solicitado.")
+            return _Response("Native English response for the requested workflow.")
+
+    monkeypatch.setattr(vernacular_detector_mod, "_langdetect_detect_langs", _fake_detect_langs)
+
+    detector = LanguageDetector(router=None)
+    reasoner = VernacularReasoner(router=_Router(), native_supported_languages={"en", "es"})
+    pipeline = VernacularPipeline(detector=detector, reasoner=reasoner)
+
+    english = pipeline.process("Please summarize this architecture decision in plain language.")
+    spanish = pipeline.process("Necesito una respuesta clara sobre este flujo de trabajo.")
+
+    assert english.detected_language == "en"
+    assert spanish.detected_language == "es"
+    assert spanish.method == "native_reasoning"
+    assert spanish.response_language == "es"
+    assert "español" in spanish.response_content.lower()
+
+
+def test_partner_viral_loop_smoke_window_attribution() -> None:
+    """Partner smoke: in-window conversion attributed; stale conversion excluded."""
+
+    base = Path("archon/tests/_tmp_integration")
+    base.mkdir(parents=True, exist_ok=True)
+    db_path = base / f"viral-loop-smoke-{uuid.uuid4().hex[:8]}.sqlite3"
+    loop = ViralLoop(path=db_path, attribution_window_hours=72)
+
+    in_window = loop.record_impression(
+        partner_id="partner-smoke",
+        site_url="https://partner.example/embed",
+        visitor_fingerprint=visitor_fingerprint("203.0.113.10", "Mozilla/5.0", "2026-03-06"),
+    )
+    loop.record_conversion(in_window.impression_id, customer_id="cust-in-window")
+
+    outside_window = loop.record_impression(
+        partner_id="partner-smoke",
+        site_url="https://partner.example/embed",
+        visitor_fingerprint=visitor_fingerprint("203.0.113.11", "Mozilla/5.0", "2026-03-06"),
+    )
+    stale_timestamp = time.time() - (73 * 3600)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE impressions SET timestamp = ? WHERE impression_id = ?",
+            (stale_timestamp, outside_window.impression_id),
+        )
+    loop.record_conversion(outside_window.impression_id, customer_id="cust-out-window")
+
+    funnel = loop.get_funnel("partner-smoke")
+    assert funnel.impressions == 2
+    assert funnel.conversions == 1
+    assert funnel.conversion_rate == 0.5
+
+
+def test_content_pipeline_smoke_brief_article_structure_and_queue() -> None:
+    """Content smoke: brief from ICP, structured article generation, and queue placement."""
+
+    class _PipelineResult:
+        def __init__(
+            self,
+            *,
+            detected_language: str,
+            response_language: str,
+            response_content: str,
+            method: str,
+            confidence: float,
+        ) -> None:
+            self.detected_language = detected_language
+            self.response_language = response_language
+            self.response_content = response_content
+            self.method = method
+            self.confidence = confidence
+
+    class _PipelineStub:
+        def process(self, user_input: str, force_language: str | None = None) -> _PipelineResult:
+            language = force_language or "en"
+            if "Create a JSON content brief" in user_input:
+                content = (
+                    '{"target_audience":"Clinic ops leaders","keywords":["manual scheduling","patient follow-up",'
+                    '"workflow automation"],"tone":"practical","word_count_target":950}'
+                )
+            else:
+                content = (
+                    "# Clinic Workflow Automation Playbook\n"
+                    "This guide explains a practical execution path.\n\n"
+                    "## Identify Manual Bottlenecks\n"
+                    "Map repetitive handoffs and failure points.\n\n"
+                    "## Implement Event-Driven Routing\n"
+                    "Replace copy/paste with reliable triggers and ownership.\n\n"
+                    "## Track Outcomes and Iterate\n"
+                    "Review cycle time, response quality, and conversion.\n\n"
+                    "## Conclusion\n"
+                    "Operational clarity improves speed and quality.\n\n"
+                    "## CTA\n"
+                    "Use ARCHON to orchestrate approvals and automation safely."
+                )
+            return _PipelineResult(
+                detected_language=language,
+                response_language=language,
+                response_content=content,
+                method="native_reasoning",
+                confidence=0.92,
+            )
+
+    agent = ContentAgent(
+        icp_agent=object(),
+        vernacular_pipeline=_PipelineStub(),  # type: ignore[arg-type]
+        approval_gate=None,
+        publish_targets=[PublishTarget(target_id="stdout", type="stdout", config={})],
+    )
+
+    brief = agent.brief_from_icp(
+        icp={
+            "target_audience": "Clinic operations",
+            "pain_points": ["manual scheduling", "slow follow-up"],
+        },
+        language_code="en",
+        topic="Reducing manual scheduling overhead in clinics",
+    )
+    piece = agent.generate(brief)
+    agent.queue.queue(piece)
+
+    assert brief.keywords
+    assert piece.title.strip()
+    assert piece.body.count("## ") >= 3
+    assert "## CTA" in piece.body
+    assert len(agent.queue.get_queue()) == 1
+
+
+def test_community_pipeline_smoke_relevant_reddit_post_composed_and_gated() -> None:
+    """Community smoke: relevant manual-work post is detected, drafted, gated, and published."""
+
+    class _StaticCollector:
+        def __init__(self, posts: list[CommunityPost]) -> None:
+            self.posts = list(posts)
+
+        def collect(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            del args, kwargs
+            return list(self.posts)
+
+    class _Gate:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def check(self, action: str, context: dict[str, Any], action_id: str) -> str:
+            self.calls.append({"action": action, "context": context, "action_id": action_id})
+            return action_id
+
+    post = CommunityPost(
+        post_id="reddit-smoke-1",
+        source="reddit",
+        title="Doing this manually is painful and feels like spreadsheet hell",
+        body="We still copy paste data daily. Wish there was a tool to automate this.",
+        author="redditor",
+        url="https://reddit.com/r/test/reddit-smoke-1",
+        created_at=time.time(),
+        score=12.0,
+        comments=4,
+    )
+
+    detector = SignalDetector(llm_scorer=lambda _post: 0.3)
+    detection = detector.detect(post)
+    assert detection.is_relevant is True
+
+    gate = _Gate()
+    published: list[str] = []
+    agent = CommunityAgent(
+        detector=detector,
+        reddit_collector=_StaticCollector([post]),
+        hn_collector=_StaticCollector([]),
+        rss_collector=_StaticCollector([]),
+        composer=ResponseComposer(),
+        approval_gate=gate,
+        publisher=lambda item, draft: published.append(f"{item.post_id}:{len(draft.body)}"),
+    )
+
+    results = agent.run({"reddit": {"subreddits": ["saas"]}})
+    assert len(results) == 1
+    assert results[0].action_taken == "responded"
+    assert results[0].approved is True
+    assert gate.calls and gate.calls[0]["action"] == "send_message"
+    assert len(published) == 1
+
+
 @pytest.mark.parametrize(
     ("provider_filter", "case_id"),
     [
@@ -427,6 +650,21 @@ def test_validate_config_dry_run_schema_and_budget_sanity() -> None:
         ("custom-provider-b", 28),
         ("custom-provider-c", 29),
         ("custom-provider-d", 30),
+        (None, 31),
+        (None, 32),
+        ("openrouter", 33),
+        ("openrouter", 34),
+        ("anthropic", 35),
+        ("anthropic", 36),
+        ("openai", 37),
+        ("openai", 38),
+        ("gemini", 39),
+        ("gemini", 40),
+        ("groq", 41),
+        ("mistral", 42),
+        ("together", 43),
+        ("fireworks", 44),
+        ("ollama", 45),
     ],
 )
 def test_validate_config_dry_run_provider_matrix(

@@ -18,11 +18,11 @@ from archon.interfaces.webchat.auth import (
     verify_webchat_token,
 )
 from archon.interfaces.webchat.session_store import (
-    InMemorySessionStore,
     MAX_HISTORY_MESSAGES,
+    InMemorySessionStore,
     Message,
-    SQLiteSessionStore,
     SessionState,
+    SQLiteSessionStore,
     create_session_store,
 )
 
@@ -123,8 +123,7 @@ async def test_in_memory_session_store_crud_ordering_cap_and_isolation() -> None
 
 
 @pytest.mark.asyncio
-async def test_sqlite_session_store_persistence_across_reopen_and_cascade_delete(
-) -> None:
+async def test_sqlite_session_store_persistence_across_reopen_and_cascade_delete() -> None:
     db_path = _temp_db_path("webchat")
     first = SQLiteSessionStore(path=db_path, max_history_messages=MAX_HISTORY_MESSAGES)
     await first.create_session(SessionState(session_id="s1", tenant_id="tenant-1", tier="free"))
@@ -149,7 +148,9 @@ async def test_sqlite_session_store_prune_stale_sessions() -> None:
     store = SQLiteSessionStore(path=db_path, max_history_messages=MAX_HISTORY_MESSAGES)
     await store.create_session(SessionState(session_id="fresh", tenant_id="t1", tier="free"))
     await store.create_session(SessionState(session_id="stale", tenant_id="t2", tier="free"))
-    await store.append_message("stale", Message(session_id="stale", role="user", content="old-message"))
+    await store.append_message(
+        "stale", Message(session_id="stale", role="user", content="old-message")
+    )
 
     stale_updated_at = time.time() - 10_000
     with sqlite3.connect(db_path) as conn:

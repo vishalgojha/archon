@@ -118,7 +118,10 @@ def test_pattern_sharer_privatize_noise_scale_receive_clip_and_merge() -> None:
     noisy_hi_eps = sharer_a.privatize(pattern, epsilon=2.0)
     noisy_lo_eps = sharer_b.privatize(pattern, epsilon=0.25)
 
-    assert noisy_hi_eps.avg_score != pattern.avg_score or noisy_hi_eps.sample_count != pattern.sample_count
+    assert (
+        noisy_hi_eps.avg_score != pattern.avg_score
+        or noisy_hi_eps.sample_count != pattern.sample_count
+    )
     diff_hi = abs(noisy_hi_eps.avg_score - pattern.avg_score)
     diff_lo = abs(noisy_lo_eps.avg_score - pattern.avg_score)
     assert diff_lo >= diff_hi  # lower epsilon => higher expected noise scale
@@ -227,7 +230,9 @@ async def test_hive_consensus_quorum_and_request_flow(monkeypatch: pytest.Monkey
         assert result.vote_counts
 
         # quorum fail: 1/3 < 51%
-        _ConsensusClient.responses["https://peer-2.example.com/federation/consensus"] = _FakeHTTPResponse(500, {})
+        _ConsensusClient.responses["https://peer-2.example.com/federation/consensus"] = (
+            _FakeHTTPResponse(500, {})
+        )
         no_quorum = await consensus.request_consensus("Pick", ["A", "B"], peers, timeout_s=1)
         assert no_quorum.winning_option == "no_quorum"
         assert no_quorum.confidence == 0.0

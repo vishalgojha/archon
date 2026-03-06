@@ -1,9 +1,9 @@
 """Partner ecosystem: registry, revenue share, and viral embed loops."""
 
 from archon.partners.registry import (
-    PARTNER_TIERS,
-    PARTNER_TIER_REVENUE_SHARE,
     PARTNER_STATUSES,
+    PARTNER_TIER_REVENUE_SHARE,
+    PARTNER_TIERS,
     Partner,
     PartnerRegistry,
 )

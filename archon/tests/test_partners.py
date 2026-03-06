@@ -65,10 +65,14 @@ def test_revenue_share_commission_percentage_by_tier(tier: str, expected_percent
     revenue = RevenueShare(registry=registry, path=_temp_path(f"revenue-{tier}"))
 
     partner = registry.register(name=f"{tier} partner", email=f"{tier}@example.com", tier=tier)
-    attribution = revenue.attribute_customer(customer_id=f"customer-{tier}", referral_code=partner.referral_code)
+    attribution = revenue.attribute_customer(
+        customer_id=f"customer-{tier}", referral_code=partner.referral_code
+    )
     assert attribution.partner_id == partner.partner_id
 
-    revenue.record_revenue(customer_id=f"customer-{tier}", amount_usd=1000.0, event_type="subscription")
+    revenue.record_revenue(
+        customer_id=f"customer-{tier}", amount_usd=1000.0, event_type="subscription"
+    )
     now = time.time()
     commission = revenue.calculate_commission(partner.partner_id, now - 60, now + 60)
 

@@ -196,7 +196,9 @@ class ImmutableAuditTrail:
         return str(row["entry_hash"]) if row is not None else ""
 
 
-def _compute_entry_hash(*, prev_hash: str, entry_id: str, timestamp: float, payload_json: str) -> str:
+def _compute_entry_hash(
+    *, prev_hash: str, entry_id: str, timestamp: float, payload_json: str
+) -> str:
     base = f"{prev_hash}{entry_id}{timestamp}{payload_json}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 

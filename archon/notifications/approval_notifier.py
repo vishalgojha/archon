@@ -9,7 +9,6 @@ from archon.core.approval_gate import ApprovalGate
 from archon.notifications.device_registry import DeviceRegistry
 from archon.notifications.push import Notification, PushNotifier
 
-
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 

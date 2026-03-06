@@ -88,7 +88,10 @@ async def test_twilio_backend_success_201(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result.status == "sent"
     assert result.provider_message_id == "SM123"
-    assert _FakeClient.captured["url"] == "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json"
+    assert (
+        _FakeClient.captured["url"]
+        == "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json"
+    )
     assert _FakeClient.captured["data"]["To"] == "whatsapp:+15550001111"
     assert _FakeClient.captured["data"]["From"] == "whatsapp:+14155238886"
     assert _FakeClient.captured["auth"] == ("AC123", "secret")
@@ -102,7 +105,9 @@ async def test_twilio_backend_auth_failure_401(monkeypatch: pytest.MonkeyPatch) 
     _FakeClient.raised = None
     monkeypatch.setattr(wa_module.httpx, "AsyncClient", _FakeClient)
 
-    backend = TwilioBackend(account_sid="AC123", auth_token="bad", from_number="whatsapp:+14155238886")
+    backend = TwilioBackend(
+        account_sid="AC123", auth_token="bad", from_number="whatsapp:+14155238886"
+    )
     result = await backend.send_text("+15550001111", "Hello")
 
     assert result.status == "failed"

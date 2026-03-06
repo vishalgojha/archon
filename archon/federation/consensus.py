@@ -69,9 +69,13 @@ class HiveConsensus:
         peer_targets = [target for target in peer_targets if target is not None]
         invited_count = len(peer_targets)
         if invited_count == 0:
-            return ConsensusResult(winning_option="no_quorum", vote_counts={}, confidence=0.0, participating_peers=[])
+            return ConsensusResult(
+                winning_option="no_quorum", vote_counts={}, confidence=0.0, participating_peers=[]
+            )
 
-        request = ConsensusRequest(question=question, options=normalized_options, requester_id=self.requester_id)
+        request = ConsensusRequest(
+            question=question, options=normalized_options, requester_id=self.requester_id
+        )
         tasks = [
             asyncio.create_task(self._request_vote(peer_id, address, request, timeout_s))
             for peer_id, address in peer_targets
@@ -143,7 +147,9 @@ class HiveConsensus:
                 return None
             weight = self._reputation.get(peer_id, 1.0)
             reasoning = str(data.get("reasoning", ""))
-            return ConsensusVote(voter_id=peer_id, option=option, weight=weight, reasoning=reasoning)
+            return ConsensusVote(
+                voter_id=peer_id, option=option, weight=weight, reasoning=reasoning
+            )
         except Exception:
             return None
 
@@ -153,9 +159,10 @@ def _normalize_peer_descriptor(peer: Any) -> tuple[str, str] | None:
         peer_id = str(peer.get("peer_id") or peer.get("id") or peer.get("address") or "")
         address = str(peer.get("address") or "")
     else:
-        peer_id = str(getattr(peer, "peer_id", "") or getattr(peer, "id", "") or getattr(peer, "address", ""))
+        peer_id = str(
+            getattr(peer, "peer_id", "") or getattr(peer, "id", "") or getattr(peer, "address", "")
+        )
         address = str(getattr(peer, "address", ""))
     if not peer_id or not address:
         return None
     return peer_id, address
-

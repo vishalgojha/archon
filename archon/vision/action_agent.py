@@ -175,7 +175,9 @@ class ActionAgent:
             >>> await action_agent.find_and_click("submit-btn", layout)
         """
 
-        target = next((element for element in layout.elements if element.element_id == element_id), None)
+        target = next(
+            (element for element in layout.elements if element.element_id == element_id), None
+        )
         if target is None:
             raise ValueError(f"Element id not found in layout: {element_id}")
 

@@ -12,8 +12,19 @@ from typing import Any, Literal
 from archon.providers import ProviderRouter
 from archon.vision.screen_capture import ScreenFrame
 
-UIElementType = Literal["button", "input", "link", "text", "image", "checkbox", "dropdown", "unknown"]
-SUPPORTED_UI_TYPES: set[str] = {"button", "input", "link", "text", "image", "checkbox", "dropdown", "unknown"}
+UIElementType = Literal[
+    "button", "input", "link", "text", "image", "checkbox", "dropdown", "unknown"
+]
+SUPPORTED_UI_TYPES: set[str] = {
+    "button",
+    "input",
+    "link",
+    "text",
+    "image",
+    "checkbox",
+    "dropdown",
+    "unknown",
+}
 
 DEFAULT_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "array",

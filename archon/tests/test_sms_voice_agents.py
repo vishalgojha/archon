@@ -135,7 +135,9 @@ async def test_sms_body_warning_and_inbound_stop(monkeypatch: pytest.MonkeyPatch
     assert result.status == "sent"
     assert "warning" in result.metadata
 
-    inbound = agent.handle_inbound({"From": "+15550003333", "Body": "STOP", "Timestamp": "1700000000"})
+    inbound = agent.handle_inbound(
+        {"From": "+15550003333", "Body": "STOP", "Timestamp": "1700000000"}
+    )
     assert inbound is not None
     assert inbound.from_number == "+15550003333"
     assert store.is_unsubscribed("+15550003333") is True
@@ -186,7 +188,9 @@ async def test_voice_initiate_call_gate_and_twiml_payload(monkeypatch: pytest.Mo
     import archon.agents.outreach.voice_agent as voice_module
 
     _reset_fake_client()
-    _FakeAsyncClient.post_queue = [_FakeResponse(201, json_data={"sid": "CA-1", "status": "queued"})]
+    _FakeAsyncClient.post_queue = [
+        _FakeResponse(201, json_data={"sid": "CA-1", "status": "queued"})
+    ]
     monkeypatch.setattr(voice_module.httpx, "AsyncClient", _FakeAsyncClient)
 
     gate = ApprovalGate(default_timeout_seconds=1.0)
@@ -220,7 +224,9 @@ async def test_voice_plain_script_converts_to_twiml(monkeypatch: pytest.MonkeyPa
     import archon.agents.outreach.voice_agent as voice_module
 
     _reset_fake_client()
-    _FakeAsyncClient.post_queue = [_FakeResponse(201, json_data={"sid": "CA-2", "status": "queued"})]
+    _FakeAsyncClient.post_queue = [
+        _FakeResponse(201, json_data={"sid": "CA-2", "status": "queued"})
+    ]
     monkeypatch.setattr(voice_module.httpx, "AsyncClient", _FakeAsyncClient)
 
     gate = ApprovalGate(auto_approve_in_test=True)
@@ -249,7 +255,10 @@ async def test_voice_handle_recording_webhook_transcribes(monkeypatch: pytest.Mo
     _reset_fake_client()
     _FakeAsyncClient.get_queue = [_FakeResponse(200, content=b"audio-bytes")]
     _FakeAsyncClient.post_queue = [
-        _FakeResponse(200, json_data={"text": "Namaste", "language": "hi", "duration": 3.2, "confidence": 0.91})
+        _FakeResponse(
+            200,
+            json_data={"text": "Namaste", "language": "hi", "duration": 3.2, "confidence": 0.91},
+        )
     ]
     monkeypatch.setattr(voice_module.httpx, "AsyncClient", _FakeAsyncClient)
 
@@ -264,7 +273,11 @@ async def test_voice_handle_recording_webhook_transcribes(monkeypatch: pytest.Mo
     )
 
     result = await agent.handle_recording_webhook(
-        {"CallSid": "CA-REC-1", "RecordingUrl": "https://api.twilio.com/recordings/RE123", "RecordingDuration": "3"}
+        {
+            "CallSid": "CA-REC-1",
+            "RecordingUrl": "https://api.twilio.com/recordings/RE123",
+            "RecordingDuration": "3",
+        }
     )
 
     assert result.call_sid == "CA-REC-1"
@@ -281,7 +294,9 @@ async def test_voice_handle_recording_webhook_transcribes(monkeypatch: pytest.Mo
 def test_vernacular_adapter_llm_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     import archon.agents.outreach.voice_adapter as adapter_module
 
-    fake_langdetect = types.SimpleNamespace(detect=lambda _text: (_ for _ in ()).throw(RuntimeError("fail")))
+    fake_langdetect = types.SimpleNamespace(
+        detect=lambda _text: (_ for _ in ()).throw(RuntimeError("fail"))
+    )
     monkeypatch.setitem(sys.modules, "langdetect", fake_langdetect)
     adapter = adapter_module.VernacularAdapter(
         detect_fn=lambda _text: "es",

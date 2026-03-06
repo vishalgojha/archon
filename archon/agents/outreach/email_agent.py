@@ -9,9 +9,9 @@ from archon.agents.base_agent import AgentResult, BaseAgent
 from archon.agents.outreach.email_backends import (
     EmailBackend,
     EmailPayload,
-    SMTPBackend,
     SendGridBackend,
     SendResult,
+    SMTPBackend,
     UnsubscribeStore,
     build_email_backend_from_env,
     build_unsubscribe_footer,

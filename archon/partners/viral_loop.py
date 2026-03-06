@@ -240,8 +240,12 @@ class ViralLoop:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_impressions_partner ON impressions(partner_id, timestamp)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_conversions_partner ON conversions(partner_id, counted, timestamp)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_impressions_partner ON impressions(partner_id, timestamp)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversions_partner ON conversions(partner_id, counted, timestamp)"
+            )
 
     @staticmethod
     def _normalize_fingerprint(raw: str) -> str:

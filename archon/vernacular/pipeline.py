@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 
 from archon.vernacular.detector import DetectionResult, LanguageDetector
-from archon.vernacular.reasoner import ReasoningResult, VernacularReasoner
+from archon.vernacular.reasoner import VernacularReasoner
 from archon.vernacular.translator import Translator
 
 
@@ -55,13 +55,21 @@ class VernacularPipeline:
             )
 
         detected = self._detect_with_cache(payload)
-        response_language = self._normalize_code(force_language) if force_language else detected.language_code
+        response_language = (
+            self._normalize_code(force_language) if force_language else detected.language_code
+        )
         if not response_language or response_language == "unknown":
             response_language = "en"
 
         if self.reasoner.supports_native_reasoning(response_language):
-            reasoning = self.reasoner.reason(payload, response_language, context={"detected_language": detected.language_code})
-            method = "native_reasoning" if response_language == detected.language_code else "translated_reasoning"
+            reasoning = self.reasoner.reason(
+                payload, response_language, context={"detected_language": detected.language_code}
+            )
+            method = (
+                "native_reasoning"
+                if response_language == detected.language_code
+                else "translated_reasoning"
+            )
             return PipelineResult(
                 detected_language=detected.language_code,
                 response_language=reasoning.language_code,
@@ -70,7 +78,9 @@ class VernacularPipeline:
                 confidence=round(min(1.0, reasoning.confidence), 3),
             )
 
-        fallback = self.reasoner.reason(payload, "en", context={"detected_language": detected.language_code})
+        fallback = self.reasoner.reason(
+            payload, "en", context={"detected_language": detected.language_code}
+        )
         content = fallback.content
         if response_language != "en":
             translated = self.translator.translate(fallback.content, "en", response_language)

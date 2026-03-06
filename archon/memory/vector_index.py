@@ -20,7 +20,9 @@ class SearchResult:
 class VectorIndex:
     """Vector index that defaults to pure-python cosine similarity search."""
 
-    def __init__(self, *, backend: str | None = None, collection_name: str = "archon_memory") -> None:
+    def __init__(
+        self, *, backend: str | None = None, collection_name: str = "archon_memory"
+    ) -> None:
         selected = (backend or os.getenv("ARCHON_VECTOR_BACKEND", "python")).strip().lower()
         self._backend = "python"
         self._vectors: dict[str, tuple[list[float], dict[str, Any]]] = {}
@@ -74,9 +76,17 @@ class VectorIndex:
                 distance = float(distances[idx]) if idx < len(distances) else 2.0
                 similarity = max(0.0, 1.0 - distance)
                 if similarity >= min_similarity:
-                    metadata = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
+                    metadata = (
+                        metadatas[idx]
+                        if idx < len(metadatas) and isinstance(metadatas[idx], dict)
+                        else {}
+                    )
                     output.append(
-                        SearchResult(id=str(item_id), similarity=round(similarity, 6), metadata=dict(metadata))
+                        SearchResult(
+                            id=str(item_id),
+                            similarity=round(similarity, 6),
+                            metadata=dict(metadata),
+                        )
                     )
             return output
 
@@ -85,7 +95,9 @@ class VectorIndex:
             similarity = cosine_similarity(query_vector, vector)
             if similarity >= min_similarity:
                 scored.append(
-                    SearchResult(id=item_id, similarity=round(similarity, 6), metadata=dict(metadata))
+                    SearchResult(
+                        id=item_id, similarity=round(similarity, 6), metadata=dict(metadata)
+                    )
                 )
         scored.sort(key=lambda row: row.similarity, reverse=True)
         return scored[:top_k]
@@ -117,4 +129,3 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm_a <= 0.0 or norm_b <= 0.0:
         return 0.0
     return dot / (math.sqrt(norm_a) * math.sqrt(norm_b))
-

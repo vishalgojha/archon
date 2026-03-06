@@ -100,4 +100,3 @@ def _suggest_greeting(intent: str) -> str:
     if intent == "portfolio":
         return "Want to explore selected projects by category?"
     return "How can I help today?"
-

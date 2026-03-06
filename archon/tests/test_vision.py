@@ -77,7 +77,9 @@ class _FakeRouter:
     async def invoke(self, *, role: str, prompt: str):  # type: ignore[no-untyped-def]
         self.calls += 1
         self.prompts.append(prompt)
-        return types.SimpleNamespace(text=self.response_text, provider="fake", model=f"{role}-model")
+        return types.SimpleNamespace(
+            text=self.response_text, provider="fake", model=f"{role}-model"
+        )
 
 
 @pytest.mark.asyncio

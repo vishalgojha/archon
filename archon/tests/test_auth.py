@@ -13,7 +13,9 @@ from archon.api import auth as auth_module
 
 
 @pytest.fixture
-def auth_app(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[FastAPI, auth_module.RateLimiter], None, None]:
+def auth_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[tuple[FastAPI, auth_module.RateLimiter], None, None]:
     monkeypatch.setenv("ARCHON_JWT_SECRET", "test-secret")
     previous = auth_module.get_rate_limiter()
     limiter = auth_module.RateLimiter()

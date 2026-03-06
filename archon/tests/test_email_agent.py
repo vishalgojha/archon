@@ -11,9 +11,9 @@ import pytest
 from archon.agents.outreach.email_agent import (
     EmailAgent,
     EmailPayload,
-    SMTPBackend,
     SendGridBackend,
     SendResult,
+    SMTPBackend,
     UnsubscribeStore,
     personalize,
 )
@@ -112,7 +112,9 @@ async def test_smtp_backend_failure_returns_failed_send_result(
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, *, text: str = "", headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, status_code: int, *, text: str = "", headers: dict[str, str] | None = None
+    ) -> None:
         self.status_code = status_code
         self.text = text
         self.headers = headers or {}
@@ -131,7 +133,9 @@ class _FakeClient:
     async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         del exc_type, exc, tb
 
-    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str]) -> _FakeResponse:
+    async def post(
+        self, url: str, *, json: dict[str, Any], headers: dict[str, str]
+    ) -> _FakeResponse:
         self.__class__.captured = {"url": url, "json": json, "headers": headers}
         return self.__class__.response
 

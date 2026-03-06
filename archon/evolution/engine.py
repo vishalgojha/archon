@@ -80,7 +80,9 @@ class WorkflowDefinition:
         for step in self.steps:
             for dep in step.dependencies:
                 if dep not in step_map:
-                    raise ValueError(f"Missing dependency '{dep}' in workflow '{self.workflow_id}'.")
+                    raise ValueError(
+                        f"Missing dependency '{dep}' in workflow '{self.workflow_id}'."
+                    )
 
         visited: dict[str, int] = {}
 
@@ -136,7 +138,9 @@ class SelfEvolutionEngine:
         self._workflows: dict[str, WorkflowDefinition] = {}
         self._staged: dict[str, StagedWorkflow] = {}
 
-    def create_workflow(self, workflow: WorkflowDefinition, *, actor: str = "system") -> WorkflowDefinition:
+    def create_workflow(
+        self, workflow: WorkflowDefinition, *, actor: str = "system"
+    ) -> WorkflowDefinition:
         """Register a new workflow and emit audit event."""
 
         self.validate_workflow(workflow)
@@ -182,7 +186,11 @@ class SelfEvolutionEngine:
         proposal = _extract_json_object(response_text)
 
         candidate_name = str(proposal.get("name", original.name)) if proposal else original.name
-        candidate_steps = _steps_from_proposal(proposal.get("steps"), original.steps) if proposal else original.steps
+        candidate_steps = (
+            _steps_from_proposal(proposal.get("steps"), original.steps)
+            if proposal
+            else original.steps
+        )
         candidate_metadata = dict(original.metadata)
         if proposal and isinstance(proposal.get("metadata"), dict):
             candidate_metadata.update(proposal["metadata"])
@@ -200,7 +208,9 @@ class SelfEvolutionEngine:
             if proposal
             else response_text.strip()
         ) or "Debate-mode optimization proposal generated."
-        return OptimizationResult(original=original, candidate=candidate, improvement_rationale=rationale)
+        return OptimizationResult(
+            original=original, candidate=candidate, improvement_rationale=rationale
+        )
 
     def stage(
         self, optimization_result: OptimizationResult, *, actor: str = "self_evolution_engine"
@@ -232,7 +242,9 @@ class SelfEvolutionEngine:
         )
         return staged
 
-    def rollback(self, workflow_id: str, *, actor: str = "self_evolution_engine") -> WorkflowDefinition:
+    def rollback(
+        self, workflow_id: str, *, actor: str = "self_evolution_engine"
+    ) -> WorkflowDefinition:
         """Restore previous workflow version from audit history."""
 
         history = self.audit_trail.get_history(workflow_id)
@@ -254,7 +266,9 @@ class SelfEvolutionEngine:
                         },
                     )
                     return restored
-        raise RuntimeError(f"No rollback target found in audit trail for workflow_id={workflow_id}.")
+        raise RuntimeError(
+            f"No rollback target found in audit trail for workflow_id={workflow_id}."
+        )
 
     def _append_event(
         self, *, event_type: str, workflow_id: str, actor: str, payload: dict[str, Any]
@@ -319,9 +333,17 @@ def _steps_from_proposal(raw_steps: Any, fallback: list[Step]) -> list[Step]:
             continue
         config = dict(row.get("config", {})) if isinstance(row.get("config"), dict) else {}
         dependencies_raw = row.get("dependencies", [])
-        dependencies = [str(dep) for dep in dependencies_raw] if isinstance(dependencies_raw, list) else []
+        dependencies = (
+            [str(dep) for dep in dependencies_raw] if isinstance(dependencies_raw, list) else []
+        )
         parsed_steps.append(
-            Step(step_id=step_id, agent=agent, action=action, config=config, dependencies=dependencies)
+            Step(
+                step_id=step_id,
+                agent=agent,
+                action=action,
+                config=config,
+                dependencies=dependencies,
+            )
         )
     return parsed_steps or list(fallback)
 
@@ -335,7 +357,10 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         body = "\n".join(lines).strip()
-    for candidate in (body, body[body.find("{") : body.rfind("}") + 1] if "{" in body and "}" in body else ""):
+    for candidate in (
+        body,
+        body[body.find("{") : body.rfind("}") + 1] if "{" in body and "}" in body else "",
+    ):
         if not candidate:
             continue
         try:
@@ -345,4 +370,3 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
     return None
-

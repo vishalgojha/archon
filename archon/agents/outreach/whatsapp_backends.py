@@ -94,7 +94,9 @@ class TwilioBackend:
         payload = {"To": to_number, "From": self.from_number, "Body": body}
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(url, data=payload, auth=(self.account_sid, self.auth_token))
+                response = await client.post(
+                    url, data=payload, auth=(self.account_sid, self.auth_token)
+                )
             if response.status_code in {200, 201}:
                 data = _safe_json(response)
                 return SendResult(
@@ -213,7 +215,9 @@ class MetaBackend:
                 error=f"HTTP {response.status_code}: {response.text}",
             )
         except Exception as exc:  # pragma: no cover
-            return SendResult(to=strip_whatsapp_prefix(to), status="failed", provider="meta", error=str(exc))
+            return SendResult(
+                to=strip_whatsapp_prefix(to), status="failed", provider="meta", error=str(exc)
+            )
 
 
 def build_whatsapp_backend_from_env() -> WhatsAppBackend:

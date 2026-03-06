@@ -114,7 +114,9 @@ class SMSAgent(BaseAgent):
         if len(text) > 160:
             metadata["warning"] = "Body exceeds 160 chars; carrier may send as segmented SMS."
 
-        denied = await self._guard_send(target, text, event_sink=event_sink, timeout_seconds=timeout_seconds)
+        denied = await self._guard_send(
+            target, text, event_sink=event_sink, timeout_seconds=timeout_seconds
+        )
         if denied is not None:
             denied.metadata.update(metadata)
             self._audit(denied, text)
@@ -135,7 +137,9 @@ class SMSAgent(BaseAgent):
         payload = {"To": target, "From": self.from_number, "Body": text}
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(url, data=payload, auth=(self.account_sid, self.auth_token))
+                response = await client.post(
+                    url, data=payload, auth=(self.account_sid, self.auth_token)
+                )
             if response.status_code in {200, 201}:
                 data = _safe_json(response)
                 result = SendResult(

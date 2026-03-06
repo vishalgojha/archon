@@ -141,7 +141,8 @@ class MemoryStore:
         memory_ids = [
             hit.id
             for hit in raw_hits
-            if str(hit.metadata.get("tenant_id")) == tenant_id and not bool(hit.metadata.get("forgotten"))
+            if str(hit.metadata.get("tenant_id")) == tenant_id
+            and not bool(hit.metadata.get("forgotten"))
         ]
         memory_map = self._fetch_memories(memory_ids, tenant_id=tenant_id)
         scored: list[ScoredMemory] = []
@@ -332,7 +333,9 @@ class MemoryStore:
                 },
             )
 
-    def _fetch_memories(self, memory_ids: list[str], *, tenant_id: str) -> dict[str, EpisodicMemory]:
+    def _fetch_memories(
+        self, memory_ids: list[str], *, tenant_id: str
+    ) -> dict[str, EpisodicMemory]:
         if not memory_ids:
             return {}
         placeholders = ",".join(["?"] * len(memory_ids))
@@ -370,7 +373,9 @@ def _chain_from_row(row: sqlite3.Row) -> CausalChain:
         cause=row["cause"],
         effect=row["effect"],
         confidence=float(row["confidence"]),
-        supporting_memory_ids=[str(item) for item in _safe_json_list(row["supporting_memory_ids_json"])],
+        supporting_memory_ids=[
+            str(item) for item in _safe_json_list(row["supporting_memory_ids_json"])
+        ],
         timestamp=float(row["timestamp"]),
     )
 

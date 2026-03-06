@@ -93,8 +93,7 @@ class ErrorRecovery:
             (
                 element
                 for element in layout.elements
-                if element.type == "button"
-                and element.text.strip().lower() == button_text.lower()
+                if element.type == "button" and element.text.strip().lower() == button_text.lower()
             ),
             None,
         )
@@ -143,9 +142,13 @@ class ErrorRecovery:
             return
 
         available = {element.element_id for element in layout.elements}
-        missing = [element_id for element_id in self.expected_elements if element_id not in available]
+        missing = [
+            element_id for element_id in self.expected_elements if element_id not in available
+        ]
         if missing:
-            raise UnexpectedUIStateError(f"Unexpected UI state. Missing expected elements: {missing}")
+            raise UnexpectedUIStateError(
+                f"Unexpected UI state. Missing expected elements: {missing}"
+            )
 
 
 def _popup_message(texts: list[str]) -> str:
@@ -173,4 +176,3 @@ def _select_button_text(buttons: list[str], strategy: str) -> str | None:
         if match is not None:
             return match
     return buttons[0]
-

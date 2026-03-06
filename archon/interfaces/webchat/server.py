@@ -28,6 +28,7 @@ from archon.interfaces.webchat.session_store import (
     SessionState,
     create_session_store,
 )
+from archon.vernacular.streaming import StreamingTranslator
 
 
 @dataclass(slots=True)
@@ -164,7 +165,9 @@ def create_webchat_app(
         session = await runtime.session_store.get_session(session_id)
         if session is None:
             session = await runtime.session_store.create_session(
-                SessionState(session_id=session_id, tenant_id=identity.tenant_id, tier=identity.tier)
+                SessionState(
+                    session_id=session_id, tenant_id=identity.tenant_id, tier=identity.tier
+                )
             )
         rows = await runtime.session_store.get_messages(session_id, last_n=10)
         return {
@@ -258,7 +261,9 @@ def create_webchat_app(
                     continue
 
                 if action in {"approve", "deny"}:
-                    request_id = str(payload.get("request_id", "")).strip()
+                    request_id = str(
+                        payload.get("request_id") or payload.get("action_id") or ""
+                    ).strip()
                     if not request_id:
                         await websocket.send_json(
                             {"type": "approval_result", "ok": False, "error": "request_id missing"}
@@ -275,17 +280,29 @@ def create_webchat_app(
                     continue
 
                 if action != "message":
-                    await websocket.send_json({"type": "error", "error": f"Unknown action '{action}'."})
+                    await websocket.send_json(
+                        {"type": "error", "error": f"Unknown action '{action}'."}
+                    )
                     continue
 
                 content = str(payload.get("content", "")).strip()
                 if not content:
                     await websocket.send_json({"type": "error", "error": "content is required."})
                     continue
+                if content == "__approval_context__":
+                    await _send_approval_context(
+                        websocket=websocket,
+                        runtime=runtime,
+                        action_id=str(payload.get("action_id", "")).strip(),
+                    )
+                    continue
                 if current_turn and not current_turn.done():
                     await websocket.send_json({"type": "error", "error": "busy"})
                     continue
 
+                translation_mode = (
+                    str(payload.get("translation_mode", "off")).strip().lower() or "off"
+                )
                 current_turn = asyncio.create_task(
                     _run_chat_turn(
                         websocket=websocket,
@@ -293,6 +310,7 @@ def create_webchat_app(
                         session_id=session_id,
                         tenant_id=identity.tenant_id,
                         content=content,
+                        translation_mode=translation_mode,
                     )
                 )
         except WebSocketDisconnect:
@@ -355,7 +373,12 @@ async def _handle_approval_action(
 ) -> None:
     if runtime.orchestrator is None:
         await websocket.send_json(
-            {"type": "approval_result", "ok": False, "request_id": request_id, "error": "no_orchestrator"}
+            {
+                "type": "approval_result",
+                "ok": False,
+                "request_id": request_id,
+                "error": "no_orchestrator",
+            }
         )
         return
     if action == "approve":
@@ -379,6 +402,7 @@ async def _run_chat_turn(
     session_id: str,
     tenant_id: str,
     content: str,
+    translation_mode: str = "off",
 ) -> None:
     await runtime.session_store.append_message(
         session_id=session_id,
@@ -397,9 +421,40 @@ async def _run_chat_turn(
             session_id=session_id,
             prompt=content,
         )
-        for token in _tokenize(reply):
-            await websocket.send_json({"type": "assistant_token", "token": token})
-            await asyncio.sleep(0)
+        mode = (translation_mode or "off").strip().lower()
+        if mode == "off":
+            for token in _tokenize(reply):
+                await websocket.send_json({"type": "assistant_token", "token": token})
+                await asyncio.sleep(0)
+        else:
+            translator = StreamingTranslator()
+            tokens = _tokenize(reply)
+            if mode == "auto":
+                async for translated in translator.stream_detect_and_translate(tokens):
+                    await websocket.send_json(
+                        {
+                            "type": "token",
+                            "content": translated.content,
+                            "original": translated.content,
+                            "lang": translated.target_lang,
+                        }
+                    )
+                    await asyncio.sleep(0)
+            else:
+                async for original, translated in translator.stream_translate_with_metadata(
+                    tokens,
+                    source_lang="en",
+                    target_lang=mode,
+                ):
+                    await websocket.send_json(
+                        {
+                            "type": "token",
+                            "content": translated.content,
+                            "original": original,
+                            "lang": translated.target_lang,
+                        }
+                    )
+                    await asyncio.sleep(0)
         assistant = await runtime.session_store.append_message(
             session_id=session_id,
             message=Message(
@@ -415,6 +470,43 @@ async def _run_chat_turn(
         raise
     except Exception as exc:
         await websocket.send_json({"type": "error", "error": str(exc)})
+
+
+async def _send_approval_context(
+    *,
+    websocket: WebSocket,
+    runtime: WebChatRuntime,
+    action_id: str,
+) -> None:
+    request_id = str(action_id or "").strip()
+    if not request_id:
+        await websocket.send_json({"type": "error", "error": "action_id is required."})
+        return
+    if runtime.orchestrator is None:
+        await websocket.send_json({"type": "error", "error": "no_orchestrator"})
+        return
+
+    gate = runtime.orchestrator.approval_gate
+    pending = [row for row in gate.pending_actions if str(row.get("action_id", "")) == request_id]
+    if not pending:
+        await websocket.send_json(
+            {"type": "error", "error": "approval_request_not_found", "action_id": request_id}
+        )
+        return
+
+    row = pending[0]
+    created_at = float(row.get("created_at", time.time()))
+    elapsed = max(0.0, time.time() - created_at)
+    timeout_remaining = max(0.0, float(gate.default_timeout_seconds) - elapsed)
+    await websocket.send_json(
+        {
+            "type": "approval_context",
+            "action_id": request_id,
+            "action": row.get("action"),
+            "context": row.get("context", {}),
+            "timeout_remaining_s": round(timeout_remaining, 3),
+        }
+    )
 
 
 async def _assistant_reply(

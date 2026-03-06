@@ -23,7 +23,9 @@ class _DummyRouter:
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, *, json_data: dict[str, Any] | None = None, text: str = "") -> None:
+    def __init__(
+        self, status_code: int, *, json_data: dict[str, Any] | None = None, text: str = ""
+    ) -> None:
         self.status_code = status_code
         self._json_data = json_data
         self.text = text
@@ -153,7 +155,9 @@ async def test_connection_agent_denial_blocks_send(monkeypatch: pytest.MonkeyPat
     async def deny_sink(event: dict[str, Any]) -> None:
         gate.deny(str(event["request_id"]), reason="policy")
 
-    result = await agent.send_connection_request("urn:li:person:target", "hello", event_sink=deny_sink)
+    result = await agent.send_connection_request(
+        "urn:li:person:target", "hello", event_sink=deny_sink
+    )
 
     assert result.status == "denied:policy"
     assert _FakeAsyncClient.calls == []
@@ -244,7 +248,9 @@ async def test_linkedin_agent_research_and_connect_personalizes_note_and_audits(
 class _StubResearcher:
     async def fetch_profile(self, linkedin_url: str) -> LinkedInProfile:
         urn = to_urn(linkedin_url)
-        return LinkedInProfile(urn=urn, name=linkedin_url, headline="", company="", location="", summary="", skills=[])
+        return LinkedInProfile(
+            urn=urn, name=linkedin_url, headline="", company="", location="", summary="", skills=[]
+        )
 
 
 class _StubMessageAgent:

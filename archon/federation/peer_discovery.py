@@ -122,4 +122,3 @@ def _validate_address(address: str, *, production_mode: bool) -> str:
     if production_mode and host in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("Localhost peer addresses are not allowed in production mode.")
     return parsed.geturl().rstrip("/")
-

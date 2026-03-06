@@ -41,12 +41,16 @@ class ProfileResearcher:
         cached = self._get_cached(urn)
         if cached is not None:
             return cached
-        payload = await http_json("GET", f"{_API_BASE}/people/{quote(urn, safe='')}", token=self.access_token)
+        payload = await http_json(
+            "GET", f"{_API_BASE}/people/{quote(urn, safe='')}", token=self.access_token
+        )
         profile = profile_from_payload(payload, fallback_urn=urn)
         self._put_cache(profile)
         return profile
 
-    async def fetch_connections(self, member_urn: str, max_results: int = 100) -> list[LinkedInProfile]:
+    async def fetch_connections(
+        self, member_urn: str, max_results: int = 100
+    ) -> list[LinkedInProfile]:
         """Fetch a member's connections. Example: `await fetch_connections("urn:li:person:1")`."""
 
         payload = await http_json(
@@ -134,7 +138,12 @@ class ConnectionAgent:
         try:
             await self.approval_gate.guard(
                 action_type="send_message",
-                payload={"channel": "linkedin", "operation": "connect", "to": target, "note": trimmed_note},
+                payload={
+                    "channel": "linkedin",
+                    "operation": "connect",
+                    "to": target,
+                    "note": trimmed_note,
+                },
                 event_sink=event_sink,
                 timeout_seconds=timeout_seconds,
             )
@@ -153,7 +162,9 @@ class ConnectionAgent:
                 "sent",
                 provider_request_id=str(data.get("id") or data.get("requestId") or "") or None,
             )
-        return ConnectionResult(target, "failed", error=f"HTTP {response.status_code}: {response.text}")
+        return ConnectionResult(
+            target, "failed", error=f"HTTP {response.status_code}: {response.text}"
+        )
 
     async def check_connection_status(self, to_urn_value: str) -> str:
         """Check status. Returns `connected|pending|none`."""
@@ -202,7 +213,12 @@ class MessageAgent:
         try:
             await self.approval_gate.guard(
                 action_type="send_message",
-                payload={"channel": "linkedin", "operation": "dm", "to": target, "body_preview": body[:200]},
+                payload={
+                    "channel": "linkedin",
+                    "operation": "dm",
+                    "to": target,
+                    "body_preview": body[:200],
+                },
                 event_sink=event_sink,
                 timeout_seconds=timeout_seconds,
             )
@@ -252,7 +268,9 @@ async def http_raw(
         return await client.request(method, url, headers=headers(token), params=params, json=json)
 
 
-async def http_json(method: str, url: str, *, token: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def http_json(
+    method: str, url: str, *, token: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
     response = await http_raw(method, url, token=token, params=params)
     return safe_json(response) if response.status_code == 200 else {}
 
@@ -263,4 +281,3 @@ def safe_json(response: httpx.Response) -> dict[str, Any]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
-

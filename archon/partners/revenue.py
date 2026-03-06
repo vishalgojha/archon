@@ -288,7 +288,9 @@ class RevenueShare:
             amount_usd=float(refreshed["amount_usd"]),
             period=str(refreshed["period"]),
             status=str(refreshed["status"]),
-            transactions=json.loads(str(refreshed["transactions"])) if refreshed["transactions"] else [],
+            transactions=json.loads(str(refreshed["transactions"]))
+            if refreshed["transactions"]
+            else [],
         )
 
     def get_dashboard(self, partner_id: str) -> PartnerDashboard:
@@ -403,10 +405,18 @@ class RevenueShare:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_attributions_partner ON attributions(partner_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_revenue_customer ON revenue_events(customer_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_revenue_created ON revenue_events(created_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_commissions_partner ON commissions(partner_id, status)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_attributions_partner ON attributions(partner_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_revenue_customer ON revenue_events(customer_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_revenue_created ON revenue_events(created_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_commissions_partner ON commissions(partner_id, status)"
+            )
 
     @staticmethod
     def _to_attribution(record: sqlite3.Row | None) -> Attribution | None:

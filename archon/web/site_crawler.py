@@ -44,6 +44,7 @@ _BINARY_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 
+
 @dataclass(slots=True, frozen=True)
 class PageData:
     """Normalized page extraction payload."""
@@ -111,12 +112,17 @@ class SiteCrawler:
 
         while queue and len(pages) < max_pages:
             batch: list[tuple[str, int]] = []
-            while queue and len(batch) < self.max_concurrent and len(batch) + len(pages) < max_pages:
+            while (
+                queue and len(batch) < self.max_concurrent and len(batch) + len(pages) < max_pages
+            ):
                 batch.append(queue.popleft())
             if not batch:
                 break
 
-            tasks = [self._crawl_fetch_one(current_url, current_depth) for current_url, current_depth in batch]
+            tasks = [
+                self._crawl_fetch_one(current_url, current_depth)
+                for current_url, current_depth in batch
+            ]
             fetched = await asyncio.gather(*tasks)
 
             for current_url, current_depth, page in fetched:

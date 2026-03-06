@@ -19,7 +19,9 @@ def test_validate_command_calls_validator(monkeypatch: pytest.MonkeyPatch) -> No
         return 0
 
     monkeypatch.setattr("archon.archon_cli.validate_config_main", fake_validate_main)
-    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": object())
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli, ["validate"])
@@ -29,7 +31,9 @@ def test_validate_command_calls_validator(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_token_create_prints_decodable_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": object())
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
     runner = CliRunner()
     secret = "test-secret-123"
     result = runner.invoke(
@@ -65,9 +69,13 @@ def test_memory_search_formats_results(monkeypatch: pytest.MonkeyPatch) -> None:
             self.closed = True
 
     monkeypatch.setattr("archon.archon_cli.MemoryStore", FakeStore)
-    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": object())
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
     runner = CliRunner()
-    result = runner.invoke(cli, ["memory", "search", "alpha", "--tenant", "tenant-a", "--top-k", "5"])
+    result = runner.invoke(
+        cli, ["memory", "search", "alpha", "--tenant", "tenant-a", "--top-k", "5"]
+    )
     assert result.exit_code == 0
     assert "mem-1" in result.output
     assert "0.912" in result.output
@@ -91,7 +99,9 @@ def test_peers_list_outputs_table(monkeypatch: pytest.MonkeyPatch) -> None:
             return None
 
     monkeypatch.setattr("archon.archon_cli.PeerRegistry", FakeRegistry)
-    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": object())
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
     runner = CliRunner()
     result = runner.invoke(cli, ["peers", "list"])
     assert result.exit_code == 0
@@ -107,4 +117,3 @@ def test_version_command_prints_version_string(monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(cli, ["version"])
     assert result.exit_code == 0
     assert "ARCHON 9.9.9 (git abc1234)" in result.output
-

@@ -114,7 +114,9 @@ class OptimizerAgent:
         confidence = round(max(0.0, min(1.0, 1.0 - p_value)), 4)
 
         control_rate = control_conv / control.impressions if control.impressions else 0.0
-        challenger_rate = challenger_conv / challenger.impressions if challenger.impressions else 0.0
+        challenger_rate = (
+            challenger_conv / challenger.impressions if challenger.impressions else 0.0
+        )
         lift_pct = 0.0
         if control_rate > 0:
             lift_pct = ((challenger_rate - control_rate) / control_rate) * 100.0
@@ -196,4 +198,3 @@ def _chi_square_p_value(table: list[list[int]]) -> float:
 
     # df=1 => CDF relationship with Gaussian error function.
     return math.erfc(math.sqrt(max(0.0, chi2) / 2.0))
-

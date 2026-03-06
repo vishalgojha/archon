@@ -37,7 +37,9 @@ class Translator:
         payload = str(text or "")
 
         if source == target:
-            return TranslationResult(text=payload, source=source, target=target, method="passthrough")
+            return TranslationResult(
+                text=payload, source=source, target=target, method="passthrough"
+            )
 
         prompt = (
             "Translate the text from {source} to {target}. "
@@ -51,7 +53,9 @@ class Translator:
             translated = payload
         return TranslationResult(text=translated, source=source, target=target, method="llm")
 
-    def translate_batch(self, texts: list[str], source: str, target: str) -> list[TranslationResult]:
+    def translate_batch(
+        self, texts: list[str], source: str, target: str
+    ) -> list[TranslationResult]:
         return [self.translate(item, source, target) for item in texts]
 
     def back_translate_verify(self, text: str, source: str, target: str) -> VerificationResult:

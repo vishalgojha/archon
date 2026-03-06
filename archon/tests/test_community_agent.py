@@ -13,9 +13,9 @@ from archon.agents.community.community_agent import (
     CommunityPost,
     DraftResponse,
     HNCollector,
-    RSSCollector,
     RedditCollector,
     ResponseComposer,
+    RSSCollector,
     SignalDetector,
 )
 
@@ -194,7 +194,9 @@ def test_response_composer_helpful_tone_and_archon_mention_logic() -> None:
     assert not relevant.body.lstrip().startswith("ARCHON")
     assert relevant.includes_archon_mention is True
 
-    neutral_post = _post(post_id="r2", title="Question about naming conventions", body="No pain point here.")
+    neutral_post = _post(
+        post_id="r2", title="Question about naming conventions", body="No pain point here."
+    )
     neutral = composer.compose(neutral_post, [])
     assert neutral.includes_archon_mention is False
 

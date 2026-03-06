@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
+from archon.core.approval_gate import ApprovalGate, EventSink
+from archon.notifications.deeplink import DeepLinkRouter
 from archon.notifications.device_registry import DeviceRegistry, DeviceToken
 
 try:  # pragma: no cover - optional dependency
@@ -125,7 +129,9 @@ class FCMBackend:
             response_body=body,
             provider="fcm",
             stale=stale,
-            error=None if 200 <= int(response.status_code) < 300 else body or f"http_{response.status_code}",
+            error=None
+            if 200 <= int(response.status_code) < 300
+            else body or f"http_{response.status_code}",
         )
 
     def _oauth_access_token(self) -> str:
@@ -229,7 +235,9 @@ class APNsBackend:
             response_body=body,
             provider="apns",
             stale=stale,
-            error=None if 200 <= int(response.status_code) < 300 else body or f"http_{response.status_code}",
+            error=None
+            if 200 <= int(response.status_code) < 300
+            else body or f"http_{response.status_code}",
         )
 
     def _generate_jwt(self) -> str:
@@ -258,10 +266,15 @@ class PushNotifier:
         *,
         fcm_backend: FCMBackend | None = None,
         apns_backend: APNsBackend | None = None,
+        approval_gate: ApprovalGate | None = None,
+        event_sink: EventSink | None = None,
     ) -> None:
         self.registry = registry
         self.fcm_backend = fcm_backend or FCMBackend()
         self.apns_backend = apns_backend or APNsBackend()
+        self.approval_gate = approval_gate or ApprovalGate(auto_approve_in_test=True)
+        self.event_sink = event_sink
+        self._deeplink_router = DeepLinkRouter()
 
     def send(self, device_token: DeviceToken, notification: Notification) -> PushResult:
         backend = self._backend_for_device(device_token)
@@ -286,6 +299,59 @@ class PushNotifier:
             results.append(self.send(token, notification))
         return results
 
+    async def send_approval_request(
+        self,
+        tenant_id: str,
+        action_id: str,
+        action_name: str,
+        gate_timeout_s: float,
+    ) -> list[PushResult]:
+        """Send approval push with deep-link and schedule one midpoint reminder."""
+
+        payload = self._deeplink_router.build_approval_push_payload(
+            tenant_id=str(tenant_id),
+            action_id=str(action_id),
+            action_name=str(action_name),
+        )
+        await self._gate_external_push(
+            {
+                "tenant_id": str(tenant_id),
+                "action_id": str(action_id),
+                "action_name": str(action_name),
+                "gate_timeout_s": float(gate_timeout_s),
+                "deep_link": payload.data.get("deep_link", ""),
+            }
+        )
+
+        notification = Notification(
+            title=payload.title,
+            body=payload.body,
+            data=dict(payload.data),
+            badge=1,
+            sound="default",
+        )
+        results = self.send_to_tenant(str(tenant_id), notification)
+
+        reminder_delay = max(0.0, float(gate_timeout_s) * 0.5)
+        if reminder_delay > 0:
+
+            async def _send_reminder() -> None:
+                await asyncio.sleep(reminder_delay)
+                reminder_data = dict(payload.data)
+                reminder_data["reminder"] = "true"
+                reminder = Notification(
+                    title="Approval reminder",
+                    body=f"ARCHON still needs approval for {action_name}",
+                    data=reminder_data,
+                    badge=1,
+                    sound="default",
+                )
+                self.send_to_tenant(str(tenant_id), reminder)
+
+            asyncio.create_task(_send_reminder())
+
+        return results
+
     def _backend_for_device(self, device_token: DeviceToken) -> FCMBackend | APNsBackend | None:
         platform = str(device_token.platform or "").strip().lower()
         if platform in {"android", "fcm"}:
@@ -293,6 +359,17 @@ class PushNotifier:
         if platform in {"ios", "apns"}:
             return self.apns_backend
         return None
+
+    async def _gate_external_push(self, context: dict[str, Any]) -> None:
+        action_id = f"push-{uuid.uuid4().hex[:12]}"
+        gate_context = dict(context)
+        if self.event_sink is not None:
+            gate_context["event_sink"] = self.event_sink
+        await self.approval_gate.check(
+            action="external_api_call",
+            context=gate_context,
+            action_id=action_id,
+        )
 
 
 def _string_map(payload: dict[str, Any]) -> dict[str, str]:

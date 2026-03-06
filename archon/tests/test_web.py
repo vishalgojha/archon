@@ -144,7 +144,9 @@ async def test_site_crawler_crawl_single(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "one page" in page.text_content
 
 
-def _page(url: str, title: str, text: str, meta: str = "", h1s: list[str] | None = None) -> PageData:
+def _page(
+    url: str, title: str, text: str, meta: str = "", h1s: list[str] | None = None
+) -> PageData:
     return PageData(
         url=url,
         title=title,
@@ -189,7 +191,9 @@ async def test_intent_classifier_keyword_signals_and_site_aggregation() -> None:
     assert unknown_intent.category == "unknown"
     assert unknown_intent.confidence < 0.5
 
-    site_intent = await classifier.classify_site(CrawlResult(pages=[ecommerce_page, ecommerce_page, saas_page]))
+    site_intent = await classifier.classify_site(
+        CrawlResult(pages=[ecommerce_page, ecommerce_page, saas_page])
+    )
     assert site_intent.primary == "ecommerce"
     assert "saas" in site_intent.secondary
     assert len(site_intent.page_intents) == 3
@@ -244,12 +248,20 @@ def test_optimizer_agent_experiment_lifecycle_and_clear_winner() -> None:
     assert control.conversions == 1
 
     for _ in range(200):
-        optimizer.record_event(experiment.experiment_id, experiment.control_variant_id, "impression")
-        optimizer.record_event(experiment.experiment_id, experiment.challenger_variant_id, "impression")
+        optimizer.record_event(
+            experiment.experiment_id, experiment.control_variant_id, "impression"
+        )
+        optimizer.record_event(
+            experiment.experiment_id, experiment.challenger_variant_id, "impression"
+        )
     for _ in range(10):
-        optimizer.record_event(experiment.experiment_id, experiment.control_variant_id, "conversion")
+        optimizer.record_event(
+            experiment.experiment_id, experiment.control_variant_id, "conversion"
+        )
     for _ in range(50):
-        optimizer.record_event(experiment.experiment_id, experiment.challenger_variant_id, "conversion")
+        optimizer.record_event(
+            experiment.experiment_id, experiment.challenger_variant_id, "conversion"
+        )
 
     result = optimizer.evaluate_experiment(experiment.experiment_id)
     assert result.winner == experiment.challenger_variant_id
@@ -257,16 +269,21 @@ def test_optimizer_agent_experiment_lifecycle_and_clear_winner() -> None:
     assert result.lift_pct > 0
 
     improved = optimizer.suggest_improvement(experiment.experiment_id)
-    assert improved.config_json.get("optimizer", {}).get("winner") == experiment.challenger_variant_id
+    assert (
+        improved.config_json.get("optimizer", {}).get("winner") == experiment.challenger_variant_id
+    )
 
 
 def test_optimizer_agent_insufficient_data_has_no_winner() -> None:
     optimizer = OptimizerAgent()
     experiment = optimizer.create_experiment(_base_embed_config())
     for _ in range(5):
-        optimizer.record_event(experiment.experiment_id, experiment.control_variant_id, "impression")
-        optimizer.record_event(experiment.experiment_id, experiment.challenger_variant_id, "impression")
+        optimizer.record_event(
+            experiment.experiment_id, experiment.control_variant_id, "impression"
+        )
+        optimizer.record_event(
+            experiment.experiment_id, experiment.challenger_variant_id, "impression"
+        )
     result = optimizer.evaluate_experiment(experiment.experiment_id)
     assert result.winner is None
     assert result.confidence == 0.0
-
