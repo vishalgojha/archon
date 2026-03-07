@@ -982,7 +982,7 @@ def _monitor_sleep(seconds: float) -> None:
 
 
 def _clear_monitor_screen() -> None:
-    os.system("cls" if os.name == "nt" else "clear")
+    click.clear()
 
 
 def _marketplace_period_bounds(period: str) -> tuple[float, float]:
