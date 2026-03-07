@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from archon.evolution.engine import WorkflowDefinition
+from archon.studio.execution import StepExecutionResult, build_step_executor, build_synthesis_goal
 
 
 def _run_id() -> str:
@@ -82,7 +83,8 @@ class WorkflowRunBroker:
         while True:
             event = await queue.get()
             yield event
-            if str(event.get("type") or "").endswith("_completed") or event.get("terminal"):
+            event_type = str(event.get("type") or "")
+            if event.get("terminal") or event_type in {"workflow_completed", "workflow_failed"}:
                 break
 
 
@@ -92,6 +94,7 @@ async def execute_workflow_run(
     run_id: str,
     workflow: WorkflowDefinition,
     orchestrator: Any,
+    tenant_id: str,
 ) -> None:
     """Execute one workflow and publish lifecycle events.
 
@@ -99,47 +102,105 @@ async def execute_workflow_run(
         >>> hasattr(execute_workflow_run, "__call__")
         True
     """
+    step_results: list[StepExecutionResult] = []
+    execution_layer = "initializing"
 
-    await broker.publish(
-        run_id,
-        {"type": "workflow_started", "workflow_id": workflow.workflow_id, "run_id": run_id},
-    )
-    for step in workflow.steps:
+    async def sink(event: dict[str, Any]) -> None:
+        await broker.publish(run_id, dict(event))
+
+    try:
+        executor = build_step_executor()
+        execution_layer = executor.backend_name
         await broker.publish(
             run_id,
             {
-                "type": "step_started",
-                "run_id": run_id,
+                "type": "workflow_started",
                 "workflow_id": workflow.workflow_id,
-                "step_id": step.step_id,
-                "agent": step.agent,
-                "action": step.action,
+                "workflow_name": workflow.name,
+                "run_id": run_id,
+                "tenant_id": tenant_id,
+                "execution_layer": execution_layer,
             },
+        )
+        for step in workflow.steps:
+            await broker.publish(
+                run_id,
+                {
+                    "type": "step_started",
+                    "run_id": run_id,
+                    "workflow_id": workflow.workflow_id,
+                    "step_id": step.step_id,
+                    "agent": step.agent,
+                    "action": step.action,
+                    "execution_layer": execution_layer,
+                },
+            )
+            step_result = await executor.execute_step(
+                step=step,
+                workflow=workflow,
+                run_id=run_id,
+                tenant_id=tenant_id,
+                prior_results=list(step_results),
+                orchestrator=orchestrator,
+                event_sink=sink,
+            )
+            step_results.append(step_result)
+            await broker.publish(
+                run_id,
+                {
+                    "type": "step_completed",
+                    "run_id": run_id,
+                    "workflow_id": workflow.workflow_id,
+                    "step_id": step.step_id,
+                    "agent": step.agent,
+                    "action": step.action,
+                    **step_result.to_event_payload(),
+                },
+            )
+
+        result = await orchestrator.execute(
+            goal=build_synthesis_goal(workflow, step_results),
+            mode="debate",
+            context={
+                "workflow_id": workflow.workflow_id,
+                "workflow_name": workflow.name,
+                "execution_layer": executor.backend_name,
+                "tenant_id": tenant_id,
+                "step_results": [
+                    {
+                        "step_id": row.step_id,
+                        "executor": row.executor,
+                        "status": row.status,
+                        "summary": row.summary,
+                        "output_text": row.output_text,
+                        "metadata": dict(row.metadata),
+                    }
+                    for row in step_results
+                ],
+            },
+            event_sink=sink,
         )
         await broker.publish(
             run_id,
             {
-                "type": "step_completed",
+                "type": "workflow_completed",
+                "terminal": True,
                 "run_id": run_id,
                 "workflow_id": workflow.workflow_id,
-                "step_id": step.step_id,
-                "agent": step.agent,
+                "execution_layer": execution_layer,
+                "final_answer": result.final_answer,
+                "confidence": result.confidence,
             },
         )
-
-    result = await orchestrator.execute(
-        goal=str(workflow.metadata.get("goal") or workflow.name),
-        mode="debate",
-        context={"workflow_id": workflow.workflow_id, "workflow_name": workflow.name},
-    )
-    await broker.publish(
-        run_id,
-        {
-            "type": "workflow_completed",
-            "terminal": True,
-            "run_id": run_id,
-            "workflow_id": workflow.workflow_id,
-            "final_answer": result.final_answer,
-            "confidence": result.confidence,
-        },
-    )
+    except Exception as exc:
+        await broker.publish(
+            run_id,
+            {
+                "type": "workflow_failed",
+                "terminal": True,
+                "run_id": run_id,
+                "workflow_id": workflow.workflow_id,
+                "execution_layer": execution_layer,
+                "message": str(exc),
+            },
+        )

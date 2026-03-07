@@ -1145,6 +1145,7 @@ async def studio_run_workflow(
             run_id=run.run_id,
             workflow=workflow,
             orchestrator=app.state.orchestrator,
+            tenant_id=tenant_id,
         )
     )
     await _emit_analytics_event(

@@ -36,15 +36,28 @@ from archon.redteam import RegressionRunner
 from archon.validate_config import main as validate_config_main
 
 try:  # pragma: no cover - optional dependency
+    from rich import box
     from rich.console import Console
+    from rich.panel import Panel
     from rich.table import Table
+    from rich.text import Text
 except Exception:  # pragma: no cover - optional dependency
+    box = None
     Console = None
+    Panel = None
     Table = None
+    Text = None
 
 ARCHON_VERSION_FALLBACK = "0.1.0"
 DEFAULT_CONFIG_PATH = "config.archon.yaml"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8000"
+ARCHON_ASCII_ART = (
+    "    ___    ____  ________  ______  _   __",
+    "   /   |  / __ \\/ ____/ / / / __ \\/ | / /",
+    "  / /| | / /_/ / /   / /_/ / / / /  |/ / ",
+    " / ___ |/ _, _/ /___/ __  / /_/ / /|  /  ",
+    "/_/  |_/_/ |_|\\____/_/ /_/\\____/_/ |_/   ",
+)
 
 
 class _Printer:
@@ -498,26 +511,55 @@ def _save_onboarding_config(config_data: dict[str, Any], config_path: str) -> No
     )
 
 
+def _plain_onboarding_banner() -> str:
+    return "\n".join(
+        [
+            "+" + "-" * 53 + "+",
+            "|                                                     |",
+            *[f"|  {line.ljust(49)}  |" for line in ARCHON_ASCII_ART],
+            "|                                                     |",
+            "|  Multi-Agent Orchestration Network                  |",
+            "|  This wizard takes ~2 minutes.                      |",
+            "|  Re-run anytime: archon onboard                     |",
+            "|                                                     |",
+            "+" + "-" * 53 + "+",
+        ]
+    )
+
+
+def _print_onboarding_banner() -> None:
+    if Console is None or Panel is None or Text is None or box is None:
+        click.echo(_plain_onboarding_banner())
+        return
+
+    banner = Text()
+    for line in ARCHON_ASCII_ART:
+        banner.append(line, style="bold #38d9b5 on white")
+        banner.append("\n")
+    banner.append("\n")
+    banner.append("Multi-Agent Orchestration Network\n", style="bold #28424d on white")
+    banner.append("This wizard takes ~2 minutes.\n", style="#5a6b75 on white")
+    banner.append("Re-run anytime: ", style="#5a6b75 on white")
+    banner.append("archon onboard", style="bold #38d9b5 on white")
+
+    Console().print(
+        Panel.fit(
+            banner,
+            border_style="bold #8de8d4",
+            box=box.ROUNDED,
+            padding=(1, 2),
+            style="on white",
+        )
+    )
+
+
 def _run_onboarding_wizard(
     config_path: str = DEFAULT_CONFIG_PATH,
     *,
     yes: bool = False,
 ) -> bool:
     env_path = Path(".env")
-    click.echo(
-        "\n".join(
-            [
-                "╔══════════════════════════════════════════╗",
-                "║   Welcome to ARCHON                      ║",
-                "║   Multi-Agent Orchestration Network      ║",
-                "║                                          ║",
-                "║   This wizard takes ~2 minutes.          ║",
-                "║   You can re-run it anytime:             ║",
-                "║     archon onboard                       ║",
-                "╚══════════════════════════════════════════╝",
-            ]
-        )
-    )
+    _print_onboarding_banner()
     if not yes:
         _read_line("Press Enter to continue...")
 
@@ -774,6 +816,20 @@ def _parse_context(
 def _launch_url(url: str) -> None:
     if not click.launch(url):
         raise click.ClickException(f"Could not open browser for {url}")
+
+
+def _open_web_shell(base_url: str, *, route: str, command_name: str) -> None:
+    normalized = _normalize_base_url(base_url)
+    health_url = f"{normalized}/health"
+    try:
+        _request_json("GET", health_url, timeout_s=2.0)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise click.ClickException(
+            "ARCHON server is not reachable at "
+            f"{health_url}. Start it with 'archon serve' or pass --base-url to a running "
+            f"server, then retry 'archon {command_name}'."
+        ) from exc
+    _launch_url(f"{normalized}/{route}")
 
 
 def _run_api_server_with_env(*, host: str, port: int) -> None:
@@ -1223,7 +1279,7 @@ def task_command(
 def dashboard_command(base_url: str) -> None:
     """Open the Mission Control dashboard in the default browser."""
 
-    _launch_url(f"{_normalize_base_url(base_url)}/dashboard")
+    _open_web_shell(base_url, route="dashboard", command_name="dashboard")
 
 
 @cli.command("studio")
@@ -1231,7 +1287,7 @@ def dashboard_command(base_url: str) -> None:
 def studio_command(base_url: str) -> None:
     """Open ARCHON Studio in the default browser."""
 
-    _launch_url(f"{_normalize_base_url(base_url)}/studio")
+    _open_web_shell(base_url, route="studio", command_name="studio")
 
 
 @cli.command("debate")

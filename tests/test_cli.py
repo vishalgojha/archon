@@ -7,10 +7,11 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import httpx
 import yaml
 from click.testing import CliRunner
 
-from archon.archon_cli import cli, write_env
+from archon.archon_cli import _plain_onboarding_banner, cli, write_env
 
 
 def _repo_root() -> Path:
@@ -271,11 +272,19 @@ def test_task_command_posts_to_api_and_prints_result(monkeypatch: pytest.MonkeyP
 
 def test_dashboard_and_studio_commands_launch_browser(monkeypatch: pytest.MonkeyPatch) -> None:
     launched: list[str] = []
+    checks: list[str] = []
+
+    def fake_request_json(method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        assert method == "GET"
+        assert kwargs["timeout_s"] == 2.0
+        checks.append(url)
+        return {"status": "ok"}
 
     def fake_launch(url: str) -> bool:
         launched.append(url)
         return True
 
+    monkeypatch.setattr("archon.archon_cli._request_json", fake_request_json)
     monkeypatch.setattr("click.launch", fake_launch)
 
     runner = CliRunner()
@@ -284,10 +293,37 @@ def test_dashboard_and_studio_commands_launch_browser(monkeypatch: pytest.Monkey
 
     assert dashboard.exit_code == 0
     assert studio.exit_code == 0
+    assert checks == [
+        "http://localhost:8100/health",
+        "http://localhost:8100/health",
+    ]
     assert launched == [
         "http://localhost:8100/dashboard",
         "http://localhost:8100/studio",
     ]
+
+
+def test_plain_onboarding_banner_contains_archon_ascii() -> None:
+    banner = _plain_onboarding_banner()
+
+    assert "___    ____" in banner
+    assert "Multi-Agent Orchestration Network" in banner
+    assert "archon onboard" in banner
+
+
+def test_studio_command_reports_missing_server_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_request_json(method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request(method, url)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    monkeypatch.setattr("archon.archon_cli._request_json", fake_request_json)
+
+    result = CliRunner().invoke(cli, ["studio"])
+
+    assert result.exit_code != 0
+    assert "archon serve" in result.output
+    assert "--base-url" in result.output
+    assert "http://127.0.0.1:8000/health" in result.output
 
 
 def test_metrics_command_raw_outputs_prometheus_text(monkeypatch: pytest.MonkeyPatch) -> None:

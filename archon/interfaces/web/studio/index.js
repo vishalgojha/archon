@@ -14,6 +14,38 @@
     "OutreachAgent",
     "WebChatAgent"
   ];
+  const NODE_LIBRARY = {
+    AgentNode: {
+      label: "Agent Step",
+      action: "agent_step",
+      description: "Execute one named ARCHON agent with a focused config."
+    },
+    DebateNode: {
+      label: "Debate Round",
+      action: "debate_round",
+      description: "Challenge or refine an answer before it moves downstream."
+    },
+    ApprovalNode: {
+      label: "Approval Gate",
+      action: "approval_gate",
+      description: "Pause the workflow until a reviewer clears the next step."
+    },
+    ConditionNode: {
+      label: "Condition Branch",
+      action: "branch_condition",
+      description: "Route work based on the result of one decision."
+    },
+    LoopNode: {
+      label: "Loop Step",
+      action: "loop_step",
+      description: "Repeat a stage until a stop rule is met."
+    },
+    OutputNode: {
+      label: "Output",
+      action: "output_result",
+      description: "Capture the final operator-facing result."
+    }
+  };
 
   function getToken() {
     return (
@@ -76,19 +108,45 @@
     return response;
   }
 
+  function getNodeSpec(type) {
+    return NODE_LIBRARY[type] || NODE_LIBRARY.AgentNode;
+  }
+
+  function createNode(type, overrides = {}) {
+    const spec = getNodeSpec(type);
+    return {
+      id: overrides.id || `${type}-${Math.random().toString(16).slice(2, 10)}`,
+      type,
+      position: overrides.position || { x: 80, y: 140 },
+      data: {
+        label: overrides.label || spec.label,
+        action: overrides.action || spec.action,
+        description: overrides.description || spec.description,
+        agent_class: type === "AgentNode" ? (overrides.agentClass || "ResearcherAgent") : type,
+        config: overrides.config || {}
+      }
+    };
+  }
+
   function applyLayout(nodes, edges) {
     if (!dagre) {
-      return nodes.map((node, index) => ({ ...node, position: node.position || { x: 80 + (index * 80), y: 80 + (index * 40) } }));
+      return nodes.map((node, index) => ({
+        ...node,
+        position: node.position || { x: 90 + (index * 240), y: 120 + ((index % 2) * 48) }
+      }));
     }
     const graph = new dagre.Graph();
-    graph.setGraph({ rankdir: "LR", nodesep: 48, ranksep: 72 });
+    graph.setGraph({ rankdir: "LR", nodesep: 56, ranksep: 92, marginx: 20, marginy: 20 });
     graph.setDefaultEdgeLabel(() => ({}));
-    nodes.forEach((node) => graph.setNode(node.id, { width: 220, height: 88 }));
+    nodes.forEach((node) => graph.setNode(node.id, { width: 236, height: 112 }));
     edges.forEach((edge) => graph.setEdge(edge.source, edge.target));
     window.dagreD3.dagre.layout(graph);
     return nodes.map((node) => {
       const position = graph.node(node.id);
-      return { ...node, position: position ? { x: position.x - 110, y: position.y - 44 } : node.position };
+      return {
+        ...node,
+        position: position ? { x: position.x - 118, y: position.y - 56 } : node.position
+      };
     });
   }
 
@@ -115,6 +173,118 @@
     };
   }
 
+  function createLinearTemplate(name, steps) {
+    const nodes = steps.map((step, index) =>
+      createNode(step.type, {
+        ...step,
+        position: { x: 100 + (index * 260), y: 140 + ((index % 2) * 36) }
+      })
+    );
+    const edges = nodes.slice(1).map((node, index) => ({
+      id: `${nodes[index].id}-${node.id}`,
+      source: nodes[index].id,
+      target: node.id,
+      label: "data"
+    }));
+    return {
+      name,
+      nodes: applyLayout(nodes, edges),
+      edges,
+      preserveLayout: true
+    };
+  }
+
+  function buildStarterTemplate(kind) {
+    if (kind === "approval") {
+      return createLinearTemplate("Approval Review Flow", [
+        { type: "AgentNode", label: "Draft Response", action: "draft_response", agentClass: "ResearcherAgent" },
+        { type: "ApprovalNode", label: "Operator Review", action: "request_approval" },
+        { type: "OutputNode", label: "Approved Output", action: "publish_output" }
+      ]);
+    }
+    if (kind === "debate") {
+      return createLinearTemplate("Debate and Synthesize", [
+        { type: "AgentNode", label: "Initial Thesis", action: "initial_thesis", agentClass: "ResearcherAgent" },
+        { type: "DebateNode", label: "Critique Round", action: "challenge_answer" },
+        { type: "OutputNode", label: "Synthesis", action: "deliver_synthesis" }
+      ]);
+    }
+    return createLinearTemplate("Research Delivery Flow", [
+      { type: "AgentNode", label: "Research", action: "gather_research", agentClass: "ResearcherAgent" },
+      { type: "AgentNode", label: "Fact Check", action: "fact_check", agentClass: "FactCheckerAgent" },
+      { type: "OutputNode", label: "Delivery", action: "deliver_result" }
+    ]);
+  }
+
+  function inferNodeType(step) {
+    const hinted = String(step?.config?.node_type || "").trim();
+    if (NODE_TYPES.includes(hinted)) {
+      return hinted;
+    }
+    const agent = String(step?.agent || "").trim();
+    if (NODE_TYPES.includes(agent)) {
+      return agent;
+    }
+    if (AGENTS.includes(agent)) {
+      return "AgentNode";
+    }
+    return "OutputNode";
+  }
+
+  function deserializeWorkflow(workflow) {
+    const studio = workflow?.metadata?.studio || {};
+    const studioNodes = Object.values(studio.nodes || {});
+    const studioEdges = Array.isArray(studio.edges) ? studio.edges : [];
+    if (studioNodes.length > 0) {
+      return { nodes: studioNodes, edges: studioEdges, preserveLayout: true };
+    }
+
+    const rawSteps = Array.isArray(workflow?.steps) ? workflow.steps : [];
+    const nodes = rawSteps.map((step, index) =>
+      createNode(inferNodeType(step), {
+        id: step.step_id || `step-${index + 1}`,
+        label: step?.config?.label || step?.agent || step?.action || `Step ${index + 1}`,
+        action: step?.action || step?.config?.action || getNodeSpec(inferNodeType(step)).action,
+        description: step?.config?.description || getNodeSpec(inferNodeType(step)).description,
+        agentClass: AGENTS.includes(String(step?.agent || "").trim()) ? step.agent : "ResearcherAgent",
+        config: step?.config || {},
+        position: { x: 90 + (index * 250), y: 140 + ((index % 2) * 42) }
+      })
+    );
+    const edges = [];
+    rawSteps.forEach((step) => {
+      const dependencies = Array.isArray(step?.dependencies) ? step.dependencies : [];
+      dependencies.forEach((dependency) => {
+        edges.push({
+          id: `${dependency}-${step.step_id}`,
+          source: dependency,
+          target: step.step_id,
+          label: "data"
+        });
+      });
+    });
+    return { nodes: applyLayout(nodes, edges), edges, preserveLayout: true };
+  }
+
+  function renderRunEvent(event, index) {
+    const eventType = String(event?.type || event?.state || "event");
+    const headline = String(event?.message || event?.detail || eventType).trim();
+    const className = eventType.toLowerCase() === "error"
+      ? "studio-run-event studio-run-event--error"
+      : "studio-run-event";
+    return React.createElement(
+      "div",
+      { className, key: `${eventType}-${index}` },
+      React.createElement(
+        "div",
+        { className: "studio-run-event-header" },
+        React.createElement("strong", null, eventType),
+        React.createElement("span", { className: "studio-helper" }, headline)
+      ),
+      React.createElement("pre", null, JSON.stringify(event, null, 2))
+    );
+  }
+
   function TokenGate({ children }) {
     const [tokenInput, setTokenInput] = React.useState("");
     const [hasToken, setHasToken] = React.useState(Boolean(getToken()));
@@ -125,23 +295,9 @@
         null,
         React.createElement(
           "div",
-          {
-            style: {
-              position: "fixed",
-              right: 16,
-              top: 16,
-              zIndex: 20,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 14px",
-              borderRadius: 999,
-              background: "rgba(255,250,242,0.92)",
-              border: "1px solid var(--studio-border)",
-              boxShadow: "0 10px 30px rgba(27,43,65,0.12)"
-            }
-          },
-          React.createElement("span", { style: { fontSize: 12, color: "var(--studio-muted)" } }, "Authenticated"),
+          { className: "studio-auth-pill" },
+          React.createElement("span", { className: "studio-auth-dot" }),
+          React.createElement("span", { className: "studio-helper" }, "Authenticated"),
           React.createElement(
             "button",
             {
@@ -160,66 +316,32 @@
 
     return React.createElement(
       "div",
-      {
-        style: {
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          padding: 24
-        }
-      },
+      { className: "studio-token-gate" },
       React.createElement(
         "div",
-        {
-          style: {
-            width: "min(520px, 100%)",
-            display: "grid",
-            gap: 14,
-            padding: 28,
-            borderRadius: 24,
-            background: "var(--studio-panel)",
-            border: "1px solid var(--studio-border)",
-            boxShadow: "0 24px 80px rgba(27,43,65,0.14)"
-          }
-        },
-        React.createElement("div", { style: { fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--studio-accent)" } }, "ARCHON Studio"),
-        React.createElement("h1", { style: { margin: 0, fontSize: 28 } }, "Operator token required"),
+        { className: "studio-token-card studio-panel" },
+        React.createElement("div", { className: "studio-eyebrow" }, "ARCHON Studio"),
+        React.createElement("h1", null, "Operator token required"),
         React.createElement(
           "p",
-          { style: { margin: 0, color: "var(--studio-muted)", lineHeight: 1.6 } },
-          "Paste the tenant JWT you already use for Console. Studio uses protected workflow endpoints, so it cannot save, load, or run without one."
+          null,
+          "Paste the tenant JWT you already use for Console. Studio uses protected workflow endpoints, so save, load, and run are locked until a token is present."
         ),
         React.createElement("input", {
           type: "password",
           placeholder: "Paste JWT token",
           value: tokenInput,
-          onChange: (event) => setTokenInput(event.target.value),
-          style: {
-            width: "100%",
-            padding: "12px 14px",
-            borderRadius: 14,
-            border: "1px solid var(--studio-border)",
-            background: "#ffffff",
-            color: "var(--studio-ink)"
-          }
+          onChange: (event) => setTokenInput(event.target.value)
         }),
         React.createElement(
           "button",
           {
             type: "button",
+            className: "studio-button-primary",
             disabled: !tokenInput.trim(),
             onClick: () => {
               setToken(tokenInput);
               setHasToken(Boolean(tokenInput.trim()));
-            },
-            style: {
-              padding: "12px 16px",
-              borderRadius: 14,
-              border: "none",
-              background: "var(--studio-accent)",
-              color: "#fff7f0",
-              cursor: tokenInput.trim() ? "pointer" : "not-allowed",
-              opacity: tokenInput.trim() ? 1 : 0.5
             }
           },
           "Open Studio"
@@ -234,80 +356,159 @@
     const [selectedNode, setSelectedNode] = React.useState(null);
     const [workflowName, setWorkflowName] = React.useState("Studio Workflow");
     const [runEvents, setRunEvents] = React.useState([]);
-    const [notice, setNotice] = React.useState("");
+    const [notice, setNotice] = React.useState(null);
+    const [nodeMenuValue, setNodeMenuValue] = React.useState("");
 
-    const onNodesChange = React.useCallback((changes) => setNodes((current) => ReactFlow.applyNodeChanges(changes, current)), []);
-    const onEdgesChange = React.useCallback((changes) => setEdges((current) => ReactFlow.applyEdgeChanges(changes, current)), []);
-    const onConnect = React.useCallback((connection) => setEdges((current) => ReactFlow.addEdge({ ...connection, label: "data" }, current)), []);
+    function showNotice(message, tone = "info") {
+      setNotice({ message, tone });
+    }
+
+    function commitWorkflow({ nodes: nextNodes, edges: nextEdges, preserveLayout }, nextName, message, tone = "success") {
+      const resolvedNodes = preserveLayout ? nextNodes : applyLayout(nextNodes, nextEdges);
+      setNodes(resolvedNodes);
+      setEdges(nextEdges);
+      setSelectedNode(resolvedNodes[0] || null);
+      setWorkflowName(nextName || "Studio Workflow");
+      setRunEvents([]);
+      showNotice(message, tone);
+    }
+
+    const onNodesChange = (changes) => {
+      setNodes((current) => {
+        const next = ReactFlow.applyNodeChanges(changes, current);
+        if (selectedNode && !next.some((node) => node.id === selectedNode.id)) {
+          setSelectedNode(null);
+        }
+        return next;
+      });
+    };
+
+    const onEdgesChange = (changes) => {
+      setEdges((current) => ReactFlow.applyEdgeChanges(changes, current));
+    };
+
+    const onConnect = (connection) => {
+      setEdges((current) => ReactFlow.addEdge({ ...connection, label: "data" }, current));
+      setNotice(null);
+    };
 
     function addNode(type) {
-      const node = {
-        id: `${type}-${Math.random().toString(16).slice(2, 10)}`,
-        type,
-        position: { x: 50, y: 50 },
-        data: {
-          label: type,
-          action: type.toLowerCase(),
-          agent_class: type === "AgentNode" ? "ResearcherAgent" : type
-        }
-      };
-      setNodes((current) => applyLayout([...current, node], edges));
+      const node = createNode(type);
+      setNodes((current) => {
+        const next = applyLayout([...current, node], edges);
+        const focused = next.find((candidate) => candidate.id === node.id) || node;
+        setSelectedNode(focused);
+        return next;
+      });
+      setNotice(null);
+    }
+
+    function loadTemplate(kind) {
+      const template = buildStarterTemplate(kind);
+      commitWorkflow(template, template.name, "Loaded starter workflow.");
     }
 
     async function saveWorkflow() {
+      if (!nodes.length) {
+        showNotice("Add at least one node before saving.", "error");
+        return;
+      }
       try {
-        setNotice("");
         const payload = serialize(nodes, edges);
-        payload.name = workflowName;
+        payload.name = workflowName.trim() || "Studio Workflow";
         const response = await studioApiFetch("/studio/workflows", {
           method: "POST",
           body: JSON.stringify(payload)
         });
         const saved = await response.json();
-        setWorkflowName(saved.name || workflowName);
-        setNotice("Workflow saved.");
+        setWorkflowName(saved.name || payload.name);
+        showNotice("Workflow saved.", "success");
       } catch (error) {
-        setNotice(String(error?.message || "Save failed."));
+        showNotice(String(error?.message || "Save failed."), "error");
       }
     }
 
     async function loadLatest() {
       try {
-        setNotice("");
         const list = await studioApiFetch("/studio/workflows").then((response) => response.json());
         if (!Array.isArray(list) || list.length === 0) {
-          setNotice("No saved workflows yet.");
+          showNotice("No saved workflows yet.", "info");
           return;
         }
-        const payload = await studioApiFetch(`/studio/workflows/${list[0].id}`).then((response) => response.json());
-        const studio = payload.metadata?.studio || {};
-        setWorkflowName(payload.name || "Studio Workflow");
-        setNodes(Object.values(studio.nodes || {}));
-        setEdges(studio.edges || []);
-        setNotice("Loaded latest workflow.");
+        const workflowId = list[0].id || list[0].workflow_id;
+        const payload = await studioApiFetch(`/studio/workflows/${workflowId}`).then((response) => response.json());
+        commitWorkflow(deserializeWorkflow(payload), payload.name || "Studio Workflow", "Loaded latest workflow.");
       } catch (error) {
-        setNotice(String(error?.message || "Load failed."));
+        showNotice(String(error?.message || "Load failed."), "error");
+      }
+    }
+
+    async function exportJson() {
+      const payload = JSON.stringify(serialize(nodes, edges), null, 2);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(payload);
+          showNotice("Workflow JSON copied to clipboard.", "success");
+          return;
+        }
+      } catch (_error) {
+      }
+      window.prompt("Copy workflow JSON", payload);
+      showNotice("Clipboard access was unavailable. Opened the JSON in a copy dialog.", "info");
+    }
+
+    function importJson() {
+      try {
+        const raw = window.prompt("Paste workflow JSON");
+        if (!raw) {
+          return;
+        }
+        const workflow = JSON.parse(raw);
+        commitWorkflow(
+          deserializeWorkflow(workflow),
+          workflow.name || "Studio Workflow",
+          "Imported workflow JSON."
+        );
+      } catch (error) {
+        showNotice(String(error?.message || "Import failed."), "error");
       }
     }
 
     async function runWorkflow() {
+      if (!nodes.length) {
+        showNotice("Add at least one node before running.", "error");
+        return;
+      }
       try {
-        setNotice("");
         setRunEvents([]);
+        showNotice("Run requested. Waiting for websocket stream.", "info");
         const workflow = serialize(nodes, edges);
-        workflow.name = workflowName;
+        workflow.name = workflowName.trim() || "Studio Workflow";
         const response = await studioApiFetch("/studio/run", {
           method: "POST",
           body: JSON.stringify({ workflow })
         });
         const payload = await response.json();
-        const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${payload.websocket_path}`);
+        const socketUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${payload.websocket_path}`;
+        const socket = new WebSocket(socketUrl);
+        socket.onopen = () => {
+          setRunEvents((current) => [...current, { type: "status", message: "Connected to run stream." }]);
+          showNotice("Run stream connected.", "success");
+        };
         socket.onmessage = (event) => {
           const frame = JSON.parse(event.data);
           setRunEvents((current) => [...current, frame]);
         };
+        socket.onerror = () => {
+          setRunEvents((current) => [...current, { type: "error", message: "Run socket error." }]);
+          showNotice("Run socket error.", "error");
+        };
+        socket.onclose = () => {
+          setRunEvents((current) => [...current, { type: "status", message: "Run stream closed." }]);
+        };
       } catch (error) {
         setRunEvents([{ type: "error", message: String(error?.message || "Run failed.") }]);
+        showNotice(String(error?.message || "Run failed."), "error");
       }
     }
 
@@ -318,82 +519,144 @@
 
     return React.createElement(
       "div",
-      { style: { height: "100%", display: "grid", gridTemplateRows: "72px 1fr 180px" } },
+      { className: "studio-shell" },
       React.createElement(
-        "div",
-        {
-          style: {
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "0 18px",
-            borderBottom: "1px solid var(--studio-border)",
-            background: "rgba(255,250,242,0.82)",
-            backdropFilter: "blur(16px)"
-          }
-        },
-        React.createElement("strong", null, "ARCHON Studio"),
-        React.createElement("input", {
-          value: workflowName,
-          onChange: (event) => setWorkflowName(event.target.value),
-          style: { minWidth: 220 }
-        }),
-        React.createElement(
-          "select",
-          { onChange: (event) => event.target.value && addNode(event.target.value) },
-          React.createElement("option", { value: "" }, "Add Node"),
-          NODE_TYPES.map((type) => React.createElement("option", { key: type, value: type }, type))
-        ),
-        React.createElement("button", { onClick: saveWorkflow }, "Save"),
-        React.createElement("button", { onClick: loadLatest }, "Load"),
-        React.createElement("button", { onClick: runWorkflow }, "Run"),
-        React.createElement("button", { onClick: () => navigator.clipboard.writeText(JSON.stringify(serialize(nodes, edges), null, 2)) }, "Export JSON"),
-        React.createElement("button", { onClick: async () => {
-          const raw = window.prompt("Paste workflow JSON");
-          if (!raw) return;
-          const workflow = JSON.parse(raw);
-          const studio = workflow.metadata?.studio || {};
-          setWorkflowName(workflow.name || "Studio Workflow");
-          setNodes(Object.values(studio.nodes || {}));
-          setEdges(studio.edges || []);
-        } }, "Import JSON")
-      ),
-      notice ? React.createElement(
-        "div",
-        {
-          style: {
-            marginLeft: "auto",
-            color: "var(--studio-muted)",
-            fontSize: 12
-          }
-        },
-        notice
-      ) : null,
-      React.createElement(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 16, padding: 16 } },
+        "header",
+        { className: "studio-toolbar studio-panel" },
         React.createElement(
           "div",
-          { style: { minHeight: 0 } },
-          React.createElement(window.WorkflowCanvas || (() => null), {
-            nodes,
-            edges,
-            onNodesChange,
-            onEdgesChange,
-            onConnect,
-            onNodeClick: setSelectedNode
-          })
+          { className: "studio-brand" },
+          React.createElement("div", { className: "studio-eyebrow" }, "Workflow Studio"),
+          React.createElement("h1", null, "Build operator-safe orchestration flows"),
+          React.createElement(
+            "p",
+            null,
+            "Draft agent graphs, add approval gates, branch decisions, and run the workflow against your local ARCHON API without leaving the browser."
+          ),
+          React.createElement(
+            "div",
+            { className: "studio-chip-row" },
+            React.createElement("div", { className: "studio-chip" }, React.createElement("strong", null, nodes.length), "Nodes"),
+            React.createElement("div", { className: "studio-chip" }, React.createElement("strong", null, edges.length), "Connections"),
+            React.createElement("div", { className: "studio-chip" }, React.createElement("strong", null, runEvents.length), "Run Events")
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "studio-form-card" },
+          React.createElement(
+            "div",
+            { className: "studio-field" },
+            React.createElement("label", null, "Workflow Name"),
+            React.createElement("input", {
+              value: workflowName,
+              onChange: (event) => setWorkflowName(event.target.value)
+            }),
+            React.createElement(
+              "small",
+              null,
+              "The workflow name is saved with the definition and reused for exported JSON."
+            )
+          ),
+          notice
+            ? React.createElement(
+                "div",
+                { className: `studio-notice studio-notice--${notice.tone || "info"}` },
+                notice.message
+              )
+            : React.createElement(
+                "div",
+                { className: "studio-notice studio-notice--info" },
+                "Use starter templates for speed, then fine-tune node details in the inspector."
+              )
+        ),
+        React.createElement(
+          "div",
+          { className: "studio-action-grid" },
+          React.createElement(
+            "div",
+            { className: "studio-action-row" },
+            React.createElement(
+              "select",
+              {
+                value: nodeMenuValue,
+                onChange: (event) => {
+                  const nextType = event.target.value;
+                  setNodeMenuValue("");
+                  if (!nextType) {
+                    return;
+                  }
+                  addNode(nextType);
+                }
+              },
+              React.createElement("option", { value: "" }, "Add Node"),
+              NODE_TYPES.map((type) => React.createElement("option", { key: type, value: type }, type))
+            ),
+            React.createElement("button", { type: "button", onClick: saveWorkflow }, "Save"),
+            React.createElement("button", { type: "button", onClick: loadLatest }, "Load"),
+            React.createElement(
+              "button",
+              { type: "button", className: "studio-button-primary", onClick: runWorkflow },
+              "Run"
+            )
+          ),
+          React.createElement(
+            "div",
+            { className: "studio-action-row" },
+            React.createElement("button", { type: "button", onClick: exportJson }, "Export JSON"),
+            React.createElement("button", { type: "button", onClick: importJson }, "Import JSON"),
+            React.createElement("button", { type: "button", className: "studio-button-warm", onClick: () => loadTemplate("research") }, "Research"),
+            React.createElement("button", { type: "button", className: "studio-button-warm", onClick: () => loadTemplate("approval") }, "Approval"),
+            React.createElement("button", { type: "button", className: "studio-button-warm", onClick: () => loadTemplate("debate") }, "Debate")
+          )
+        )
+      ),
+      React.createElement(
+        "main",
+        { className: "studio-workspace" },
+        React.createElement(
+          "section",
+          { className: "studio-panel studio-section" },
+          React.createElement(
+            "div",
+            { className: "studio-section-header" },
+            React.createElement(
+              "div",
+              null,
+              React.createElement("div", { className: "studio-kicker" }, "Canvas"),
+              React.createElement("h2", null, "Workflow Map"),
+              React.createElement(
+                "p",
+                null,
+                "Arrange the graph left to right. Start broad on the canvas, then edit the selected node on the right."
+              )
+            ),
+            React.createElement(
+              "div",
+              { className: "studio-section-actions" },
+              React.createElement("button", { type: "button", onClick: () => addNode("AgentNode") }, "Agent"),
+              React.createElement("button", { type: "button", onClick: () => addNode("ApprovalNode") }, "Approval"),
+              React.createElement("button", { type: "button", onClick: () => addNode("OutputNode") }, "Output")
+            )
+          ),
+          React.createElement(
+            "div",
+            { className: "studio-canvas-card" },
+            React.createElement(window.WorkflowCanvas || (() => null), {
+              nodes,
+              edges,
+              onNodesChange,
+              onEdgesChange,
+              onConnect,
+              onNodeClick: setSelectedNode,
+              onAddNode: addNode,
+              onLoadTemplate: loadTemplate
+            })
+          )
         ),
         React.createElement(
           "aside",
-          {
-            style: {
-              background: "var(--studio-panel)",
-              border: "1px solid var(--studio-border)",
-              borderRadius: 20,
-              overflow: "hidden"
-            }
-          },
+          { className: "studio-panel studio-sidebar" },
           React.createElement(window.NodeEditor || (() => null), {
             node: selectedNode,
             onChange: updateNode,
@@ -402,21 +665,43 @@
         )
       ),
       React.createElement(
-        "div",
-        {
-          style: {
-            borderTop: "1px solid var(--studio-border)",
-            background: "rgba(255,250,242,0.82)",
-            padding: 12,
-            overflow: "auto"
-          }
-        },
-        React.createElement("strong", null, "Run Panel"),
+        "section",
+        { className: "studio-panel studio-run-panel" },
         React.createElement(
-          "pre",
-          { style: { whiteSpace: "pre-wrap", fontSize: 12, margin: "8px 0 0" } },
-          runEvents.map((event) => JSON.stringify(event)).join("\n")
-        )
+          "div",
+          { className: "studio-section-header" },
+          React.createElement(
+            "div",
+            null,
+            React.createElement("div", { className: "studio-kicker" }, "Runtime"),
+            React.createElement("h2", null, "Run Timeline"),
+            React.createElement(
+              "p",
+              null,
+              "Run traces appear here as websocket frames. Keep the panel open while you validate the behavior of the active workflow."
+            )
+          )
+        ),
+        runEvents.length
+          ? React.createElement(
+              "div",
+              { className: "studio-run-list" },
+              runEvents.map((event, index) => renderRunEvent(event, index))
+            )
+          : React.createElement(
+              "div",
+              { className: "studio-run-empty" },
+              React.createElement(
+                "div",
+                null,
+                React.createElement("strong", null, "No run output yet."),
+                React.createElement(
+                  "div",
+                  { className: "studio-helper", style: { marginTop: 8 } },
+                  "Press Run after adding a few nodes. Connection status, workflow events, and errors will stream here."
+                )
+              )
+            )
       )
     );
   }
