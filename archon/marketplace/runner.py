@@ -46,8 +46,11 @@ def main(argv: list[str] | None = None) -> int:
 
         _print_json(result if isinstance(result, dict) else {"result": result})
         return 0
+    except MemoryError:
+        _print_json(_memory_limit_payload())
+        return 1
     except Exception as exc:
-        _print_json({"error": str(exc)})
+        _print_json({"error": _exception_message(exc)})
         return 1
 
 
@@ -176,6 +179,21 @@ def _read_int_env(name: str, *, default: int) -> int:
         return int(raw)
     except ValueError:
         return int(default)
+
+
+def _memory_limit_payload() -> dict[str, Any]:
+    payload: dict[str, Any] = {"error": "memory_limit_exceeded"}
+    if tracemalloc.is_tracing():
+        _current_bytes, peak_bytes = tracemalloc.get_traced_memory()
+        payload["peak_memory_mb"] = round(peak_bytes / (1024.0 * 1024.0), 3)
+    return payload
+
+
+def _exception_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__.lower()
 
 
 def _print_json(payload: dict[str, Any]) -> None:
