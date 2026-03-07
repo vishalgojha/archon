@@ -6,6 +6,7 @@ import asyncio
 import builtins
 import importlib
 import json
+import math
 import os
 import sys
 import tracemalloc
@@ -80,7 +81,7 @@ def _apply_runtime_guards() -> None:
         except Exception:
             pass
 
-        cpu_seconds = max(1, int(timeout_s * max(cpu_percent, 1) / 100.0))
+        cpu_seconds = _cpu_time_limit_seconds(timeout_s=timeout_s, cpu_percent=cpu_percent)
         try:
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
         except Exception:
@@ -187,6 +188,12 @@ def _memory_limit_payload() -> dict[str, Any]:
         _current_bytes, peak_bytes = tracemalloc.get_traced_memory()
         payload["peak_memory_mb"] = round(peak_bytes / (1024.0 * 1024.0), 3)
     return payload
+
+
+def _cpu_time_limit_seconds(*, timeout_s: float, cpu_percent: int) -> int:
+    timeout_seconds = max(1, math.ceil(float(timeout_s)))
+    cpu_budget_seconds = max(1, math.ceil(float(timeout_s) * max(cpu_percent, 1) / 100.0))
+    return max(timeout_seconds, cpu_budget_seconds)
 
 
 def _exception_message(exc: Exception) -> str:

@@ -22,3 +22,9 @@ def test_runner_memory_error_returns_memory_limit_error(monkeypatch) -> None:
     assert exit_code == 1
     assert captured
     assert captured[-1]["error"] == "memory_limit_exceeded"
+
+
+def test_cpu_time_limit_seconds_never_undercuts_timeout() -> None:
+    assert runner._cpu_time_limit_seconds(timeout_s=5.0, cpu_percent=25) == 5
+    assert runner._cpu_time_limit_seconds(timeout_s=0.1, cpu_percent=25) == 1
+    assert runner._cpu_time_limit_seconds(timeout_s=5.0, cpu_percent=200) == 10
