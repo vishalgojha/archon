@@ -8,15 +8,21 @@ import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+import base64
+import io
+import wave
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 
 import archon.vernacular.detector as vernacular_detector_mod
+from archon.billing import InvoiceGenerator, UsageMeter
+from archon.billing.stripe_client import UsageRecord as StripeUsageRecord
 from archon.agents.community.community_agent import (
     CommunityAgent,
     CommunityPost,
@@ -27,7 +33,11 @@ from archon.agents.content.content_agent import ContentAgent, PublishTarget
 from archon.agents.outbound.email_agent import SMTPConfig, SMTPEmailTransport
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.multimodal import MultimodalOrchestrator, TranscriptResult
+from archon.onprem import DeploymentConfig, DeployValidator, DockerComposeGenerator
 from archon.partners.viral_loop import ViralLoop, visitor_fingerprint
+from archon.studio.workflow_serializer import deserialize, serialize
+from archon.config import ArchonConfig
 from archon.validate_config import validate_config
 from archon.vernacular.detector import LanguageDetector
 from archon.vernacular.pipeline import VernacularPipeline
@@ -157,6 +167,16 @@ def _collect_ws_events(
                 if stop_on_result:
                     break
     return events, result
+
+
+def _wav_bytes(duration_s: int, sample_rate: int = 8000) -> bytes:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(b"\x00\x00" * duration_s * sample_rate)
+    return output.getvalue()
 
 
 def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
@@ -677,3 +697,161 @@ def test_validate_config_dry_run_provider_matrix(
     report = validate_config(path="config.archon.yaml", dry_run=True, provider=provider_filter)
     assert report.schema_valid is True
     assert report.ok is True
+
+
+@pytest.mark.asyncio
+async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
+    """Billing integration: meter usage, flush to Stripe, and generate invoice lines."""
+
+    class _Gate:
+        async def check(self, action: str, context: dict[str, object], action_id: str) -> str:
+            assert action == "financial_transaction"
+            assert "aggregates" in context
+            return action_id
+
+    class _Stripe:
+        async def create_usage_record(self, subscription_item_id: str, quantity: float, timestamp: float) -> StripeUsageRecord:
+            return StripeUsageRecord(
+                record_id=f"ur_{subscription_item_id}",
+                subscription_item_id=subscription_item_id,
+                quantity=quantity,
+                timestamp=timestamp,
+            )
+
+    meter = UsageMeter(path=Path("archon/tests/_tmp_integration") / f"meter-{uuid.uuid4().hex[:8]}.sqlite3", approval_gate=_Gate(), stripe_client=_Stripe())  # type: ignore[arg-type]
+    meter.record("tenant-integration", "agent_runs", 2.0, {})
+    meter.record("tenant-integration", "emails_sent", 3.0, {})
+
+    records = await meter.flush_to_stripe("tenant-integration", 0.0, time.time() + 1)
+    invoice = InvoiceGenerator(meter, tier_lookup=lambda tenant_id: "pro", tax_rate=0.1).generate(
+        "tenant-integration", 0.0, time.time() + 1
+    )
+
+    assert len(records) == 2
+    assert {line.description for line in invoice.line_items} == {"Agent Runs", "Emails Sent"}
+
+
+def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On-prem integration: GPU compose config and healthy deployment validation."""
+
+    manifest = DockerComposeGenerator().generate(
+        DeploymentConfig(
+            tenant_id="tenant-onprem",
+            tier="enterprise",
+            enable_gpu=True,
+            ollama_models=["llava:34b"],
+            external_db_url="",
+            smtp_host="smtp.archon.local",
+            redis_url="",
+            domain="archon.example",
+            tls=True,
+            replicas=2,
+        )
+    )
+
+    class _Client:
+        def get(self, url: str):  # type: ignore[no-untyped-def]
+            if url.endswith("/api/tags"):
+                return type("Response", (), {"status_code": 200, "json": lambda self=None: {"models": []}})()
+            return type("Response", (), {"status_code": 200, "json": lambda self=None: {"status": "ok", "db_status": "ok"}})()
+
+        def post(self, url: str, json: dict[str, object]):  # type: ignore[no-untyped-def]
+            del url, json
+            return type("Response", (), {"status_code": 200, "json": lambda self=None: {"token": "token"}})()
+
+    monkeypatch.setattr("archon.onprem.validator.verify_webchat_token", lambda token: {"ok": True})
+    monkeypatch.setattr(
+        "archon.onprem.validator._ssl_certificate_expiry",
+        lambda base_url: datetime.now(timezone.utc) + timedelta(days=90),
+    )
+    monkeypatch.setattr(
+        "archon.onprem.validator.subprocess.run",
+        lambda *args, **kwargs: __import__("subprocess").CompletedProcess(args=args[0], returncode=0, stdout="ok", stderr=""),  # type: ignore[index]
+    )
+
+    report = DeployValidator(http_client=_Client()).run_all(
+        DeploymentConfig(
+            tenant_id="tenant-onprem",
+            tier="enterprise",
+            enable_gpu=True,
+            ollama_models=["llava:34b"],
+            external_db_url="",
+            smtp_host="smtp.archon.local",
+            redis_url="",
+            domain="archon.example",
+            tls=True,
+            replicas=2,
+        ),
+        "https://archon.example",
+    )
+
+    assert "ollama" in manifest.services
+    assert report.blocking_failures == []
+
+
+@pytest.mark.asyncio
+async def test_multimodal_integration_routes_audio_and_image_to_vision_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multimodal integration: audio append + image processing + vision routing."""
+
+    monkeypatch.setenv("OPENAI_API_KEY", "integration-openai-key")
+    orchestrator = MultimodalOrchestrator(ArchonConfig())
+    image = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aN8AAAAASUVORK5CYII=")
+    audio = _wav_bytes(1)
+
+    async def fake_transcribe(audio_input) -> TranscriptResult:  # type: ignore[no-untyped-def]
+        return TranscriptResult(text="integration speech", language="en", confidence=0.9, method="mock")
+
+    orchestrator.audio_processor.transcribe = fake_transcribe  # type: ignore[assignment]
+    response = await orchestrator.process(
+        text="inspect",
+        images=[image],
+        audio=[audio],
+        session_id="integration-session",
+        tenant_ctx={"tenant_id": "tenant-integration"},
+    )
+
+    assert response.provider == "openai"
+    assert response.transcript == "integration speech"
+    assert response.content
+
+
+def test_studio_integration_roundtrip_save_load_deserialize(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Studio integration: serialize, save via API, load back, and deserialize."""
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "integration-openrouter-key")
+    monkeypatch.setenv("ARCHON_STUDIO_DB", str(Path("archon/tests/_tmp_integration") / f"studio-{uuid.uuid4().hex[:8]}.sqlite3"))
+    nodes = [
+        {"id": "agent-a", "type": "AgentNode", "position": {"x": 0, "y": 0}, "data": {"agent_class": "ResearcherAgent", "action": "research"}},
+        {"id": "output", "type": "OutputNode", "position": {"x": 200, "y": 0}, "data": {"action": "emit"}},
+    ]
+    edges = [{"id": "e1", "source": "agent-a", "target": "output", "label": "text"}]
+    workflow = serialize(nodes, edges)
+    payload = {
+        "workflow_id": workflow.workflow_id,
+        "name": workflow.name,
+        "steps": [
+            {
+                "step_id": step.step_id,
+                "agent": step.agent,
+                "action": step.action,
+                "config": dict(step.config),
+                "dependencies": list(step.dependencies),
+            }
+            for step in workflow.steps
+        ],
+        "metadata": dict(workflow.metadata),
+        "version": workflow.version,
+        "created_at": workflow.created_at,
+    }
+
+    with TestClient(app) as client:
+        saved = client.post("/studio/workflows", json=payload, headers=_auth_headers())
+        loaded = client.get(f"/studio/workflows/{saved.json()['workflow_id']}", headers=_auth_headers())
+
+    assert saved.status_code == 200
+    assert loaded.status_code == 200
+    restored = deserialize(loaded.json())
+    assert restored["nodes"] == nodes
+    assert restored["edges"] == edges

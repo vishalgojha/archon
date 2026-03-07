@@ -16,6 +16,7 @@
     useEffect(() => {
       if (!sessionId) {
         setEntries([]);
+        setExpandedId(null);
         return undefined;
       }
       let cancelled = false;
@@ -46,25 +47,29 @@
 
     return (
       <section className="memory-timeline">
-        <div className="timeline-scroll">
-          {entries.map((entry) => (
-            <button
-              type="button"
-              key={entry.memory_id}
-              className={`timeline-entry ${expandedId === entry.memory_id ? "active" : ""}`}
-              onClick={() => setExpandedId(entry.memory_id)}
-            >
-              <time>{new Date((entry.timestamp || 0) * 1000).toLocaleTimeString()}</time>
-              <span className="role-badge">{entry.role || "unknown"}</span>
-              <p>{shortText(entry.content)}</p>
-              <div className="causal-arrows">
-                {(entry.causal_links || []).map((link) => (
-                  <span key={link.chain_id || `${entry.memory_id}-${link.effect}`}>-&gt; {link.effect}</span>
-                ))}
-              </div>
-            </button>
-          ))}
-        </div>
+        {!sessionId || entries.length === 0 ? (
+          <div className="empty-state">No memory entries yet</div>
+        ) : (
+          <div className="timeline-scroll">
+            {entries.map((entry) => (
+              <button
+                type="button"
+                key={entry.memory_id}
+                className={`timeline-entry ${expandedId === entry.memory_id ? "active" : ""}`}
+                onClick={() => setExpandedId(entry.memory_id)}
+              >
+                <time>{new Date((entry.timestamp || 0) * 1000).toLocaleTimeString()}</time>
+                <span className="role-badge">{entry.role || "unknown"}</span>
+                <p>{shortText(entry.content)}</p>
+                <div className="causal-arrows">
+                  {(entry.causal_links || []).map((link) => (
+                    <span key={link.chain_id || `${entry.memory_id}-${link.effect}`}>-&gt; {link.effect}</span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
         {selected ? (
           <article className="memory-expanded">
             <h4>Memory Detail</h4>

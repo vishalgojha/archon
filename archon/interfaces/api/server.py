@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import importlib.util
 import json
 import os
+import signal
+import socket
+import subprocess
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -13,17 +19,29 @@ from typing import Any, Callable, Literal, cast
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 
 from archon.analytics import AnalyticsCollector
 from archon.analytics.dashboard_api import create_router as create_analytics_router
-from archon.billing import BillingService, BillingStore, StripeGateway, StripeWebhookVerifier
+from archon.billing import (
+    BillingService,
+    BillingStore,
+    InvoiceGenerator,
+    StripeClient,
+    StripeGateway,
+    StripeWebhookHandler,
+    StripeWebhookVerifier,
+    UsageMeter,
+    create_webhook_router,
+)
 from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalRequiredError
 from archon.core.orchestrator import OrchestrationResult, Orchestrator
+from archon.evolution.engine import Step, WorkflowDefinition
 from archon.interfaces.api.auth import AuthMiddleware, AuthSettings, websocket_auth_context
 from archon.interfaces.api.billing_api import create_router as create_billing_router
 from archon.interfaces.api.rate_limit import (
@@ -33,7 +51,13 @@ from archon.interfaces.api.rate_limit import (
     set_rate_limit_store,
 )
 from archon.interfaces.webchat.server import mount_webchat
+from archon.observability.metrics import Metrics
+from archon.observability.setup import configure_observability
+from archon.observability.tracing import TracingSetup
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
+from archon.studio.runtime import WorkflowRunBroker, execute_workflow_run
+from archon.studio.store import StudioWorkflowStore
+from archon.studio.workflow_serializer import ValidationError, validate as validate_studio_workflow
 from archon.web.injection_generator import InjectionGenerator
 from archon.web.intent_classifier import IntentClassifier, SiteIntent
 from archon.web.site_crawler import SiteCrawler
@@ -149,6 +173,23 @@ class FederationTaskRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class StudioWorkflowRequest(BaseModel):
+    """Payload for storing one Studio workflow definition."""
+
+    workflow_id: str | None = None
+    name: str = Field(min_length=1)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    version: int = Field(default=1, ge=1)
+    created_at: float | None = None
+
+
+class StudioRunRequest(BaseModel):
+    """Payload for executing one Studio workflow definition."""
+
+    workflow: dict[str, Any]
+
+
 def _to_response(result: OrchestrationResult) -> TaskResponse:
     return TaskResponse(
         task_id=result.task_id,
@@ -170,9 +211,13 @@ async def lifespan(app: FastAPI):
     app.state.analytics_collector = AnalyticsCollector(
         path=os.getenv("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
     )
-    stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "")
-    webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "")
+    stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "") or os.getenv("STRIPE_SECRET_KEY", "")
+    webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv("STRIPE_WEBHOOK_SECRET", "")
     stripe_live_mode = str(os.getenv("ARCHON_STRIPE_LIVE_MODE", "")).strip().lower() == "true"
+    app.state.stripe_client = StripeClient(
+        secret_key=stripe_api_key,
+        webhook_secret=webhook_secret,
+    )
     app.state.billing_service = BillingService(
         store=BillingStore(path=os.getenv("ARCHON_BILLING_DB", "archon_billing.sqlite3")),
         approval_gate=app.state.orchestrator.approval_gate,
@@ -182,14 +227,36 @@ async def lifespan(app: FastAPI):
             StripeWebhookVerifier(webhook_secret) if str(webhook_secret).strip() else None
         ),
     )
+    app.state.usage_meter = UsageMeter(
+        path=os.getenv("ARCHON_USAGE_METER_DB", "archon_metering.sqlite3"),
+        stripe_client=app.state.stripe_client,
+        approval_gate=app.state.orchestrator.approval_gate,
+    )
+    app.state.invoice_generator = InvoiceGenerator(
+        app.state.usage_meter,
+        tier_lookup=lambda tenant_id: _billing_tier_for_tenant(app, tenant_id),
+    )
+    app.state.stripe_webhook_handler = StripeWebhookHandler(
+        stripe_client=app.state.stripe_client,
+        billing_service=app.state.billing_service,
+        collector=app.state.analytics_collector,
+    )
+    app.state.studio_store = StudioWorkflowStore(
+        path=os.getenv("ARCHON_STUDIO_DB", "archon_studio.sqlite3")
+    )
+    app.state.studio_run_broker = WorkflowRunBroker()
     app.state.started_monotonic = time.monotonic()
     if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
         app.state.console_tenant_config = {}
     if getattr(app.state, "webchat_app", None) is not None:
         app.state.webchat_app.state.runtime.orchestrator = app.state.orchestrator
+    configure_observability(app)
     try:
         yield
     finally:
+        stripe_client = getattr(app.state, "stripe_client", None)
+        if stripe_client is not None and callable(getattr(stripe_client, "aclose", None)):
+            await stripe_client.aclose()
         billing_service = getattr(app.state, "billing_service", None)
         if isinstance(billing_service, BillingService) and billing_service.gateway is not None:
             await billing_service.gateway.aclose()
@@ -197,20 +264,47 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ARCHON API", version="0.1.0", lifespan=lifespan)
+EXEMPT_PREFIXES = {
+    "/webchat",
+    "/health",
+    "/metrics",
+    "/observability",
+    "/docs",
+    "/openapi.json",
+    "/federation",
+}
 _exempt_paths = {
     "/health",
     "/healthz",
     "/memory/timeline",
     "/agents/status",
+    "/dashboard",
+    "/dashboard/",
+    "/metrics",
+    "/observability/traces",
+    "/studio",
+    "/studio/",
     "/webchat",
     "/webchat/token",
     "/webchat/upgrade",
+    "/billing/webhooks/stripe",
     "/v1/billing/webhooks/stripe",
     "/openapi.json",
     "/docs",
     "/redoc",
 }
-app.add_middleware(AuthMiddleware, settings=AuthSettings.from_env(), exempt_paths=_exempt_paths)
+_exempt_path_prefixes = {
+    "/dashboard/src",
+    "/studio/assets",
+    "/webchat/static",
+    *EXEMPT_PREFIXES,
+}
+app.add_middleware(
+    AuthMiddleware,
+    settings=AuthSettings.from_env(),
+    exempt_paths=_exempt_paths,
+    exempt_path_prefixes=_exempt_path_prefixes,
+)
 
 limiter = create_limiter()
 app.state.limiter = limiter
@@ -218,14 +312,63 @@ app.state.rate_limit_store = InMemoryTierRateLimitStore.from_env()
 set_rate_limit_store(app.state.rate_limit_store)
 app.state.started_monotonic = time.monotonic()
 app.state.console_tenant_config = {}
+app.state.webchat_app = None
+_studio_static_dir = Path(__file__).resolve().parents[1] / "web" / "studio"
+_dashboard_static_dir = Path(__file__).resolve().parents[1] / "web" / "dashboard"
+if _studio_static_dir.exists():
+    app.mount("/studio/assets", StaticFiles(directory=str(_studio_static_dir)), name="studio-assets")
+if (_dashboard_static_dir / "src").exists():
+    app.mount(
+        "/dashboard/src",
+        StaticFiles(directory=str(_dashboard_static_dir / "src")),
+        name="dashboard-src",
+    )
 _rate_limit_handler = cast(
     Callable[[Request, Exception], Response],
     _rate_limit_exceeded_handler,
 )
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
-app.state.webchat_app = mount_webchat(app, path="/webchat")
 app.include_router(create_billing_router())
 app.include_router(create_analytics_router())
+app.include_router(create_webhook_router())
+
+
+@app.middleware("http")
+async def observability_http_metrics(request: Request, call_next):
+    """Record HTTP request metrics for every API request."""
+
+    started = time.perf_counter()
+    status_code = 500
+    metrics = Metrics.get_instance()
+    try:
+        response = await call_next(request)
+        status_code = int(getattr(response, "status_code", 200) or 200)
+        return response
+    finally:
+        path = _observability_path_label(request)
+        duration = max(0.0, time.perf_counter() - started)
+        metrics.increment_request(method=request.method, path=path, status=status_code)
+        metrics.observe_request_duration(path=path, duration_seconds=duration)
+
+
+@app.get("/studio", include_in_schema=False)
+@app.get("/studio/", include_in_schema=False)
+async def studio_index() -> Response:
+    """Serve the standalone Studio application shell."""
+
+    if not _studio_static_dir.exists():
+        raise HTTPException(status_code=404, detail="Studio UI is unavailable.")
+    return FileResponse(_studio_static_dir / "index.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard/", include_in_schema=False)
+async def dashboard_index() -> Response:
+    """Serve the Mission Control dashboard shell."""
+
+    if not _dashboard_static_dir.exists():
+        raise HTTPException(status_code=404, detail="Dashboard UI is unavailable.")
+    return FileResponse(_dashboard_static_dir / "index.html")
 
 
 @app.get("/health")
@@ -235,6 +378,7 @@ async def health() -> dict[str, Any]:
     started = float(getattr(app.state, "started_monotonic", time.monotonic()))
     return {
         "status": "ok",
+        "db_status": "ok",
         "version": app.version,
         "uptime_s": max(0.0, time.monotonic() - started),
     }
@@ -245,6 +389,25 @@ async def healthcheck() -> dict[str, str]:
     """Simple readiness probe endpoint."""
 
     return {"status": "ok"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint() -> PlainTextResponse:
+    """Expose Prometheus-compatible metrics for local/dev scraping."""
+
+    metrics = Metrics.get_instance()
+    metrics.refresh_runtime_gauges(app)
+    return PlainTextResponse(
+        metrics.render_prometheus_text(),
+        media_type=metrics.content_type,
+    )
+
+
+@app.get("/observability/traces", include_in_schema=False)
+async def traces_endpoint(limit: int = 100, failed: bool = False) -> list[dict[str, Any]]:
+    """Expose recent in-memory spans for local trace inspection."""
+
+    return TracingSetup.list_spans(limit=max(1, min(500, int(limit))), failed_only=bool(failed))
 
 
 @app.get("/memory/timeline")
@@ -496,12 +659,14 @@ async def run_task(request: Request, payload: TaskRequest) -> TaskResponse:
     """Run one orchestration task and return final synthesis."""
 
     orchestrator: Orchestrator = app.state.orchestrator
+    context = dict(payload.context)
+    context.setdefault("tenant_id", request.state.auth.tenant_id)
     try:
         result = await orchestrator.execute(
             goal=payload.goal,
             mode=payload.mode,
             language=payload.language,
-            context=payload.context,
+            context=context,
         )
         await _meter_task_billing_usage(
             tenant_id=request.state.auth.tenant_id,
@@ -534,6 +699,8 @@ async def run_task_ws(websocket: WebSocket) -> None:
     try:
         incoming = await websocket.receive_json()
         request = TaskRequest.model_validate(incoming)
+        context = dict(request.context)
+        context.setdefault("tenant_id", websocket.state.auth.tenant_id)
 
         async def sink(event: dict[str, Any]) -> None:
             await websocket.send_json({"type": "event", "payload": event})
@@ -542,7 +709,7 @@ async def run_task_ws(websocket: WebSocket) -> None:
             goal=request.goal,
             mode=request.mode,
             language=request.language,
-            context=request.context,
+            context=context,
             event_sink=sink,
         )
         await _meter_task_billing_usage(
@@ -747,6 +914,140 @@ async def send_outbound_webchat(
     )
 
 
+@app.post("/studio/workflows")
+async def studio_save_workflow(
+    payload: StudioWorkflowRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Persist one Studio workflow definition for the authenticated tenant."""
+
+    tenant_id = request.state.auth.tenant_id
+    workflow = _studio_request_to_workflow(payload)
+    store = _studio_store()
+    saved = store.save(tenant_id, workflow, workflow_id=payload.workflow_id)
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "workflow_created",
+            "workflow_id": saved.workflow_id,
+            "name": saved.name,
+        }
+    )
+    return {
+        "workflow_id": saved.workflow_id,
+        "name": saved.name,
+        "updated_at": saved.updated_at,
+    }
+
+
+@app.get("/studio/workflows")
+async def studio_list_workflows(request: Request) -> list[dict[str, Any]]:
+    """List Studio workflows for the authenticated tenant."""
+
+    tenant_id = request.state.auth.tenant_id
+    store = _studio_store()
+    return [
+        {
+            "id": row.workflow_id,
+            "name": row.name,
+            "updated_at": row.updated_at,
+        }
+        for row in store.list(tenant_id)
+    ]
+
+
+@app.get("/studio/workflows/{workflow_id}")
+async def studio_get_workflow(workflow_id: str, request: Request) -> dict[str, Any]:
+    """Load one Studio workflow definition."""
+
+    tenant_id = request.state.auth.tenant_id
+    workflow = _studio_store().get(tenant_id, workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    return _workflow_to_payload(workflow)
+
+
+@app.delete("/studio/workflows/{workflow_id}")
+async def studio_delete_workflow(workflow_id: str, request: Request) -> dict[str, Any]:
+    """Delete one Studio workflow definition."""
+
+    tenant_id = request.state.auth.tenant_id
+    deleted = _studio_store().delete(tenant_id, workflow_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "state_change",
+            "workflow_id": workflow_id,
+            "state": "studio_workflow_deleted",
+        }
+    )
+    return {"status": "deleted", "workflow_id": workflow_id}
+
+
+@app.post("/studio/run")
+async def studio_run_workflow(
+    payload: StudioRunRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Validate and execute one Studio workflow definition."""
+
+    tenant_id = request.state.auth.tenant_id
+    errors = validate_studio_workflow(payload.workflow)
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail=[{"code": error.code, "message": error.message, "node_id": error.node_id} for error in errors],
+        )
+    workflow = _workflow_from_payload(payload.workflow)
+    broker: WorkflowRunBroker = app.state.studio_run_broker
+    run = broker.create_run(tenant_id, workflow.workflow_id)
+    asyncio.create_task(
+        execute_workflow_run(
+            broker=broker,
+            run_id=run.run_id,
+            workflow=workflow,
+            orchestrator=app.state.orchestrator,
+        )
+    )
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "state_change",
+            "workflow_id": workflow.workflow_id,
+            "run_id": run.run_id,
+            "state": "studio_workflow_run_started",
+        }
+    )
+    return {
+        "run_id": run.run_id,
+        "workflow_id": workflow.workflow_id,
+        "websocket_path": f"/studio/run/ws/{run.run_id}",
+    }
+
+
+@app.websocket("/studio/run/ws/{run_id}")
+async def studio_run_ws(websocket: WebSocket, run_id: str) -> None:
+    """Stream Studio workflow execution events over WebSocket."""
+
+    try:
+        auth_settings: AuthSettings = app.state.auth_settings
+        websocket.state.auth = websocket_auth_context(websocket, auth_settings)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    broker: WorkflowRunBroker = app.state.studio_run_broker
+    try:
+        async for event in broker.subscribe(run_id):
+            await websocket.send_json(event)
+    except KeyError:
+        await websocket.send_json({"type": "error", "message": "Unknown run_id."})
+    except WebSocketDisconnect:
+        return
+
+
 @app.post("/federation/tasks/bid")
 async def federation_bid(payload: FederationTaskRequest, request: Request) -> dict[str, Any]:
     """Return local bid for an incoming federated task."""
@@ -787,7 +1088,8 @@ async def federation_execute(
     """Execute federated task locally and stream result tokens back to requester."""
 
     orchestrator: Orchestrator = app.state.orchestrator
-    tenant_id = getattr(request.state.auth, "tenant_id", "system")
+    auth = getattr(request.state, "auth", None)
+    tenant_id = getattr(auth, "tenant_id", "system")
 
     async def _event_stream():
         started = time.monotonic()
@@ -799,6 +1101,7 @@ async def federation_execute(
                 goal=payload.description,
                 mode="debate",
                 context={
+                    "tenant_id": tenant_id,
                     "federation_task_id": payload.task_id,
                     "requester_instance_id": payload.requester_instance_id,
                     "federation_context": payload.context,
@@ -811,6 +1114,14 @@ async def federation_execute(
                 task_id=result.task_id,
                 budget=result.budget,
             )
+            usage_meter = getattr(app.state, "usage_meter", None)
+            if isinstance(usage_meter, UsageMeter):
+                usage_meter.record(
+                    tenant_id=tenant_id,
+                    metric="federation_tasks",
+                    quantity=1.0,
+                    metadata={"task_id": payload.task_id},
+                )
             await _emit_task_analytics(
                 tenant_id=tenant_id,
                 result=result,
@@ -868,7 +1179,16 @@ def run() -> None:
 
     host = os.getenv("ARCHON_HOST", "127.0.0.1")
     port = int(os.getenv("ARCHON_PORT", "8000"))
-    uvicorn.run("archon.interfaces.api.server:app", host=host, port=port, reload=False)
+    if not _has_websocket_transport():
+        raise RuntimeError(
+            "ARCHON server requires websocket support. Install 'websockets' "
+            "(preferred) or 'wsproto', then restart the server."
+        )
+    lock_path = _acquire_managed_server_slot(host=host, port=port)
+    try:
+        uvicorn.run("archon.interfaces.api.server:app", host=host, port=port, reload=False)
+    finally:
+        _clear_managed_server_slot(lock_path, pid=os.getpid())
 
 
 def _memory_matches_session(row: dict[str, Any], session_id: str) -> bool:
@@ -880,6 +1200,162 @@ def _memory_matches_session(row: dict[str, Any], session_id: str) -> bool:
     nested = context.get("input_context")
     if isinstance(nested, dict) and str(nested.get("session_id", "")).strip() == session_id:
         return True
+    return False
+
+
+def _has_websocket_transport() -> bool:
+    return (
+        importlib.util.find_spec("websockets") is not None
+        or importlib.util.find_spec("wsproto") is not None
+    )
+
+
+def _acquire_managed_server_slot(*, host: str, port: int) -> Path:
+    lock_path = _managed_server_lock_path(host, port)
+    payload = _read_managed_server_lock(lock_path)
+    managed_pid = int(payload.get("pid") or 0) if isinstance(payload, dict) else 0
+    current_pid = os.getpid()
+    if managed_pid > 0 and managed_pid != current_pid and _process_is_running(managed_pid):
+        _terminate_process(managed_pid)
+        _wait_for_process_exit(managed_pid, timeout_s=5.0)
+    _clear_managed_server_slot(lock_path)
+    if not _port_is_bindable(host, port):
+        raise RuntimeError(
+            f"ARCHON could not start on {host}:{port} because the port is already in use "
+            "by an unmanaged process. Stop it or choose a different port."
+        )
+    _write_managed_server_lock(lock_path, pid=current_pid, host=host, port=port)
+    return lock_path
+
+
+def _managed_server_lock_path(host: str, port: int) -> Path:
+    runtime_dir = _archon_runtime_dir() / "runtime"
+    safe_host = str(host or "127.0.0.1").replace(":", "_").replace("/", "_").replace("\\", "_")
+    return runtime_dir / f"server-{safe_host}-{int(port)}.json"
+
+
+def _archon_runtime_dir() -> Path:
+    configured = str(os.getenv("ARCHON_RUNTIME_DIR", "")).strip()
+    if configured:
+        root = Path(configured)
+    elif os.name == "nt":
+        root = Path(os.getenv("LOCALAPPDATA", tempfile.gettempdir())) / "ARCHON"
+    else:
+        root = Path.home() / ".archon"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _read_managed_server_lock(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_managed_server_lock(path: Path, *, pid: int, host: str, port: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "pid": int(pid),
+                "host": str(host),
+                "port": int(port),
+                "updated_at": time.time(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _clear_managed_server_slot(path: Path, *, pid: int | None = None) -> None:
+    if pid is not None:
+        payload = _read_managed_server_lock(path)
+        locked_pid = int(payload.get("pid") or 0) if isinstance(payload, dict) else 0
+        if locked_pid not in {0, int(pid)}:
+            return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+
+
+def _process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = str(result.stdout or "").strip()
+        if not output or output.lower().startswith("info: no tasks"):
+            return False
+        return f'"{pid}"' in output or f",{pid}," in output
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _terminate_process(pid: int) -> None:
+    if pid <= 0:
+        return
+    if os.name == "nt":
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined = f"{result.stdout}\n{result.stderr}".lower()
+        if result.returncode != 0 and "not found" not in combined and "no running instance" not in combined:
+            raise RuntimeError(f"ARCHON could not stop the previous server process {pid}.")
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except OSError as exc:
+        raise RuntimeError(f"ARCHON could not stop the previous server process {pid}.") from exc
+    if _wait_for_process_exit(pid, timeout_s=2.0):
+        return
+    os.kill(pid, signal.SIGKILL)
+
+
+def _wait_for_process_exit(pid: int, *, timeout_s: float) -> bool:
+    deadline = time.monotonic() + max(0.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        if not _process_is_running(pid):
+            return True
+        time.sleep(0.1)
+    return not _process_is_running(pid)
+
+
+def _port_is_bindable(host: str, port: int) -> bool:
+    bind_host = host or "127.0.0.1"
+    try:
+        infos = socket.getaddrinfo(bind_host, int(port), type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        infos = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (bind_host, int(port)))]
+    for family, socktype, proto, _canonname, sockaddr in infos:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(sockaddr)
+            return True
+        except OSError:
+            continue
+        finally:
+            sock.close()
     return False
 
 
@@ -1120,6 +1596,14 @@ async def _meter_task_billing_usage(
             task_id=task_id,
             cost_by_provider_model=normalized,
         )
+    usage_meter = getattr(app.state, "usage_meter", None)
+    if isinstance(usage_meter, UsageMeter):
+        usage_meter.record(
+            tenant_id=tenant_id,
+            metric="agent_runs",
+            quantity=1.0,
+            metadata={"task_id": task_id, "providers": sorted(normalized)},
+        )
 
 
 async def _meter_outbound_action(
@@ -1138,6 +1622,20 @@ async def _meter_outbound_action(
         provider=provider,
         task_id=task_id,
     )
+    usage_meter = getattr(app.state, "usage_meter", None)
+    if isinstance(usage_meter, UsageMeter):
+        metric = ""
+        if action_type == "outbound_email":
+            metric = "emails_sent"
+        elif action_type == "outbound_whatsapp":
+            metric = "whatsapp_sent"
+        if metric:
+            usage_meter.record(
+                tenant_id=tenant_id,
+                metric=metric,
+                quantity=1.0,
+                metadata={"provider": provider, "task_id": task_id},
+            )
 
 
 async def _emit_task_analytics(
@@ -1266,3 +1764,82 @@ def _task_agent_rows(result: OrchestrationResult) -> list[dict[str, Any]]:
 def _split_provider_model(raw: str) -> tuple[str, str]:
     provider, _sep, model = str(raw or "").partition("/")
     return provider or "unknown", model or "unknown"
+
+
+def _billing_tier_for_tenant(app: FastAPI, tenant_id: str) -> str:
+    service = getattr(app.state, "billing_service", None)
+    if not isinstance(service, BillingService):
+        return "free"
+    subscription = service.store.get_subscription(str(tenant_id))
+    if subscription is None:
+        return "free"
+    plan = str(subscription.plan_id or "").strip().lower()
+    if plan in {"business", "growth", "pro"}:
+        return "pro"
+    if plan == "enterprise":
+        return "enterprise"
+    return "free"
+
+
+def _observability_path_label(request: Request) -> str:
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if isinstance(template, str) and template:
+        return template
+    return str(request.url.path or "/")
+
+
+def _studio_store() -> StudioWorkflowStore:
+    store = getattr(app.state, "studio_store", None)
+    if not isinstance(store, StudioWorkflowStore):
+        raise HTTPException(status_code=503, detail="Studio store is unavailable.")
+    return store
+
+
+def _workflow_from_payload(payload: dict[str, Any]) -> WorkflowDefinition:
+    steps = [
+        Step(
+            step_id=str(step.get("step_id") or ""),
+            agent=str(step.get("agent") or ""),
+            action=str(step.get("action") or ""),
+            config=dict(step.get("config") or {}),
+            dependencies=[str(dep) for dep in step.get("dependencies", [])],
+        )
+        for step in payload.get("steps", [])
+        if isinstance(step, dict)
+    ]
+    return WorkflowDefinition(
+        workflow_id=str(payload.get("workflow_id") or f"workflow-{int(time.time())}"),
+        name=str(payload.get("name") or "Studio Workflow"),
+        steps=steps,
+        metadata=dict(payload.get("metadata") or {}),
+        version=int(payload.get("version") or 1),
+        created_at=float(payload.get("created_at") or time.time()),
+    )
+
+
+def _studio_request_to_workflow(payload: StudioWorkflowRequest) -> WorkflowDefinition:
+    return _workflow_from_payload(payload.model_dump(exclude_none=True))
+
+
+def _workflow_to_payload(workflow: WorkflowDefinition) -> dict[str, Any]:
+    return {
+        "workflow_id": workflow.workflow_id,
+        "name": workflow.name,
+        "steps": [
+            {
+                "step_id": step.step_id,
+                "agent": step.agent,
+                "action": step.action,
+                "config": dict(step.config),
+                "dependencies": list(step.dependencies),
+            }
+            for step in workflow.steps
+        ],
+        "metadata": dict(workflow.metadata),
+        "version": workflow.version,
+        "created_at": workflow.created_at,
+    }
+
+
+app.state.webchat_app = mount_webchat(app, path="/webchat")

@@ -3,6 +3,11 @@
 
   const EMPTY_STATE = {
     status: "disconnected",
+    sessionId: "",
+    token: "",
+    isInitializing: true,
+    setIsInitializing: () => {},
+    setSessionCredentials: () => ({ sessionId: "", token: "" }),
     connect: () => {},
     disconnect: () => {},
     send: () => {},

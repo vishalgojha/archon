@@ -5,6 +5,7 @@ from __future__ import annotations
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from archon.agents.outbound.email_agent import EmailSendResult, OutboundEmail
 from archon.agents.outbound.webchat_agent import WebChatMessage, WebChatSendResult
@@ -21,6 +22,10 @@ def _auth_headers(*, tenant: str = "tenant-test", tier: str = "business") -> dic
         algorithm="HS256",
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+def _set_webchat_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
 
 
 def test_post_tasks_rejects_missing_bearer_token() -> None:
@@ -224,6 +229,78 @@ def test_health_endpoint_returns_status_version_and_uptime() -> None:
     assert payload["version"] == app.version
     assert isinstance(payload["uptime_s"], (int, float))
     assert payload["uptime_s"] >= 0
+
+
+def test_webchat_token_route_is_public_without_auth_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_webchat_secret(monkeypatch)
+    with TestClient(app) as client:
+        response = client.post("/webchat/token", json={})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["token"]
+    assert payload["session"]["session_id"].startswith("session-")
+
+
+def test_webchat_session_route_is_public_with_webchat_token_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_webchat_secret(monkeypatch)
+    with TestClient(app) as client:
+        token_response = client.post("/webchat/token", json={})
+        token_payload = token_response.json()
+        session_id = token_payload["session"]["session_id"]
+        token = token_payload["token"]
+        response = client.get(f"/webchat/session/{session_id}", params={"token": token})
+
+    assert token_response.status_code == 200
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"]["session_id"] == session_id
+    assert isinstance(payload["messages"], list)
+
+
+def test_protected_route_still_requires_bearer_token() -> None:
+    with TestClient(app) as client:
+        response = client.get("/studio/workflows")
+
+    assert response.status_code == 401
+
+
+def test_webchat_websocket_reaches_subapp_and_returns_webchat_close_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_webchat_secret(monkeypatch)
+    with TestClient(app) as client:
+        token_response = client.post("/webchat/token", json={})
+        token_payload = token_response.json()
+        token = token_payload["token"]
+        wrong_session_id = "session-mismatch"
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(f"/webchat/ws/{wrong_session_id}?token={token}"):
+                pass
+
+    assert token_response.status_code == 200
+    assert exc_info.value.code == 4003
+
+
+def test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected() -> None:
+    with TestClient(app) as client:
+        dashboard = client.get("/dashboard")
+        dashboard_asset = client.get("/dashboard/src/useARCHON.js")
+        studio = client.get("/studio")
+        studio_api = client.get("/studio/workflows")
+
+    assert dashboard.status_code == 200
+    assert "ARCHON Mission Control" in dashboard.text
+    assert dashboard_asset.status_code == 200
+    assert "window.useARCHON" in dashboard_asset.text
+    assert studio.status_code == 200
+    assert "ARCHON Studio" in studio.text
+    assert studio_api.status_code == 401
 
 
 def test_memory_timeline_endpoint_filters_by_session(

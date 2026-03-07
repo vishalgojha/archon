@@ -16,6 +16,7 @@ dependencies = [
   "pyyaml>=6.0.1",
   "slowapi>=0.1.9",
   "uvicorn>=0.30.0",
+  "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ dev = [
 ]
 
 [project.scripts]
+archon = "archon.archon_cli:main"
 archon-server = "archon.interfaces.api.server:run"
 
 [tool.setuptools]

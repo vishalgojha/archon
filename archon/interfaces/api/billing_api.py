@@ -189,11 +189,14 @@ async def billing_generate_invoice(
 async def billing_stripe_webhook(request: Request) -> dict[str, Any]:
     """Verify and apply an incoming Stripe webhook."""
 
-    service = _service(request)
     signature = request.headers.get("stripe-signature", "")
-    payload = (await request.body()).decode("utf-8")
+    body = await request.body()
+    handler = getattr(request.app.state, "stripe_webhook_handler", None)
     try:
-        return await service.handle_stripe_webhook(payload, signature)
+        if handler is not None and callable(getattr(handler, "handle", None)):
+            return await handler.handle(body, signature)
+        service = _service(request)
+        return await service.handle_stripe_webhook(body.decode("utf-8"), signature)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -13,3 +13,4 @@ ruff==0.6.5
 slowapi==0.1.9
 types-PyYAML==6.0.12.20240917
 uvicorn==0.30.0
+websockets>=12.0

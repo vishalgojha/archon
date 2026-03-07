@@ -48,13 +48,24 @@ class AuthSettings:
 class AuthMiddleware(BaseHTTPMiddleware):
     """HTTP middleware that enforces JWT bearer auth for protected routes."""
 
-    def __init__(self, app, settings: AuthSettings, exempt_paths: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        app,
+        settings: AuthSettings,
+        exempt_paths: set[str] | None = None,
+        exempt_path_prefixes: set[str] | None = None,
+    ) -> None:
         super().__init__(app)
         self._settings = settings
         self._exempt_paths = exempt_paths or set()
+        self._exempt_path_prefixes = exempt_path_prefixes or set()
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in self._exempt_paths:
+        if _path_is_exempt(
+            request.url.path,
+            exempt_paths=self._exempt_paths,
+            exempt_path_prefixes=self._exempt_path_prefixes,
+        ):
             return await call_next(request)
 
         token = _extract_bearer_token(request.headers.get("Authorization"))
@@ -117,3 +128,18 @@ def _extract_bearer_token(value: str | None) -> str | None:
         return None
     token = parts[1].strip()
     return token or None
+
+
+def _path_is_exempt(
+    path: str,
+    *,
+    exempt_paths: set[str],
+    exempt_path_prefixes: set[str],
+) -> bool:
+    normalized = str(path or "").strip() or "/"
+    if normalized in exempt_paths:
+        return True
+    return any(
+        normalized == prefix or normalized.startswith(f"{prefix}/")
+        for prefix in exempt_path_prefixes
+    )

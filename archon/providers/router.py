@@ -239,6 +239,72 @@ class ProviderRouter:
             )
         return response
 
+    async def invoke_multimodal(
+        self,
+        *,
+        role: str,
+        text: str,
+        content_blocks: list[dict[str, Any]],
+        task_id: str | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        system_prompt: str | None = None,
+    ) -> ProviderResponse:
+        """Execute one multimodal request through the configured BYOK provider.
+
+        Example:
+            >>> hasattr(ProviderRouter, "invoke_multimodal")
+            True
+        """
+
+        selection = self.resolve_provider(
+            role=role,
+            model_override=model_override,
+            provider_override=provider_override,
+        )
+        selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
+
+        if not self._live_mode:
+            response = self._simulate_response(text, selection)
+        elif selection.provider == "anthropic":
+            response = await self._call_anthropic_multimodal(
+                selection,
+                text=text,
+                content_blocks=content_blocks,
+                system_prompt=system_prompt,
+            )
+        elif selection.provider == "gemini":
+            response = await self._call_gemini_multimodal(
+                selection,
+                text=text,
+                content_blocks=content_blocks,
+                system_prompt=system_prompt,
+            )
+        else:
+            response = await self._call_openai_compatible_multimodal(
+                selection,
+                text=text,
+                content_blocks=content_blocks,
+                system_prompt=system_prompt,
+            )
+
+        if task_id and self._cost_governor:
+            self._cost_governor.add_cost(
+                task_id=task_id,
+                cost_usd=response.usage.cost_usd,
+                provider=selection.provider,
+                model=selection.model,
+            )
+        if task_id and self._cost_optimizer is not None:
+            self._cost_optimizer.observe_selection(
+                task_id,
+                role=role,
+                provider=selection.provider,
+                model=selection.model,
+                cost_usd=response.usage.cost_usd,
+            )
+        return response
+
     def record_task_feedback(self, task_id: str, *, quality_score: float) -> None:
         """Feed task-quality feedback back into the optimizer.
 
@@ -486,6 +552,50 @@ class ProviderRouter:
             raw=data,
         )
 
+    async def _call_anthropic_multimodal(
+        self,
+        selection: ProviderSelection,
+        *,
+        text: str,
+        content_blocks: list[dict[str, Any]],
+        system_prompt: str | None,
+    ) -> ProviderResponse:
+        headers = {
+            "x-api-key": selection.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": selection.model,
+            "max_tokens": 512,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": text}, *content_blocks],
+                }
+            ],
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        url = f"{selection.base_url.rstrip('/')}/v1/messages"
+        res = await self._http.post(url, json=payload, headers=headers)
+        if res.status_code >= 400:
+            raise ProviderCallError(f"Anthropic multimodal call failed with HTTP {res.status_code}.")
+        data = res.json()
+        parts = data.get("content") or []
+        response_text = " ".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+        usage_data = data.get("usage") or {}
+        prompt_tokens = int(usage_data.get("input_tokens") or _estimate_tokens(text))
+        completion_tokens = int(usage_data.get("output_tokens") or _estimate_tokens(response_text))
+        usage = self._usage_for("anthropic", prompt_tokens, completion_tokens)
+        return ProviderResponse(
+            text=response_text,
+            provider="anthropic",
+            model=selection.model,
+            usage=usage,
+            raw=data,
+        )
+
     async def _call_gemini(
         self, selection: ProviderSelection, prompt: str, system_prompt: str | None
     ) -> ProviderResponse:
@@ -521,6 +631,116 @@ class ProviderRouter:
         return ProviderResponse(
             text=text,
             provider="gemini",
+            model=selection.model,
+            usage=usage,
+            raw=data,
+        )
+
+    async def _call_gemini_multimodal(
+        self,
+        selection: ProviderSelection,
+        *,
+        text: str,
+        content_blocks: list[dict[str, Any]],
+        system_prompt: str | None,
+    ) -> ProviderResponse:
+        base_url = selection.base_url.rstrip("/")
+        if "/v1" in base_url:
+            url = f"{base_url}/models/{selection.model}:generateContent"
+        else:
+            url = f"{base_url}/v1beta/models/{selection.model}:generateContent"
+        url = f"{url}?key={selection.api_key}"
+        parts: list[dict[str, Any]] = []
+        if system_prompt:
+            parts.append({"text": f"System: {system_prompt}"})
+        parts.append({"text": text})
+        for block in content_blocks:
+            source = block.get("source") if isinstance(block, dict) else {}
+            if not isinstance(source, dict):
+                continue
+            parts.append(
+                {
+                    "inline_data": {
+                        "mime_type": source.get("media_type", "image/jpeg"),
+                        "data": source.get("data", ""),
+                    }
+                }
+            )
+        res = await self._http.post(url, json={"contents": [{"parts": parts}]})
+        if res.status_code >= 400:
+            raise ProviderCallError(f"Gemini multimodal call failed with HTTP {res.status_code}.")
+        data = res.json()
+        candidates = data.get("candidates") or []
+        content = (candidates[0].get("content") if candidates else {}) or {}
+        text_parts = content.get("parts") or []
+        response_text = " ".join(
+            part.get("text", "") for part in text_parts if isinstance(part, dict)
+        ).strip()
+        usage_data = data.get("usageMetadata") or {}
+        prompt_tokens = int(usage_data.get("promptTokenCount") or _estimate_tokens(text))
+        completion_tokens = int(usage_data.get("candidatesTokenCount") or _estimate_tokens(response_text))
+        usage = self._usage_for("gemini", prompt_tokens, completion_tokens)
+        return ProviderResponse(
+            text=response_text,
+            provider="gemini",
+            model=selection.model,
+            usage=usage,
+            raw=data,
+        )
+
+    async def _call_openai_compatible_multimodal(
+        self,
+        selection: ProviderSelection,
+        *,
+        text: str,
+        content_blocks: list[dict[str, Any]],
+        system_prompt: str | None,
+    ) -> ProviderResponse:
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        for block in content_blocks:
+            source = block.get("source") if isinstance(block, dict) else {}
+            if not isinstance(source, dict):
+                continue
+            media_type = str(source.get("media_type") or "image/jpeg")
+            data = str(source.get("data") or "")
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{data}"},
+                }
+            )
+        messages.append({"role": "user", "content": content})
+
+        payload = {"model": selection.model, "messages": messages}
+        headers = {"Content-Type": "application/json"}
+        if selection.api_key and selection.api_key.lower() != "none":
+            headers["Authorization"] = f"Bearer {selection.api_key}"
+
+        url = f"{selection.base_url.rstrip('/')}/chat/completions"
+        res = await self._http.post(url, json=payload, headers=headers)
+        if res.status_code >= 400:
+            raise ProviderCallError(
+                f"Provider multimodal call failed ({selection.provider}) with HTTP {res.status_code}."
+            )
+
+        data = res.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        response_text = message.get("content", "")
+        if isinstance(response_text, list):
+            response_text = " ".join(
+                part.get("text", "") for part in response_text if isinstance(part, dict)
+            ).strip()
+        usage_data = data.get("usage") or {}
+        prompt_tokens = int(usage_data.get("prompt_tokens") or _estimate_tokens(text))
+        completion_tokens = int(usage_data.get("completion_tokens") or _estimate_tokens(response_text))
+        usage = self._usage_for(selection.provider, prompt_tokens, completion_tokens)
+        return ProviderResponse(
+            text=response_text,
+            provider=selection.provider,
             model=selection.model,
             usage=usage,
             raw=data,

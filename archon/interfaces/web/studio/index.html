@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ARCHON Studio</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reactflow/11.11.4/style.min.css" />
+    <style>
+      :root {
+        --studio-bg: #f2efe5;
+        --studio-panel: rgba(255, 250, 242, 0.94);
+        --studio-border: rgba(27, 43, 65, 0.14);
+        --studio-ink: #1b2b41;
+        --studio-accent: #c14f2e;
+        --studio-muted: #6a7687;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--studio-ink);
+        background:
+          radial-gradient(circle at 10% 20%, rgba(193, 79, 46, 0.18), transparent 24%),
+          radial-gradient(circle at 90% 10%, rgba(45, 98, 163, 0.16), transparent 26%),
+          linear-gradient(160deg, #f6f1e8 0%, #eef1f5 100%);
+      }
+      #root { height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reactflow/11.11.4/umd/index.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre-d3/0.6.4/dagre-d3.min.js"></script>
+    <script src="/studio/assets/WorkflowCanvas.jsx"></script>
+    <script src="/studio/assets/NodeEditor.jsx"></script>
+    <script src="/studio/assets/index.js"></script>
+  </body>
+  </html>

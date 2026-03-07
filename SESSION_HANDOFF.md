@@ -4,10 +4,10 @@
 - Date: 2026-03-07
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Sprint status: Prompts 1-40 built
-- Verification: full suite passing (`pytest tests archon/tests -q` -> 316 passed, 9 skipped)
+- Sprint status: Prompts 1-41 built
+- Verification: full suite passing (`pytest tests archon/tests -q` -> 545 passed, 9 skipped)
 
-## Built ✅ (40 Items)
+## Built ✅ (41 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
 2. Growth swarm runtime (Prospector, ICP, Outreach, Nurture, RevenueIntel, Partner, ChurnDefense).
 3. Approval gate framework for high/medium risk action enforcement and audit trail.
@@ -48,19 +48,18 @@
 38. Automated PR red-team regression (`archon/redteam/regression.py`, CLI, `.github/workflows/ci.yml`) with markdown/JSON artifacts and failure thresholds wired into required CI checks.
 39. Cost optimizer agent (`archon/agents/optimization/`) wired into `ProviderRouter` and `CostGovernor` to learn lower-cost provider/model profiles, auto-downgrade under budget pressure, and emit optimization analytics.
 40. Agent performance leaderboard (`archon/analytics/aggregator.py`, `archon/analytics/dashboard_api.py`, dashboard SPA) with anonymized cross-tenant benchmarking, tenant-safe access control, and Mission Control UI card.
+41. Observability stack (`archon/observability/`, `/metrics`, `/observability/traces`, Grafana assets, CLI monitor commands) with optional OpenTelemetry hooks, Prometheus-compatible metrics, and local dev trace inspection.
 
 ## Pending
 - No open items remain from the previous sprint backlog.
 
 ## NEXT CODEX PROMPT
-Continue building ARCHON. Sprint 4 is fully complete and the full suite passes.
+Continue building ARCHON. Observability is complete and the full suite passes.
 
 Suggested next sprint:
-- Persist cost optimizer profiles into analytics-backed storage so downgrade decisions survive process restarts.
-- Add regression trend reporting / PR annotations so red-team regressions are visible without downloading artifacts.
-- Extend leaderboard drill-downs with per-agent timeseries, federation-only slices, and exportable benchmark snapshots.
+- Build Stripe Connect marketplace developer onboarding.
+- Implement marketplace revenue-share accounting and payout orchestration.
+- Add approval-gated partner payout flows with tenant-safe reporting.
 
 Verification baseline:
-- `pytest tests/test_provider_router.py tests/test_cost_governor.py tests/test_api_server.py archon/tests/test_analytics.py archon/tests/test_cli.py archon/tests/test_redteam.py archon/tests/test_redteam_regression.py archon/tests/test_cost_optimizer.py -q`
-- `pytest tests archon/tests/test_integration.py -q`
 - `pytest tests archon/tests -q`

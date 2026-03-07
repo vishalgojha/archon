@@ -14,6 +14,9 @@ ENTITY_TYPES: tuple[str, ...] = (
     "memory",
     "analytics_event",
     "content_piece",
+    "meter_event",
+    "billing_invoice",
+    "studio_workflow",
 )
 ACTIONS: tuple[str, ...] = ("delete", "anonymize", "archive")
 
@@ -41,6 +44,9 @@ class DataRetentionPolicy:
         "memory": "episodic_memory",
         "analytics_event": "analytics_events",
         "content_piece": "content_pieces",
+        "meter_event": "meter_events",
+        "billing_invoice": "invoices",
+        "studio_workflow": "studio_workflows",
     }
     _TIME_COLUMN_MAP = {
         "audit_log": "timestamp",
@@ -48,6 +54,9 @@ class DataRetentionPolicy:
         "memory": "timestamp",
         "analytics_event": "timestamp",
         "content_piece": "created_at",
+        "meter_event": "timestamp",
+        "billing_invoice": "created_at",
+        "studio_workflow": "updated_at",
     }
 
     def __init__(

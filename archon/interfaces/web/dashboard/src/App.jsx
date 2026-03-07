@@ -1,5 +1,5 @@
 (() => {
-  const { useEffect, useMemo, useState } = React;
+  const { useEffect, useMemo, useRef, useState } = React;
 
   function safeStorageGet(key) {
     try {
@@ -18,47 +18,51 @@
   }
 
   function resolveApiBase() {
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return window.location.origin.replace(/\/$/, "");
+    }
     const stored = safeStorageGet("archon.api_base");
     if (stored) {
       return stored.replace(/\/$/, "");
-    }
-    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
-      return window.location.origin.replace(/\/$/, "");
     }
     return "http://127.0.0.1:8000";
   }
 
   function readStoredSession() {
-    const directSession = safeStorageGet("archon.session_id") || safeStorageGet("session_id");
-    const directToken = safeStorageGet("archon.token") || safeStorageGet("token");
-    if (directSession && directToken) {
-      return { sessionId: directSession, token: directToken };
-    }
+    return {
+      sessionId: String(safeStorageGet("archon.session_id") || "").trim(),
+      token: String(safeStorageGet("archon.token") || "").trim(),
+    };
+  }
 
+  function writeStoredSession(sessionId, token) {
+    safeStorageSet("archon.session_id", sessionId);
+    safeStorageSet("archon.token", token);
+  }
+
+  async function fetchAnonymousToken() {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
     try {
-      for (let index = 0; index < localStorage.length; index += 1) {
-        const key = localStorage.key(index);
-        if (!key || !key.startsWith("archon:webchat:")) {
-          continue;
-        }
-        const raw = localStorage.getItem(key);
-        if (!raw) {
-          continue;
-        }
-        const parsed = JSON.parse(raw);
-        const sessionId = String(parsed.s || "").trim();
-        const token = String(parsed.t || "").trim();
-        if (sessionId && token) {
-          safeStorageSet("archon.session_id", sessionId);
-          safeStorageSet("archon.token", token);
-          return { sessionId, token };
-        }
+      const response = await fetch("/webchat/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch (_error) {
-      return { sessionId: "", token: "" };
+      const payload = await response.json();
+      const token = String(payload.token || "").trim();
+      const sessionId = String(payload.session?.session_id || payload.identity?.session_id || "").trim();
+      if (!token || !sessionId) {
+        throw new Error("Token response missing token/session_id");
+      }
+      return { sessionId, token };
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    return { sessionId: "", token: "" };
   }
 
   function decodeJwtClaims(token) {
@@ -111,6 +115,17 @@
     return `${text.slice(0, maxLength)}...`;
   }
 
+  function shortSessionLabel(sessionId) {
+    const normalized = String(sessionId || "").trim();
+    if (!normalized) {
+      return "none";
+    }
+    if (normalized.length <= 8) {
+      return normalized;
+    }
+    return `${normalized.slice(0, 8)}...`;
+  }
+
   function buildDebateRounds(history) {
     const rounds = [];
     history.forEach((event, idx) => {
@@ -152,6 +167,12 @@
     const result = {};
     const baseline = agentRegistry && typeof agentRegistry === "object" ? agentRegistry : {};
 
+    result.orchestrator = {
+      id: "orchestrator",
+      label: "orchestrator",
+      status: "thinking",
+    };
+
     Object.keys(baseline).forEach((name) => {
       result[name] = {
         id: name,
@@ -186,13 +207,18 @@
   }
 
   function deriveSwarmEdges(baselineEdges, agents) {
+    const validIds = new Set((agents || []).map((agent) => String(agent?.id || "").trim()).filter(Boolean));
     if (Array.isArray(baselineEdges) && baselineEdges.length > 0) {
-      return baselineEdges.map((edge) => ({
-        source: String(edge.source || ""),
-        target: String(edge.target || ""),
-      }));
+      return baselineEdges
+        .map((edge) => ({
+          source: String(edge.source || ""),
+          target: String(edge.target || ""),
+        }))
+        .filter((edge) => validIds.has(edge.source) && validIds.has(edge.target));
     }
-    return agents.map((agent) => ({ source: "orchestrator", target: agent.id }));
+    return agents
+      .filter((agent) => agent.id !== "orchestrator")
+      .map((agent) => ({ source: "orchestrator", target: agent.id }));
   }
 
   function ThoughtLog({ history }) {
@@ -215,6 +241,11 @@
   function App() {
     const archon = window.useARCHONContext ? window.useARCHONContext() : {};
     const status = archon?.status || "disconnected";
+    const token = String(archon?.token || "").trim();
+    const sessionId = String(archon?.sessionId || "").trim();
+    const isInitializing = Boolean(archon?.isInitializing);
+    const setIsInitializing = archon?.setIsInitializing || (() => {});
+    const setSessionCredentials = archon?.setSessionCredentials || (() => ({ sessionId: "", token: "" }));
     const connect = archon?.connect || (() => {});
     const disconnect = archon?.disconnect || (() => {});
     const send = archon?.send || (() => {});
@@ -224,29 +255,67 @@
     const costState = archon?.costState || { spent: 0, budget: 0, history: [] };
 
     const [mode, setMode] = useState(() => safeStorageGet("archon.dashboard.mode") || "mission_control");
-    const [session, setSession] = useState(() => readStoredSession());
     const [agentsStatus, setAgentsStatus] = useState({ agents: {}, edges: [] });
     const [leaderboard, setLeaderboard] = useState({ loading: false, rows: [], scope: "tenant" });
+    const [initError, setInitError] = useState("");
+    const initRequestRef = useRef(0);
     const apiBase = useMemo(() => resolveApiBase(), []);
 
     useEffect(() => {
       safeStorageSet("archon.dashboard.mode", mode);
     }, [mode]);
 
-    useEffect(() => {
-      const creds = readStoredSession();
-      setSession(creds);
-      if (creds.sessionId && creds.token) {
-        connect(creds.sessionId, creds.token);
-      }
-      return () => disconnect();
-    }, [connect, disconnect]);
+    const startInitialization = React.useCallback(() => {
+      const requestId = initRequestRef.current + 1;
+      initRequestRef.current = requestId;
+      setInitError("");
+      setIsInitializing(true);
+      return (async () => {
+        try {
+          let next = readStoredSession();
+          if (!next.token || !next.sessionId) {
+            next = await fetchAnonymousToken();
+            writeStoredSession(next.sessionId, next.token);
+          }
+          if (initRequestRef.current !== requestId) {
+            return;
+          }
+          setSessionCredentials(next.sessionId, next.token);
+        } catch (error) {
+          if (initRequestRef.current !== requestId) {
+            return;
+          }
+          setSessionCredentials("", "");
+          const message =
+            error?.name === "AbortError"
+              ? "Session bootstrap timed out after 5 seconds."
+              : String(error?.message || "Unknown initialization error.");
+          console.error("[ARCHON] Token fetch failed:", error);
+          setInitError(message);
+        } finally {
+          if (initRequestRef.current === requestId) {
+            setIsInitializing(false);
+          }
+        }
+      })();
+    }, [setIsInitializing, setSessionCredentials]);
 
     useEffect(() => {
-      if (status === "disconnected" && session.sessionId && session.token) {
-        connect(session.sessionId, session.token);
+      void startInitialization();
+      return () => {
+        initRequestRef.current += 1;
+      };
+    }, [startInitialization]);
+
+    useEffect(() => {
+      if (isInitializing || !sessionId || !token) {
+        return undefined;
       }
-    }, [status, session, connect]);
+      connect(sessionId, token);
+      return () => {
+        disconnect();
+      };
+    }, [connect, disconnect, isInitializing, sessionId, token]);
 
     useEffect(() => {
       let cancelled = false;
@@ -271,12 +340,11 @@
       };
     }, [apiBase]);
 
-    const claims = useMemo(() => decodeJwtClaims(session.token), [session.token]);
+    const claims = useMemo(() => decodeJwtClaims(token), [token]);
     const tenantId = String(claims.sub || claims.tenant_id || claims.tid || "anonymous");
     const tier = String(claims.tier || "free");
 
     useEffect(() => {
-      const token = String(session.token || "").trim();
       const scope = tier === "enterprise" ? "global" : "tenant";
       if (!token) {
         setLeaderboard({ loading: false, rows: [], scope });
@@ -316,7 +384,7 @@
       return () => {
         cancelled = true;
       };
-    }, [apiBase, session.token, tenantId, tier]);
+    }, [apiBase, token, tenantId, tier]);
 
     const workflow = useMemo(() => workflowFromHistory(history), [history]);
     const rounds = useMemo(() => buildDebateRounds(history), [history]);
@@ -327,11 +395,7 @@
           return Math.max(0, Math.min(100, value));
         }
       }
-      const doneCount = history.filter((event) => {
-        const type = String(event?.type || "");
-        return type === "agent_end" || type === "growth_agent_completed";
-      }).length;
-      return Math.max(5, Math.min(100, doneCount * 8));
+      return null;
     }, [history]);
 
     const swarmAgents = useMemo(
@@ -358,6 +422,98 @@
     }, [history]);
 
     const showMissionControl = mode === "mission_control";
+    const hasSession = Boolean(sessionId && token);
+    const readyToRender = !isInitializing && !initError && hasSession;
+    const displayStatus =
+      isInitializing || status === "connecting"
+        ? "initializing"
+        : status === "connected"
+          ? "connected"
+          : "disconnected";
+    const statusDotStyle =
+      displayStatus === "initializing"
+        ? {
+            background: "#8d99ae",
+            boxShadow: "0 0 0 4px rgba(141, 153, 174, 0.25)",
+          }
+        : undefined;
+    const sessionLabel = shortSessionLabel(sessionId);
+    const initializingPanel = (
+      <div
+        style={{
+          minHeight: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            justifyItems: "center",
+            gap: "12px",
+            color: "#cbd5e1",
+            textAlign: "center",
+          }}
+        >
+          <svg width="44" height="44" viewBox="0 0 44 44" role="img" aria-label="Initializing session">
+            <circle cx="22" cy="22" r="17" fill="none" stroke="rgba(100, 116, 139, 0.35)" strokeWidth="4" />
+            <path d="M22 5a17 17 0 0 1 17 17" fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round">
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                from="0 22 22"
+                to="360 22 22"
+                dur="0.9s"
+                repeatCount="indefinite"
+              />
+            </path>
+          </svg>
+          <div style={{ fontSize: "15px", fontWeight: 600 }}>Initializing session...</div>
+        </div>
+      </div>
+    );
+    const initErrorPanel = (
+      <div
+        style={{
+          minHeight: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            justifyItems: "center",
+            gap: "8px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ color: "#ef4444", fontWeight: 700 }}>Could not connect to ARCHON API</div>
+          <div style={{ color: "#94a3b8", fontSize: "12px", maxWidth: "320px" }}>{initError}</div>
+          <button
+            type="button"
+            onClick={() => {
+              void startInitialization();
+            }}
+            style={{
+              marginTop: "8px",
+              border: "1px solid rgba(148, 163, 184, 0.35)",
+              borderRadius: "999px",
+              padding: "8px 14px",
+              background: "#0f172a",
+              color: "#e2e8f0",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
 
     return (
       <div className={`dashboard-root ${showMissionControl ? "mission-control" : "civilian"}`}>
@@ -380,105 +536,113 @@
             </button>
           </div>
           <div className="connection">
-            <span className={`status-dot ${status}`} />
-            <span>{status}</span>
+            <span className={`status-dot ${displayStatus === "initializing" ? "" : displayStatus}`} style={statusDotStyle} />
+            <span>{displayStatus}</span>
           </div>
           <div className="tenant-info">
-            tenant: {tenantId} | tier: {tier} | session: {session.sessionId || "none"}
+            tenant: {tenantId} | tier: {tier} | session: {sessionLabel}
           </div>
         </header>
 
-        <div className="main-grid">
-          {showMissionControl ? (
-            <aside className="left-panel panel">
-              <div className="card" style={{ minHeight: 0, flex: 1 }}>
-                <div className="card-header">Swarm Graph</div>
-                <div className="card-body swarm-box">
-                  {window.SwarmGraph ? <window.SwarmGraph agents={swarmAgents} edges={swarmEdges} /> : null}
-                </div>
-              </div>
-              <div className="federation-pulse">
-                <span className={`pulse-dot ${federationActive ? "active" : ""}`} />
-                <span>Federation pulse: {federationActive ? "active" : "idle"}</span>
-              </div>
-            </aside>
-          ) : null}
+        {readyToRender ? (
+          <>
+            <div className="main-grid">
+              {showMissionControl ? (
+                <aside className="left-panel panel">
+                  <div className="card" style={{ minHeight: 0, flex: 1 }}>
+                    <div className="card-header">Swarm Graph</div>
+                    <div className="card-body swarm-box">
+                      {window.SwarmGraph ? <window.SwarmGraph agents={swarmAgents} edges={swarmEdges} /> : null}
+                    </div>
+                  </div>
+                  <div className="federation-pulse">
+                    <span className={`pulse-dot ${federationActive ? "active" : ""}`} />
+                    <span>Federation pulse: {federationActive ? "active" : "idle"}</span>
+                  </div>
+                </aside>
+              ) : null}
 
-          <main className="center-panel">
-            <section className="card">
-              <div className="card-header">Active Task DAG</div>
+              <main className="center-panel">
+                <section className="card">
+                  <div className="card-header">Active Task DAG</div>
+                  <div className="card-body">
+                    {window.TaskDAG ? (
+                      <window.TaskDAG workflow={workflow} history={history} />
+                    ) : (
+                      <div className="empty-state">Task DAG component unavailable.</div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="card">
+                  <div className="card-body" style={{ height: "100%" }}>
+                    {window.DebatePanel && confidence !== null ? (
+                      <window.DebatePanel rounds={rounds} confidence={confidence} />
+                    ) : (
+                      <div className="empty-state">Awaiting task activity...</div>
+                    )}
+                  </div>
+                </section>
+              </main>
+
+              {showMissionControl ? (
+                <aside className="right-panel panel">
+                  <section className="card">
+                    <div className="card-header">Cost Meter</div>
+                    <div className="card-body">
+                      {window.CostMeter ? (
+                        <window.CostMeter spent={costState.spent} budget={costState.budget} history={costState.history} />
+                      ) : (
+                        <div className="empty-state">Cost meter component unavailable.</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="card" style={{ minHeight: 200 }}>
+                    <div className="card-header">Performance Leaderboard</div>
+                    <div className="card-body">
+                      {window.LeaderboardCard ? (
+                        <window.LeaderboardCard rows={leaderboard.rows} loading={leaderboard.loading} scope={leaderboard.scope} />
+                      ) : (
+                        <div className="empty-state">Leaderboard component unavailable.</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="card" style={{ minHeight: 180 }}>
+                    <div className="card-header">Approval Queue</div>
+                    <div className="card-body">
+                      {window.ApprovalQueue ? (
+                        <window.ApprovalQueue approvals={pendingApprovals} send={send} />
+                      ) : (
+                        <div className="empty-state">Approval queue component unavailable.</div>
+                      )}
+                    </div>
+                  </section>
+
+                  <ThoughtLog history={history} />
+                </aside>
+              ) : null}
+            </div>
+
+            <footer className="memory-wrap panel">
+              <div className="card-header">Memory Timeline</div>
               <div className="card-body">
-                {window.TaskDAG ? (
-                  <window.TaskDAG workflow={workflow} history={history} />
+                {window.MemoryTimeline ? (
+                  <window.MemoryTimeline sessionId={sessionId} apiBase={apiBase} />
                 ) : (
-                  <div className="empty-state">Task DAG component unavailable.</div>
+                  <div className="empty-state">Memory timeline component unavailable.</div>
                 )}
               </div>
+            </footer>
+          </>
+        ) : (
+          <div className="main-grid" style={{ display: "block", minHeight: 0 }}>
+            <section className="panel" style={{ height: "100%" }}>
+              {initError ? initErrorPanel : initializingPanel}
             </section>
-
-            <section className="card">
-              <div className="card-body" style={{ height: "100%" }}>
-                {window.DebatePanel ? (
-                  <window.DebatePanel rounds={rounds} confidence={confidence} />
-                ) : (
-                  <div className="empty-state">Debate panel component unavailable.</div>
-                )}
-              </div>
-            </section>
-          </main>
-
-          {showMissionControl ? (
-            <aside className="right-panel panel">
-              <section className="card">
-                <div className="card-header">Cost Meter</div>
-                <div className="card-body">
-                  {window.CostMeter ? (
-                    <window.CostMeter spent={costState.spent} budget={costState.budget} history={costState.history} />
-                  ) : (
-                    <div className="empty-state">Cost meter component unavailable.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="card" style={{ minHeight: 200 }}>
-                <div className="card-header">Performance Leaderboard</div>
-                <div className="card-body">
-                  {window.LeaderboardCard ? (
-                    <window.LeaderboardCard rows={leaderboard.rows} loading={leaderboard.loading} scope={leaderboard.scope} />
-                  ) : (
-                    <div className="empty-state">Leaderboard component unavailable.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="card" style={{ minHeight: 180 }}>
-                <div className="card-header">Approval Queue</div>
-                <div className="card-body">
-                  {window.ApprovalQueue ? (
-                    <window.ApprovalQueue approvals={pendingApprovals} send={send} />
-                  ) : (
-                    <div className="empty-state">Approval queue component unavailable.</div>
-                  )}
-                </div>
-              </section>
-
-              <ThoughtLog history={history} />
-            </aside>
-          ) : null}
-        </div>
-
-        <footer className="memory-wrap panel">
-          <div className="card-header">Memory Timeline</div>
-          <div className="card-body">
-            {session.sessionId && window.MemoryTimeline ? (
-              <window.MemoryTimeline sessionId={session.sessionId} apiBase={apiBase} />
-            ) : (
-              <div className="empty-state">
-                Session credentials missing in localStorage (`archon.session_id` and `archon.token`).
-              </div>
-            )}
           </div>
-        </footer>
+        )}
       </div>
     );
   }

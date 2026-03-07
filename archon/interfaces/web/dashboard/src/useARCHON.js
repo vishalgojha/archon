@@ -1,8 +1,17 @@
 (() => {
   const { useCallback, useRef, useState } = React;
+  const EMPTY_SESSION = { sessionId: "", token: "" };
 
   function nowSeconds() {
     return Date.now() / 1000;
+  }
+
+  function safeStorageGet(key) {
+    try {
+      return localStorage.getItem(key) || "";
+    } catch (_error) {
+      return "";
+    }
   }
 
   function normalizeEvent(raw) {
@@ -19,12 +28,12 @@
   }
 
   function resolveApiBase() {
-    const stored = String(localStorage.getItem("archon.api_base") || "").trim();
-    if (stored) {
-      return stored.replace(/\/$/, "");
-    }
     if (window.location.protocol === "http:" || window.location.protocol === "https:") {
       return window.location.origin.replace(/\/$/, "");
+    }
+    const stored = String(safeStorageGet("archon.api_base") || "").trim();
+    if (stored) {
+      return stored.replace(/\/$/, "");
     }
     return "http://127.0.0.1:8000";
   }
@@ -120,21 +129,47 @@
   function useARCHON() {
     const wsRef = useRef(null);
     const queueRef = useRef([]);
-    const connectRef = useRef({ sessionId: "", token: "" });
+    const connectRef = useRef({ ...EMPTY_SESSION });
+    const reconnectTimerRef = useRef(null);
+    const reconnectAttemptRef = useRef(0);
+    const reconnectEnabledRef = useRef(false);
     const [status, setStatus] = useState("disconnected");
+    const [isInitializing, setIsInitializing] = useState(true);
+    const [session, setSession] = useState({ ...EMPTY_SESSION });
     const [lastEvent, setLastEvent] = useState(null);
     const [history, setHistory] = useState([]);
     const [pendingApprovals, setPendingApprovals] = useState([]);
     const [agentStates, setAgentStates] = useState({});
     const [costState, setCostState] = useState({ spent: 0, budget: 0, history: [] });
 
-    const disconnect = useCallback(() => {
-      if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-        wsRef.current.close(1000, "Client disconnect");
+    const clearReconnectTimer = useCallback(() => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
-      wsRef.current = null;
-      setStatus("disconnected");
     }, []);
+
+    const setSessionCredentials = useCallback((sessionId, token) => {
+      const next = {
+        sessionId: String(sessionId || "").trim(),
+        token: String(token || "").trim(),
+      };
+      connectRef.current = next;
+      setSession(next);
+      return next;
+    }, []);
+
+    const disconnect = useCallback(() => {
+      reconnectEnabledRef.current = false;
+      reconnectAttemptRef.current = 0;
+      clearReconnectTimer();
+      const activeSocket = wsRef.current;
+      wsRef.current = null;
+      if (activeSocket && (activeSocket.readyState === WebSocket.OPEN || activeSocket.readyState === WebSocket.CONNECTING)) {
+        activeSocket.close(1000, "Client disconnect");
+      }
+      setStatus("disconnected");
+    }, [clearReconnectTimer]);
 
     const flushQueue = useCallback(() => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -148,28 +183,62 @@
 
     const connect = useCallback(
       (sessionId, token) => {
-        const sid = String(sessionId || "").trim();
-        const auth = String(token || "").trim();
-        if (!sid || !auth) {
-          setStatus("error");
+        const next = setSessionCredentials(sessionId, token);
+        if (!next.sessionId || !next.token) {
+          setStatus("disconnected");
           return;
         }
-        connectRef.current = { sessionId: sid, token: auth };
-        disconnect();
+
+        reconnectEnabledRef.current = true;
+        clearReconnectTimer();
+
+        const previousSocket = wsRef.current;
+        wsRef.current = null;
+        if (previousSocket && (previousSocket.readyState === WebSocket.OPEN || previousSocket.readyState === WebSocket.CONNECTING)) {
+          try {
+            previousSocket.close(1000, "Reconnect");
+          } catch (_error) {
+            // Ignore close races from stale sockets.
+          }
+        }
+
         setStatus("connecting");
-        const url = `${wsBaseUrl()}/webchat/ws/${encodeURIComponent(sid)}?token=${encodeURIComponent(auth)}`;
+        const url = `${wsBaseUrl()}/webchat/ws/${encodeURIComponent(next.sessionId)}?token=${encodeURIComponent(next.token)}`;
         const ws = new WebSocket(url);
         wsRef.current = ws;
 
         ws.onopen = () => {
+          if (wsRef.current !== ws) {
+            return;
+          }
+          reconnectAttemptRef.current = 0;
           setStatus("connected");
           flushQueue();
         };
         ws.onclose = () => {
+          if (wsRef.current !== ws) {
+            return;
+          }
+          wsRef.current = null;
           setStatus("disconnected");
+          if (!reconnectEnabledRef.current || !connectRef.current.sessionId || !connectRef.current.token) {
+            return;
+          }
+          const delayMs = Math.min(30000, 1000 * (2 ** reconnectAttemptRef.current));
+          reconnectAttemptRef.current += 1;
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            const creds = connectRef.current;
+            if (reconnectEnabledRef.current && creds.sessionId && creds.token) {
+              connect(creds.sessionId, creds.token);
+            }
+          }, delayMs);
         };
         ws.onerror = () => {
-          setStatus("error");
+          if (wsRef.current !== ws) {
+            return;
+          }
+          setStatus("disconnected");
         };
         ws.onmessage = (message) => {
           let parsed = null;
@@ -203,7 +272,7 @@
           }
         };
       },
-      [disconnect, flushQueue],
+      [clearReconnectTimer, flushQueue, setSessionCredentials],
     );
 
     const send = useCallback(
@@ -229,6 +298,11 @@
 
     return {
       status,
+      sessionId: session.sessionId,
+      token: session.token,
+      isInitializing,
+      setIsInitializing,
+      setSessionCredentials,
       connect,
       disconnect,
       send,

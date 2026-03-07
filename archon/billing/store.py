@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 from archon.billing.models import (
@@ -295,6 +296,31 @@ class BillingStore:
             conn.execute(
                 "UPDATE invoices SET status = 'paid', updated_at = ? WHERE invoice_id = ?",
                 (float(paid_at), str(invoice_id)),
+            )
+        row = self.find_invoice_by_id(invoice_id)
+        if row is None:
+            raise KeyError(f"Invoice '{invoice_id}' not found.")
+        return row
+
+    def update_invoice_status(
+        self,
+        invoice_id: str,
+        *,
+        status: str,
+        updated_at: float | None = None,
+    ) -> BillingInvoice:
+        """Update one invoice status and return the refreshed document.
+
+        Example:
+            >>> store = BillingStore(":memory:")
+            >>> hasattr(store, "update_invoice_status")
+            True
+        """
+
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE invoices SET status = ?, updated_at = ? WHERE invoice_id = ?",
+                (str(status), float(time.time() if updated_at is None else updated_at), str(invoice_id)),
             )
         row = self.find_invoice_by_id(invoice_id)
         if row is None:

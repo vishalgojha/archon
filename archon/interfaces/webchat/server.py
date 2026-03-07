@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import os
 import time
 import uuid
@@ -28,7 +30,10 @@ from archon.interfaces.webchat.session_store import (
     SessionState,
     create_session_store,
 )
+from archon.multimodal import AudioInput, AudioProcessor, ImageInput, ImageProcessor, MultimodalOrchestrator
 from archon.vernacular.streaming import StreamingTranslator
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -91,6 +96,7 @@ def create_webchat_app(
             True
         """
 
+        log.info("POST /webchat/token called")
         runtime = _runtime(app)
         session_id = (payload.session_id or f"session-{uuid.uuid4().hex[:12]}").strip()
         if not session_id:
@@ -245,9 +251,33 @@ def create_webchat_app(
         )
 
         current_turn: asyncio.Task[None] | None = None
+        image_processor = ImageProcessor()
+        audio_processor = AudioProcessor()
+        pending_images: list[ImageInput] = []
+        pending_audio: list[AudioInput] = []
         try:
             while True:
-                payload = await websocket.receive_json()
+                incoming = await websocket.receive()
+                if incoming.get("type") == "websocket.disconnect":
+                    raise WebSocketDisconnect()
+                binary = incoming.get("bytes")
+                if binary is not None:
+                    kind, payload_bytes = _decode_binary_frame(binary)
+                    if kind == "image":
+                        image = image_processor.load_from_bytes(payload_bytes)
+                        pending_images.append(image)
+                        await websocket.send_json(
+                            {"type": "attachment_received", "kind": "image", "input_id": image.input_id}
+                        )
+                    else:
+                        audio = audio_processor.load_from_bytes(payload_bytes)
+                        pending_audio.append(audio)
+                        await websocket.send_json(
+                            {"type": "attachment_received", "kind": "audio", "input_id": audio.input_id}
+                        )
+                    continue
+
+                payload = json.loads(str(incoming.get("text") or "{}"))
                 action = str(payload.get("type", "")).strip().lower()
                 if action == "ping":
                     await websocket.send_json({"type": "pong", "ts": time.time()})
@@ -303,6 +333,10 @@ def create_webchat_app(
                 translation_mode = (
                     str(payload.get("translation_mode", "off")).strip().lower() or "off"
                 )
+                turn_images = list(pending_images)
+                turn_audio = list(pending_audio)
+                pending_images.clear()
+                pending_audio.clear()
                 current_turn = asyncio.create_task(
                     _run_chat_turn(
                         websocket=websocket,
@@ -311,6 +345,8 @@ def create_webchat_app(
                         tenant_id=identity.tenant_id,
                         content=content,
                         translation_mode=translation_mode,
+                        image_inputs=turn_images,
+                        audio_inputs=turn_audio,
                     )
                 )
         except WebSocketDisconnect:
@@ -403,6 +439,8 @@ async def _run_chat_turn(
     tenant_id: str,
     content: str,
     translation_mode: str = "off",
+    image_inputs: list[ImageInput] | None = None,
+    audio_inputs: list[AudioInput] | None = None,
 ) -> None:
     await runtime.session_store.append_message(
         session_id=session_id,
@@ -420,6 +458,9 @@ async def _run_chat_turn(
             runtime=runtime,
             session_id=session_id,
             prompt=content,
+            image_inputs=image_inputs,
+            audio_inputs=audio_inputs,
+            tenant_id=tenant_id,
         )
         mode = (translation_mode or "off").strip().lower()
         if mode == "off":
@@ -515,9 +556,31 @@ async def _assistant_reply(
     runtime: WebChatRuntime,
     session_id: str,
     prompt: str,
+    image_inputs: list[ImageInput] | None = None,
+    audio_inputs: list[AudioInput] | None = None,
+    tenant_id: str = "",
 ) -> str:
     if runtime.orchestrator is None:
+        if image_inputs or audio_inputs:
+            return (
+                f"ARCHON stub multimodal response: {prompt} "
+                f"(images={len(image_inputs or [])}, audio={len(audio_inputs or [])})"
+            )
         return f"ARCHON stub response: {prompt}"
+
+    if image_inputs or audio_inputs:
+        multimodal = MultimodalOrchestrator(runtime.orchestrator.config)
+        try:
+            response = await multimodal.process(
+                text=prompt,
+                images=list(image_inputs or []),
+                audio=list(audio_inputs or []),
+                session_id=session_id,
+                tenant_ctx={"tenant_id": tenant_id or "webchat"},
+            )
+        finally:
+            await multimodal.aclose()
+        return response.content
 
     async def sink(event: dict[str, Any]) -> None:
         event_type = str(event.get("type", ""))
@@ -540,6 +603,21 @@ def _tokenize(text: str) -> list[str]:
         suffix = " " if index < len(parts) - 1 else ""
         chunks.append(word + suffix)
     return chunks
+
+
+def _decode_binary_frame(frame: bytes) -> tuple[str, bytes]:
+    if len(frame) < 5:
+        raise ValueError("Binary frame missing header.")
+    type_byte = frame[0]
+    payload_length = int.from_bytes(frame[1:5], "big")
+    payload = frame[5:]
+    if payload_length != len(payload):
+        raise ValueError("Binary frame payload length mismatch.")
+    if type_byte == 0x01:
+        return "image", payload
+    if type_byte == 0x02:
+        return "audio", payload
+    raise ValueError(f"Unsupported binary frame type 0x{type_byte:02x}.")
 
 
 webchat_app = create_webchat_app()

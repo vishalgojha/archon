@@ -21,6 +21,8 @@
 - SOC2: all new PII-touching code must use `EncryptionLayer` for storage.
 - Retention: every new entity type added must have a `RetentionRule` defined.
 - Audit: every state-changing API endpoint must emit an `AnalyticsEvent`.
+- Observability: any new agent method that takes an external action must increment the relevant `Metrics` counter.
+- Observability: every new orchestrator execution path must add tracing spans via `TracingSetup`.
 
 ## Module Map & Test Locations
 

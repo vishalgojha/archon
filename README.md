@@ -35,8 +35,33 @@ python -m archon.validate_config
 4. Start API server:
 
 ```powershell
-archon-server
+archon serve
 ```
+
+You can still use `archon-server`, but `archon serve` is now the primary CLI entrypoint.
+
+## CLI
+
+Once installed, ARCHON exposes a full `archon` command:
+
+```powershell
+archon version
+archon health
+archon dashboard
+archon studio
+archon task "Increase qualified leads in Indian pharmacy SMBs" --mode growth
+archon debate "Find the biggest bottleneck in our lead funnel"
+archon token create --tenant-id demo --tier pro
+```
+
+Useful commands:
+
+- `archon serve` starts the API server.
+- `archon health` checks the running server.
+- `archon task` sends a task to the running API with tenant JWT auth.
+- `archon dashboard` opens Mission Control.
+- `archon studio` opens Studio.
+- `archon debate` and `archon run` execute locally without going through HTTP.
 
 5. Run tasks with explicit orchestration mode:
 
