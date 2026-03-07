@@ -18,10 +18,10 @@ def test_studio_shell_uses_executable_js_assets_and_token_gate() -> None:
         _REPO_ROOT / "archon" / "interfaces" / "web" / "studio" / "WorkflowCanvas.js"
     ).read_text(encoding="utf-8")
 
-    assert '/studio/assets/WorkflowCanvas.js' in html
-    assert '/studio/assets/NodeEditor.js' in html
-    assert '/studio/assets/WorkflowCanvas.jsx' not in html
-    assert '/studio/assets/NodeEditor.jsx' not in html
+    assert "/studio/assets/WorkflowCanvas.js" in html
+    assert "/studio/assets/NodeEditor.js" in html
+    assert "/studio/assets/WorkflowCanvas.jsx" not in html
+    assert "/studio/assets/NodeEditor.jsx" not in html
     assert "function TokenGate" in js
     assert "studioApiFetch" in js
     assert "Authorization" in js

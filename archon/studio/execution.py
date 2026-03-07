@@ -173,8 +173,10 @@ class OpenClawStudioStepExecutor(StudioStepExecutor):
         )
         output_text = _extract_response_text(payload)
         label = str(step.config.get("label") or step.step_id)
-        summary = output_text.strip().splitlines()[0] if output_text.strip() else (
-            f"OpenClaw completed '{label}'."
+        summary = (
+            output_text.strip().splitlines()[0]
+            if output_text.strip()
+            else (f"OpenClaw completed '{label}'.")
         )
         return StepExecutionResult(
             step_id=step.step_id,
@@ -186,7 +188,9 @@ class OpenClawStudioStepExecutor(StudioStepExecutor):
                 "node_type": node_type,
                 "action": step.action,
                 "agent_id": self.config.agent_id,
-                "session_user": self._session_user(tenant_id=tenant_id, workflow=workflow, run_id=run_id),
+                "session_user": self._session_user(
+                    tenant_id=tenant_id, workflow=workflow, run_id=run_id
+                ),
             },
         )
 
@@ -274,8 +278,7 @@ def build_step_executor() -> StudioStepExecutor:
         return LocalStudioStepExecutor()
     if backend != _OPENCLAW_BACKEND:
         raise ValueError(
-            "ARCHON_STUDIO_EXECUTION_LAYER must be 'local' or 'openclaw'. "
-            f"Received '{backend}'."
+            f"ARCHON_STUDIO_EXECUTION_LAYER must be 'local' or 'openclaw'. Received '{backend}'."
         )
     return OpenClawStudioStepExecutor(_load_openclaw_config())
 
@@ -287,9 +290,8 @@ def _load_openclaw_config() -> OpenClawExecutionConfig:
         or (discovered.base_url if discovered else "")
         or f"http://127.0.0.1:{_OPENCLAW_DEFAULT_PORT}"
     )
-    token = (
-        str(os.getenv("ARCHON_OPENCLAW_TOKEN", "")).strip()
-        or (discovered.token if discovered and discovered.token else "")
+    token = str(os.getenv("ARCHON_OPENCLAW_TOKEN", "")).strip() or (
+        discovered.token if discovered and discovered.token else ""
     )
     agent_id = (
         str(os.getenv("ARCHON_OPENCLAW_AGENT_ID", "")).strip()
@@ -298,8 +300,7 @@ def _load_openclaw_config() -> OpenClawExecutionConfig:
     )
     timeout_text = str(os.getenv("ARCHON_OPENCLAW_TIMEOUT_S", "60")).strip() or "60"
     user_prefix = (
-        str(os.getenv("ARCHON_OPENCLAW_USER_PREFIX", "archon-studio")).strip()
-        or "archon-studio"
+        str(os.getenv("ARCHON_OPENCLAW_USER_PREFIX", "archon-studio")).strip() or "archon-studio"
     )
     if not base_url:
         raise ValueError("ARCHON_OPENCLAW_BASE_URL must be set when using the OpenClaw backend.")
@@ -331,10 +332,9 @@ def _discover_openclaw_state() -> _DiscoveredOpenClawState | None:
             config_path=Path(config_path_env).expanduser().resolve(),
         )
 
-    explicit_state_dirs = (
-        _split_discovery_paths(str(os.getenv("ARCHON_OPENCLAW_STATE_DIR", "")).strip())
-        or _split_discovery_paths(str(os.getenv("OPENCLAW_STATE_DIR", "")).strip())
-    )
+    explicit_state_dirs = _split_discovery_paths(
+        str(os.getenv("ARCHON_OPENCLAW_STATE_DIR", "")).strip()
+    ) or _split_discovery_paths(str(os.getenv("OPENCLAW_STATE_DIR", "")).strip())
     if explicit_state_dirs:
         return _discover_openclaw_state_from_dirs(explicit_state_dirs)
 

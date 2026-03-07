@@ -407,7 +407,9 @@ async def test_execute_workflow_run_reports_terminal_failure_for_bad_openclaw_co
     assert "ARCHON_OPENCLAW_TOKEN" in str(events[-1]["message"])
 
 
-def test_load_openclaw_config_discovers_local_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_load_openclaw_config_discovers_local_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("ARCHON_OPENCLAW_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("OPENCLAW_STATE_DIR", raising=False)
     monkeypatch.delenv("ARCHON_OPENCLAW_CONFIG_PATH", raising=False)
@@ -439,7 +441,9 @@ def test_load_openclaw_config_discovers_local_state(monkeypatch: pytest.MonkeyPa
     assert config.agent_id == "dev"
 
 
-def test_load_openclaw_config_uses_launcher_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_load_openclaw_config_uses_launcher_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("ARCHON_OPENCLAW_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("OPENCLAW_STATE_DIR", raising=False)
     monkeypatch.delenv("ARCHON_OPENCLAW_CONFIG_PATH", raising=False)
@@ -466,7 +470,9 @@ def test_load_openclaw_config_uses_launcher_fallback(monkeypatch: pytest.MonkeyP
     assert config.agent_id == "worker"
 
 
-def test_load_openclaw_config_prefers_explicit_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_load_openclaw_config_prefers_explicit_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("ARCHON_OPENCLAW_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("OPENCLAW_STATE_DIR", raising=False)
     monkeypatch.delenv("ARCHON_OPENCLAW_CONFIG_PATH", raising=False)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MOBILE_HOOK_PATH = _REPO_ROOT / "archon" / "interfaces" / "mobile" / "useARCHONMobile.ts"
 
@@ -39,7 +38,10 @@ def _schedule_background_sync_py(
     now: float,
 ) -> dict[str, Any]:
     dedupe_window = 5 if trigger == "silent_push" else 15
-    if float(current["lastAttemptAt"]) > 0 and now - float(current["lastAttemptAt"]) < dedupe_window:
+    if (
+        float(current["lastAttemptAt"]) > 0
+        and now - float(current["lastAttemptAt"]) < dedupe_window
+    ):
         return {"shouldRun": False, "nextState": current}
     if trigger != "silent_push" and float(current["nextRetryAt"]) > now:
         return {"shouldRun": False, "nextState": current}
@@ -62,7 +64,9 @@ def _record_background_sync_success_py(
     next_cursor = str(sync.get("next_cursor") or "")
     recovered = sync.get("stale_watermark_recovered") is True
     return {
-        "watermark": server_watermark if recovered else max(float(current["watermark"]), server_watermark),
+        "watermark": server_watermark
+        if recovered
+        else max(float(current["watermark"]), server_watermark),
         "cursor": next_cursor,
         "lastSuccessfulSyncAt": now,
         "lastAttemptAt": current["lastAttemptAt"],

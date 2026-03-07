@@ -32,6 +32,7 @@ from archon.interfaces.webchat.session_store import (
     SessionState,
     create_session_store,
 )
+from archon.mobile.sync_store import MobileSyncPage, MobileSyncStore
 from archon.multimodal import (
     AudioInput,
     AudioProcessor,
@@ -39,7 +40,6 @@ from archon.multimodal import (
     ImageProcessor,
     MultimodalOrchestrator,
 )
-from archon.mobile.sync_store import MobileSyncPage, MobileSyncStore
 from archon.notifications.device_registry import DeviceRegistry
 from archon.notifications.push import PushNotifier
 from archon.vernacular.streaming import StreamingTranslator

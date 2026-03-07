@@ -38,10 +38,13 @@ class AuthSettings:
     def from_env(cls) -> "AuthSettings":
         defaults = cls()
         return cls(
-            secret=os.getenv("ARCHON_JWT_SECRET", defaults.secret),
-            algorithm=os.getenv("ARCHON_JWT_ALGORITHM", defaults.algorithm),
-            issuer=os.getenv("ARCHON_JWT_ISSUER") or None,
-            audience=os.getenv("ARCHON_JWT_AUDIENCE") or None,
+            secret=str(os.getenv("ARCHON_JWT_SECRET", defaults.secret)).strip() or defaults.secret,
+            algorithm=(
+                str(os.getenv("ARCHON_JWT_ALGORITHM", defaults.algorithm)).strip()
+                or defaults.algorithm
+            ),
+            issuer=str(os.getenv("ARCHON_JWT_ISSUER", "")).strip() or None,
+            audience=str(os.getenv("ARCHON_JWT_AUDIENCE", "")).strip() or None,
         )
 
 
@@ -73,10 +76,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "Missing bearer token."})
 
         try:
-            request.state.auth = decode_auth_token(token, self._settings)
+            request.state.auth = decode_auth_token(token, self._resolve_settings(request))
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return await call_next(request)
+
+    def _resolve_settings(self, request: Request) -> AuthSettings:
+        settings = getattr(request.app.state, "auth_settings", None)
+        if isinstance(settings, AuthSettings):
+            return settings
+        return self._settings
 
 
 def decode_auth_token(token: str, settings: AuthSettings) -> AuthContext:
