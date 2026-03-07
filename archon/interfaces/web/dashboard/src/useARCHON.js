@@ -134,6 +134,7 @@
     const reconnectAttemptRef = useRef(0);
     const reconnectEnabledRef = useRef(false);
     const [status, setStatus] = useState("disconnected");
+    const [lastCloseCode, setLastCloseCode] = useState(0);
     const [isInitializing, setIsInitializing] = useState(true);
     const [session, setSession] = useState({ ...EMPTY_SESSION });
     const [lastEvent, setLastEvent] = useState(null);
@@ -168,6 +169,7 @@
       if (activeSocket && (activeSocket.readyState === WebSocket.OPEN || activeSocket.readyState === WebSocket.CONNECTING)) {
         activeSocket.close(1000, "Client disconnect");
       }
+      setLastCloseCode(1000);
       setStatus("disconnected");
     }, [clearReconnectTimer]);
 
@@ -191,6 +193,7 @@
 
         reconnectEnabledRef.current = true;
         clearReconnectTimer();
+        setLastCloseCode(0);
 
         const previousSocket = wsRef.current;
         wsRef.current = null;
@@ -212,15 +215,24 @@
             return;
           }
           reconnectAttemptRef.current = 0;
+          setLastCloseCode(0);
           setStatus("connected");
           flushQueue();
         };
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           if (wsRef.current !== ws) {
             return;
           }
           wsRef.current = null;
+          const closeCode = Number(event?.code || 0);
+          setLastCloseCode(closeCode);
           setStatus("disconnected");
+          if (closeCode === 4001 || closeCode === 4003) {
+            reconnectEnabledRef.current = false;
+            connectRef.current = { ...EMPTY_SESSION };
+            setSession({ ...EMPTY_SESSION });
+            return;
+          }
           if (!reconnectEnabledRef.current || !connectRef.current.sessionId || !connectRef.current.token) {
             return;
           }
@@ -307,6 +319,7 @@
       disconnect,
       send,
       lastEvent,
+      lastCloseCode,
       history,
       pendingApprovals,
       agentStates,

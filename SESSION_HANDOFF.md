@@ -7,6 +7,14 @@
 - Sprint status: Prompts 1-44 built
 - Verification: full suite passing (`pytest tests archon/tests -q` -> 579 passed, 9 skipped)
 
+## Post-Sprint Fixes
+- Global installer now prioritizes `%LOCALAPPDATA%\Programs\Archon\bin` ahead of stale Python `Scripts` launchers, and prints the direct shim path for immediate use in the current shell.
+- Mission Control dashboard now validates persisted webchat session tokens before reconnecting, auto-recovers from stale-token WebSocket auth closures, and adds an expandable swarm graph with zoom, pan, drag, and node detail inspection.
+
+## Incremental Verification
+- `pytest tests/test_global_installer.py -q` -> 8 passed
+- `pytest tests/test_api_server.py -q` -> 21 passed
+
 ## Built ✅ (44 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
 2. Growth swarm runtime (Prospector, ICP, Outreach, Nurture, RevenueIntel, Partner, ChurnDefense).

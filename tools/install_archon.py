@@ -47,7 +47,13 @@ def load_dependency_specs(pyproject_path: Path, *, include_dev: bool = False) ->
     return resolved
 
 
-def merge_path_value(existing: str, new_entry: Path, *, platform_name: str | None = None) -> str:
+def merge_path_value(
+    existing: str,
+    new_entry: Path,
+    *,
+    platform_name: str | None = None,
+    prioritize: bool = False,
+) -> str:
     platform_name = (platform_name or sys.platform).lower()
     separator = ";" if platform_name.startswith("win") else os.pathsep
     current = [item for item in str(existing or "").split(separator) if item.strip()]
@@ -59,10 +65,14 @@ def merge_path_value(existing: str, new_entry: Path, *, platform_name: str | Non
             normalized = os.path.normcase(normalized)
         return normalized
 
-    existing_norm = {normalize(item) for item in current}
-    if normalize(candidate) in existing_norm:
+    candidate_norm = normalize(candidate)
+    if not prioritize and any(normalize(item) == candidate_norm for item in current):
         return separator.join(current)
-    current.append(candidate)
+    filtered = [item for item in current if normalize(item) != candidate_norm]
+    if prioritize:
+        current = [candidate, *filtered]
+    else:
+        current = [*filtered, candidate]
     return separator.join(current)
 
 
@@ -212,7 +222,12 @@ def _ensure_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
         except FileNotFoundError:
             current = ""
             value_type = winreg.REG_EXPAND_SZ
-        merged = merge_path_value(str(current or ""), bin_dir, platform_name="win32")
+        merged = merge_path_value(
+            str(current or ""),
+            bin_dir,
+            platform_name="win32",
+            prioritize=True,
+        )
         if merged != str(current or ""):
             print(f"[archon-installer] Adding {bin_dir} to the user PATH")
             updated = True
@@ -227,7 +242,10 @@ def _ensure_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
                     merged,
                 )
     os.environ["PATH"] = merge_path_value(
-        os.environ.get("PATH", ""), bin_dir, platform_name="win32"
+        os.environ.get("PATH", ""),
+        bin_dir,
+        platform_name="win32",
+        prioritize=True,
     )
     if updated and not dry_run:
         _broadcast_environment_change()
@@ -318,6 +336,9 @@ def install(
         print("  PATH:         unchanged (--skip-path)")
     else:
         print("  PATH:         already contains the ARCHON bin directory")
+    print("")
+    print("Use this immediately in the current shell if PATH is still stale:")
+    print(f"  {bin_dir / 'archon.cmd'} version")
     print("")
     print("Open a new shell, then run:")
     print("  archon version")

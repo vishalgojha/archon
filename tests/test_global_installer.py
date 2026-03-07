@@ -47,6 +47,17 @@ def test_merge_path_value_appends_missing_entry_once() -> None:
     assert merged == r"C:\Tools;C:\Archon\bin"
 
 
+def test_merge_path_value_prioritizes_entry_when_requested() -> None:
+    merged = _installer_module().merge_path_value(
+        r"C:\Tools;C:\Python\Scripts",
+        Path(r"C:\Archon\bin"),
+        platform_name="win32",
+        prioritize=True,
+    )
+
+    assert merged == r"C:\Archon\bin;C:\Tools;C:\Python\Scripts"
+
+
 def test_merge_path_value_is_case_insensitive_on_windows() -> None:
     existing = r"C:\Tools;C:\Users\Visha\AppData\Local\Programs\Archon\bin"
     merged = _installer_module().merge_path_value(
@@ -56,6 +67,20 @@ def test_merge_path_value_is_case_insensitive_on_windows() -> None:
     )
 
     assert merged == existing
+
+
+def test_merge_path_value_repositions_existing_entry_when_prioritized() -> None:
+    existing = r"C:\Python\Scripts;C:\Users\Visha\AppData\Local\Programs\Archon\bin;C:\Tools"
+    merged = _installer_module().merge_path_value(
+        existing,
+        Path(r"c:\users\visha\appdata\local\programs\archon\bin"),
+        platform_name="win32",
+        prioritize=True,
+    )
+
+    assert merged == (
+        r"c:\users\visha\appdata\local\programs\archon\bin;C:\Python\Scripts;C:\Tools"
+    )
 
 
 def test_render_windows_shims_target_repo_runtime() -> None:

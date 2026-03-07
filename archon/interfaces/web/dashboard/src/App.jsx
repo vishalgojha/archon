@@ -40,29 +40,53 @@
     safeStorageSet("archon.token", token);
   }
 
-  async function fetchAnonymousToken() {
+  function clearStoredSession() {
+    safeStorageSet("archon.session_id", "");
+    safeStorageSet("archon.token", "");
+  }
+
+  async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 5000) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch("/webchat/token", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const payload = await response.json();
-      const token = String(payload.token || "").trim();
-      const sessionId = String(payload.session?.session_id || payload.identity?.session_id || "").trim();
-      if (!token || !sessionId) {
-        throw new Error("Token response missing token/session_id");
-      }
-      return { sessionId, token };
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      return response;
     } finally {
       window.clearTimeout(timeout);
     }
+  }
+
+  async function fetchAnonymousToken() {
+    const response = await fetchJsonWithTimeout("/webchat/token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    const token = String(payload.token || "").trim();
+    const sessionId = String(payload.session?.session_id || payload.identity?.session_id || "").trim();
+    if (!token || !sessionId) {
+      throw new Error("Token response missing token/session_id");
+    }
+    return { sessionId, token };
+  }
+
+  async function validateStoredSession(sessionId, token) {
+    if (!sessionId || !token) {
+      return false;
+    }
+    const url = `/webchat/session/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}`;
+    const response = await fetchJsonWithTimeout(url, { method: "GET" });
+    if (response.ok) {
+      return true;
+    }
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      return false;
+    }
+    throw new Error(`Session validation failed with HTTP ${response.status}`);
   }
 
   function decodeJwtClaims(token) {
@@ -243,6 +267,7 @@
     const status = archon?.status || "disconnected";
     const token = String(archon?.token || "").trim();
     const sessionId = String(archon?.sessionId || "").trim();
+    const lastCloseCode = Number(archon?.lastCloseCode || 0);
     const isInitializing = Boolean(archon?.isInitializing);
     const setIsInitializing = archon?.setIsInitializing || (() => {});
     const setSessionCredentials = archon?.setSessionCredentials || (() => ({ sessionId: "", token: "" }));
@@ -255,6 +280,8 @@
     const costState = archon?.costState || { spent: 0, budget: 0, history: [] };
 
     const [mode, setMode] = useState(() => safeStorageGet("archon.dashboard.mode") || "mission_control");
+    const [swarmExpanded, setSwarmExpanded] = useState(false);
+    const [selectedSwarmAgentId, setSelectedSwarmAgentId] = useState("orchestrator");
     const [agentsStatus, setAgentsStatus] = useState({ agents: {}, edges: [] });
     const [leaderboard, setLeaderboard] = useState({ loading: false, rows: [], scope: "tenant" });
     const [initError, setInitError] = useState("");
@@ -273,6 +300,14 @@
       return (async () => {
         try {
           let next = readStoredSession();
+          const hasStoredSession = Boolean(next.token && next.sessionId);
+          if (hasStoredSession) {
+            const isValid = await validateStoredSession(next.sessionId, next.token);
+            if (!isValid) {
+              clearStoredSession();
+              next = { sessionId: "", token: "" };
+            }
+          }
           if (!next.token || !next.sessionId) {
             next = await fetchAnonymousToken();
             writeStoredSession(next.sessionId, next.token);
@@ -316,6 +351,15 @@
         disconnect();
       };
     }, [connect, disconnect, isInitializing, sessionId, token]);
+
+    useEffect(() => {
+      if (isInitializing || (lastCloseCode !== 4001 && lastCloseCode !== 4003)) {
+        return;
+      }
+      clearStoredSession();
+      setSessionCredentials("", "");
+      void startInitialization();
+    }, [isInitializing, lastCloseCode, setSessionCredentials, startInitialization]);
 
     useEffect(() => {
       let cancelled = false;
@@ -403,6 +447,40 @@
       [agentsStatus.agents, agentStates, history],
     );
     const swarmEdges = useMemo(() => deriveSwarmEdges(agentsStatus.edges, swarmAgents), [agentsStatus.edges, swarmAgents]);
+    const selectedSwarmAgent = useMemo(() => {
+      return swarmAgents.find((agent) => agent.id === selectedSwarmAgentId) || swarmAgents[0] || null;
+    }, [selectedSwarmAgentId, swarmAgents]);
+    const selectedSwarmNeighbors = useMemo(() => {
+      const sourceId = selectedSwarmAgent?.id || "";
+      if (!sourceId) {
+        return { upstream: [], downstream: [] };
+      }
+      const upstream = [];
+      const downstream = [];
+      swarmEdges.forEach((edge) => {
+        if (edge.target === sourceId) {
+          upstream.push(edge.source);
+        }
+        if (edge.source === sourceId) {
+          downstream.push(edge.target);
+        }
+      });
+      return {
+        upstream: [...new Set(upstream)],
+        downstream: [...new Set(downstream)],
+      };
+    }, [selectedSwarmAgent, swarmEdges]);
+    const swarmSummary = useMemo(() => {
+      return swarmAgents.reduce(
+        (summary, agent) => {
+          const key = String(agent.status || "idle").toLowerCase();
+          summary.total += 1;
+          summary[key] = Number(summary[key] || 0) + 1;
+          return summary;
+        },
+        { total: 0, idle: 0, thinking: 0, done: 0, error: 0 },
+      );
+    }, [swarmAgents]);
 
     const federationActive = useMemo(() => {
       const now = Date.now() / 1000;
@@ -438,6 +516,46 @@
           }
         : undefined;
     const sessionLabel = shortSessionLabel(sessionId);
+    const renderSwarmGraph = (expanded = false) => (
+      <>
+        <div className={`card-header ${expanded ? "card-header-modal" : ""}`}>
+          <span>Swarm Graph</span>
+          <div className="card-actions">
+            <span className="card-meta">{swarmSummary.total} agents</span>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setSwarmExpanded((current) => !current)}
+            >
+              {expanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+        </div>
+        <div className={`card-body swarm-box ${expanded ? "swarm-box-expanded" : ""}`}>
+          {window.SwarmGraph ? (
+            <window.SwarmGraph
+              agents={swarmAgents}
+              edges={swarmEdges}
+              selectedAgentId={selectedSwarmAgent?.id || ""}
+              onNodeClick={(node) => setSelectedSwarmAgentId(String(node?.id || ""))}
+            />
+          ) : null}
+        </div>
+        <div className="swarm-inline-meta">
+          <div className="swarm-summary">
+            <span>thinking {swarmSummary.thinking}</span>
+            <span>done {swarmSummary.done}</span>
+            <span>idle {swarmSummary.idle}</span>
+            <span>error {swarmSummary.error}</span>
+          </div>
+          {selectedSwarmAgent ? (
+            <div className="swarm-selected-chip">
+              selected: {selectedSwarmAgent.label || selectedSwarmAgent.id} ({selectedSwarmAgent.status || "idle"})
+            </div>
+          ) : null}
+        </div>
+      </>
+    );
     const initializingPanel = (
       <div
         style={{
@@ -550,10 +668,7 @@
               {showMissionControl ? (
                 <aside className="left-panel panel">
                   <div className="card" style={{ minHeight: 0, flex: 1 }}>
-                    <div className="card-header">Swarm Graph</div>
-                    <div className="card-body swarm-box">
-                      {window.SwarmGraph ? <window.SwarmGraph agents={swarmAgents} edges={swarmEdges} /> : null}
-                    </div>
+                    {renderSwarmGraph(false)}
                   </div>
                   <div className="federation-pulse">
                     <span className={`pulse-dot ${federationActive ? "active" : ""}`} />
@@ -635,6 +750,56 @@
                 )}
               </div>
             </footer>
+            {showMissionControl && swarmExpanded ? (
+              <div className="graph-modal-backdrop" onClick={() => setSwarmExpanded(false)}>
+                <section
+                  className="graph-modal panel"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Expanded swarm graph"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="graph-modal-main card">{renderSwarmGraph(true)}</div>
+                  <aside className="graph-modal-sidebar panel">
+                    <div className="card-header">
+                      <span>Agent Details</span>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setSwarmExpanded(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="graph-modal-sidebar-body">
+                      {selectedSwarmAgent ? (
+                        <>
+                          <div className="graph-agent-title">{selectedSwarmAgent.label || selectedSwarmAgent.id}</div>
+                          <div className={`graph-agent-status status-${selectedSwarmAgent.status || "idle"}`}>
+                            {selectedSwarmAgent.status || "idle"}
+                          </div>
+                          <div className="graph-detail-block">
+                            <h4>Connections</h4>
+                            <p>upstream: {selectedSwarmNeighbors.upstream.join(", ") || "none"}</p>
+                            <p>downstream: {selectedSwarmNeighbors.downstream.join(", ") || "none"}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="empty-state">Select an agent node to inspect its position in the swarm.</div>
+                      )}
+                      <div className="graph-detail-block">
+                        <h4>Swarm Summary</h4>
+                        <p>Total agents: {swarmSummary.total}</p>
+                        <p>Thinking: {swarmSummary.thinking}</p>
+                        <p>Done: {swarmSummary.done}</p>
+                        <p>Idle: {swarmSummary.idle}</p>
+                        <p>Error: {swarmSummary.error}</p>
+                      </div>
+                    </div>
+                  </aside>
+                </section>
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="main-grid" style={{ display: "block", minHeight: 0 }}>
