@@ -55,7 +55,9 @@ def subscription_segments(
         if row.effective_at <= period_start:
             continue
         if cursor < row.effective_at:
-            segments.append(PlanSegment(plan_id=current_plan_id, start=cursor, end=row.effective_at))
+            segments.append(
+                PlanSegment(plan_id=current_plan_id, start=cursor, end=row.effective_at)
+            )
         current_plan_id = row.plan_id
         cursor = max(cursor, row.effective_at)
     if cursor < period_end:

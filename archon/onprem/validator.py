@@ -8,12 +8,9 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-import jwt
 
 from archon.interfaces.webchat.auth import verify_webchat_token
 from archon.onprem.compose_generator import DeploymentConfig
@@ -117,7 +114,9 @@ class DeployValidator:
             payload = response.json()
             token = str(payload.get("token") or "")
             if not token:
-                return ValidationCheck("auth_working", False, "Token missing from response.", "critical")
+                return ValidationCheck(
+                    "auth_working", False, "Token missing from response.", "critical"
+                )
             verify_webchat_token(token)
             return ValidationCheck("auth_working", True, "Webchat token verified.", "critical")
         except Exception as exc:
@@ -131,7 +130,9 @@ class DeployValidator:
             return ValidationCheck(
                 "db_connected",
                 passed,
-                "Database status is ok." if passed else "Database health check did not return db_status=ok.",
+                "Database status is ok."
+                if passed
+                else "Database health check did not return db_status=ok.",
                 "critical",
             )
         except Exception as exc:
@@ -146,7 +147,9 @@ class DeployValidator:
             return ValidationCheck(
                 "ollama_reachable",
                 response.status_code == 200,
-                "Ollama responded to /api/tags." if response.status_code == 200 else f"Unexpected status {response.status_code}.",
+                "Ollama responded to /api/tags."
+                if response.status_code == 200
+                else f"Unexpected status {response.status_code}.",
                 "warning",
             )
         except Exception as exc:
@@ -188,7 +191,9 @@ def _ssl_certificate_expiry(base_url: str) -> datetime:
     hostname = parsed.hostname or "localhost"
     port = int(parsed.port or 443)
     context = ssl.create_default_context()
-    with context.wrap_socket(__import__("socket").create_connection((hostname, port)), server_hostname=hostname) as sock:
+    with context.wrap_socket(
+        __import__("socket").create_connection((hostname, port)), server_hostname=hostname
+    ) as sock:
         cert = sock.getpeercert()
     not_after = str(cert.get("notAfter") or "")
     return datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)

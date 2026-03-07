@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 
 import yaml
-
 
 PINNED_IMAGES = {
     "archon-api": "ghcr.io/archon/api@sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -83,7 +82,8 @@ class DockerComposeGenerator:
                 "environment": {
                     "ARCHON_TENANT_ID": config.tenant_id,
                     "ARCHON_TIER": config.tier,
-                    "DATABASE_URL": config.external_db_url or "postgresql://archon:archon@postgres:5432/archon",
+                    "DATABASE_URL": config.external_db_url
+                    or "postgresql://archon:archon@postgres:5432/archon",
                     "REDIS_URL": config.redis_url or "redis://redis:6379/0",
                     "SMTP_HOST": config.smtp_host or "smtp",
                 },
@@ -103,7 +103,8 @@ class DockerComposeGenerator:
                 "image": PINNED_IMAGES["archon-worker"],
                 "env_file": env_file,
                 "environment": {
-                    "DATABASE_URL": config.external_db_url or "postgresql://archon:archon@postgres:5432/archon",
+                    "DATABASE_URL": config.external_db_url
+                    or "postgresql://archon:archon@postgres:5432/archon",
                     "REDIS_URL": config.redis_url or "redis://redis:6379/0",
                 },
                 "depends_on": ["postgres", "redis"],
@@ -129,8 +130,14 @@ class DockerComposeGenerator:
                 "restart": "unless-stopped",
             },
         }
-        services["archon-api"]["volumes"] = ["archon-data:/var/lib/archon", "archon-memory:/var/lib/archon/memory"]
-        services["archon-worker"]["volumes"] = ["archon-data:/var/lib/archon", "archon-memory:/var/lib/archon/memory"]
+        services["archon-api"]["volumes"] = [
+            "archon-data:/var/lib/archon",
+            "archon-memory:/var/lib/archon/memory",
+        ]
+        services["archon-worker"]["volumes"] = [
+            "archon-data:/var/lib/archon",
+            "archon-memory:/var/lib/archon/memory",
+        ]
 
         if config.ollama_models:
             services["ollama"] = {

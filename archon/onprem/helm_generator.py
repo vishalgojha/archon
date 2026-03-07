@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -187,7 +186,9 @@ class HelmChartGenerator:
             "type": "Opaque",
             "data": {
                 "ARCHON_MASTER_KEY": _b64("ARCHON_MASTER_KEY"),
-                "DATABASE_URL": _b64(config.external_db_url or "postgresql://archon:archon@postgres:5432/archon"),
+                "DATABASE_URL": _b64(
+                    config.external_db_url or "postgresql://archon:archon@postgres:5432/archon"
+                ),
                 "SMTP_HOST": _b64(config.smtp_host or "smtp"),
             },
         }

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import jwt
 import pytest
 from click.testing import CliRunner
-from jose import jwt
 
 from archon.archon_cli import cli
 

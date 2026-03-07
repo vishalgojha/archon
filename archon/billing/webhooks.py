@@ -10,8 +10,9 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-from archon.billing.stripe_client import StripeClient, WebhookEvent as StripeClientWebhookEvent
 from archon.billing.models import WebhookEvent
+from archon.billing.stripe_client import StripeClient
+from archon.billing.stripe_client import WebhookEvent as StripeClientWebhookEvent
 
 
 def build_stripe_signature_header(
@@ -203,7 +204,11 @@ class StripeWebhookHandler:
         if invoice is not None and callable(getattr(store, "mark_invoice_paid", None)):
             store.mark_invoice_paid(invoice.invoice_id, paid_at=time.time())
             tenant_id = tenant_id or getattr(invoice, "tenant_id", "")
-        self._emit(tenant_id or "system", "billing_invoice_paid", {"invoice_id": _object_id(object_payload)})
+        self._emit(
+            tenant_id or "system",
+            "billing_invoice_paid",
+            {"invoice_id": _object_id(object_payload)},
+        )
 
     async def _handle_invoice_failed(
         self,
@@ -255,7 +260,11 @@ class StripeWebhookHandler:
         object_payload: dict[str, Any],
     ) -> None:
         plan_id = _plan_id_from_subscription(object_payload)
-        if tenant_id and plan_id and callable(getattr(self.billing_service, "change_subscription", None)):
+        if (
+            tenant_id
+            and plan_id
+            and callable(getattr(self.billing_service, "change_subscription", None))
+        ):
             await self.billing_service.change_subscription(
                 tenant_id=tenant_id,
                 plan_id=plan_id,

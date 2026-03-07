@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-import subprocess
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import shutil
+import subprocess
 import uuid
+from datetime import datetime, timedelta, timezone
 from itertools import product
+from pathlib import Path
 
 import pytest
 import yaml
 
-from archon.onprem import DeploymentConfig, DeployValidator, DockerComposeGenerator, HelmChartGenerator
+from archon.onprem import (
+    DeploymentConfig,
+    DeployValidator,
+    DockerComposeGenerator,
+    HelmChartGenerator,
+)
 
 
 def _config(**overrides) -> DeploymentConfig:
@@ -48,8 +53,12 @@ def test_docker_compose_generator_conditional_services_and_no_latest_tags() -> N
 
     assert "ollama" in manifest.services
     assert "nginx" in manifest.services
-    assert manifest.services["ollama"]["deploy"]["resources"]["reservations"]["devices"][0]["capabilities"] == ["gpu"]
-    assert all(":latest" not in str(service.get("image", "")) for service in manifest.services.values())
+    assert manifest.services["ollama"]["deploy"]["resources"]["reservations"]["devices"][0][
+        "capabilities"
+    ] == ["gpu"]
+    assert all(
+        ":latest" not in str(service.get("image", "")) for service in manifest.services.values()
+    )
     assert manifest.services["archon-api"]["env_file"] == [".env.archon"]
 
 
@@ -82,11 +91,15 @@ def test_helm_chart_generator_writes_required_templates_and_values() -> None:
     assert values["replicas"] == 4
     assert hpa["spec"]["maxReplicas"] == 4
     assert pdb["spec"]["minAvailable"] == 1
-    assert ingress["metadata"]["annotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
+    assert (
+        ingress["metadata"]["annotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
+    )
 
 
 class _HttpClient:
-    def __init__(self, *, health_status: int = 200, db_status: str = "ok", token_status: int = 200) -> None:
+    def __init__(
+        self, *, health_status: int = 200, db_status: str = "ok", token_status: int = 200
+    ) -> None:
         self.health_status = health_status
         self.db_status = db_status
         self.token_status = token_status
@@ -112,7 +125,9 @@ class _Response:
         return self._payload
 
 
-def test_deploy_validator_api_reachable_and_blocking_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_deploy_validator_api_reachable_and_blocking_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr("archon.onprem.validator.verify_webchat_token", lambda token: {"ok": True})
     monkeypatch.setattr(
         "archon.onprem.validator._ssl_certificate_expiry",
@@ -121,11 +136,15 @@ def test_deploy_validator_api_reachable_and_blocking_failures(monkeypatch: pytes
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args=args[0], returncode=0, stdout="ok", stderr=""),  # type: ignore[index]
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="ok", stderr=""
+        ),  # type: ignore[index]
     )
     validator = DeployValidator(http_client=_HttpClient())
 
-    report = validator.run_all(_config(tls=True, ollama_models=["llava:34b"]), "https://archon.example")
+    report = validator.run_all(
+        _config(tls=True, ollama_models=["llava:34b"]), "https://archon.example"
+    )
 
     assert any(check.name == "api_reachable" and check.passed for check in report.checks)
     assert report.failed_count == 0
@@ -148,7 +167,9 @@ def test_deploy_validator_connection_error_and_ssl_failure(monkeypatch: pytest.M
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args=args[0], returncode=1, stdout="", stderr="bad"),  # type: ignore[index]
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0], returncode=1, stdout="", stderr="bad"
+        ),  # type: ignore[index]
     )
     validator = DeployValidator(http_client=_BrokenClient())  # type: ignore[arg-type]
 

@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import io
 import os
 import socketserver
 import sqlite3
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+import wave
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
-import base64
-import io
-import wave
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import archon.vernacular.detector as vernacular_detector_mod
-from archon.billing import InvoiceGenerator, UsageMeter
-from archon.billing.stripe_client import UsageRecord as StripeUsageRecord
 from archon.agents.community.community_agent import (
     CommunityAgent,
     CommunityPost,
@@ -31,23 +31,28 @@ from archon.agents.community.community_agent import (
 )
 from archon.agents.content.content_agent import ContentAgent, PublishTarget
 from archon.agents.outbound.email_agent import SMTPConfig, SMTPEmailTransport
+from archon.billing import InvoiceGenerator, UsageMeter
+from archon.billing.stripe_client import UsageRecord as StripeUsageRecord
+from archon.config import ArchonConfig
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.marketplace.connect import CONNECT_ACCOUNT_METADATA_KEY, ConnectAccount
 from archon.multimodal import MultimodalOrchestrator, TranscriptResult
 from archon.onprem import DeploymentConfig, DeployValidator, DockerComposeGenerator
 from archon.partners.viral_loop import ViralLoop, visitor_fingerprint
 from archon.studio.workflow_serializer import deserialize, serialize
-from archon.config import ArchonConfig
 from archon.validate_config import validate_config
 from archon.vernacular.detector import LanguageDetector
 from archon.vernacular.pipeline import VernacularPipeline
 from archon.vernacular.reasoner import VernacularReasoner
 
+_JWT_SECRET = "archon-dev-secret-change-me-32-bytes"
+
 
 def _auth_token(*, tenant: str = "tenant-integration", tier: str = "business") -> str:
     return jwt.encode(
         {"sub": tenant, "tier": tier},
-        "archon-dev-secret-change-me-32-bytes",
+        os.environ.get("ARCHON_JWT_SECRET", _JWT_SECRET),
         algorithm="HS256",
     )
 
@@ -61,7 +66,7 @@ def _openrouter_key_fixture() -> Iterator[None]:
     previous = os.environ.get("OPENROUTER_API_KEY")
     previous_jwt = os.environ.get("ARCHON_JWT_SECRET")
     os.environ["OPENROUTER_API_KEY"] = previous or "integration-openrouter-key"
-    os.environ["ARCHON_JWT_SECRET"] = previous_jwt or "archon-dev-secret-change-me-32-bytes"
+    os.environ["ARCHON_JWT_SECRET"] = _JWT_SECRET
     try:
         yield
     finally:
@@ -73,6 +78,16 @@ def _openrouter_key_fixture() -> Iterator[None]:
             os.environ.pop("ARCHON_JWT_SECRET", None)
         else:
             os.environ["ARCHON_JWT_SECRET"] = previous_jwt
+
+
+def _receive_ws_json_or_fail(websocket) -> dict[str, Any]:
+    try:
+        frame = websocket.receive_json()
+    except WebSocketDisconnect as exc:
+        pytest.fail(f"WS disconnected with code {exc.code}: {exc.reason}")
+    if not isinstance(frame, dict):
+        pytest.fail(f"Unexpected websocket frame: {frame!r}")
+    return frame
 
 
 class _SMTPCaptureServer(socketserver.ThreadingTCPServer):
@@ -155,7 +170,7 @@ def _collect_ws_events(
     events: list[dict[str, Any]] = []
     result: dict[str, Any] | None = None
     for _ in range(max_messages):
-        message = websocket.receive_json()
+        message = _receive_ws_json_or_fail(websocket)
         if message.get("type") == "event":
             payload = message.get("payload")
             if isinstance(payload, dict):
@@ -177,6 +192,22 @@ def _wav_bytes(duration_s: int, sample_rate: int = 8000) -> bytes:
         wav.setframerate(sample_rate)
         wav.writeframes(b"\x00\x00" * duration_s * sample_rate)
     return output.getvalue()
+
+
+def _set_marketplace_envs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_PARTNERS_DB", str(tmp_path / "partners.sqlite3"))
+    monkeypatch.setenv(
+        "ARCHON_MARKETPLACE_CONNECT_DB",
+        str(tmp_path / "marketplace-connect.sqlite3"),
+    )
+    monkeypatch.setenv(
+        "ARCHON_MARKETPLACE_REVENUE_DB",
+        str(tmp_path / "marketplace-revenue.sqlite3"),
+    )
+    monkeypatch.setenv(
+        "ARCHON_MARKETPLACE_CYCLE_DB",
+        str(tmp_path / "marketplace-cycles.sqlite3"),
+    )
 
 
 def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
@@ -301,7 +332,7 @@ def test_approval_gate_integration_emits_event_and_completes_after_approve() -> 
             approval_seen = False
 
             for _ in range(300):
-                frame = websocket.receive_json()
+                frame = _receive_ws_json_or_fail(websocket)
                 if frame.get("type") == "event":
                     event = frame.get("payload", {})
                     if event.get("type") == "approval_required":
@@ -710,7 +741,9 @@ async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
             return action_id
 
     class _Stripe:
-        async def create_usage_record(self, subscription_item_id: str, quantity: float, timestamp: float) -> StripeUsageRecord:
+        async def create_usage_record(
+            self, subscription_item_id: str, quantity: float, timestamp: float
+        ) -> StripeUsageRecord:
             return StripeUsageRecord(
                 record_id=f"ur_{subscription_item_id}",
                 subscription_item_id=subscription_item_id,
@@ -718,7 +751,11 @@ async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
                 timestamp=timestamp,
             )
 
-    meter = UsageMeter(path=Path("archon/tests/_tmp_integration") / f"meter-{uuid.uuid4().hex[:8]}.sqlite3", approval_gate=_Gate(), stripe_client=_Stripe())  # type: ignore[arg-type]
+    meter = UsageMeter(
+        path=Path("archon/tests/_tmp_integration") / f"meter-{uuid.uuid4().hex[:8]}.sqlite3",
+        approval_gate=_Gate(),
+        stripe_client=_Stripe(),
+    )  # type: ignore[arg-type]
     meter.record("tenant-integration", "agent_runs", 2.0, {})
     meter.record("tenant-integration", "emails_sent", 3.0, {})
 
@@ -729,6 +766,146 @@ async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
 
     assert len(records) == 2
     assert {line.description for line in invoice.line_items} == {"Agent Runs", "Emails Sent"}
+
+
+def test_marketplace_onboarding_flow_activates_partner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Marketplace integration: onboard through API, complete Stripe checks, activate partner."""
+
+    _set_marketplace_envs(tmp_path, monkeypatch)
+
+    class _Stripe:
+        def __init__(self) -> None:
+            self.accounts: dict[str, ConnectAccount] = {}
+
+        async def create_account(
+            self, email: str, country: str, business_type: str
+        ) -> ConnectAccount:
+            del business_type
+            account = ConnectAccount(
+                account_id="acct_onboard",
+                email=email,
+                country=country,
+                charges_enabled=False,
+                payouts_enabled=False,
+                details_submitted=False,
+                created_at=time.time(),
+            )
+            self.accounts[account.account_id] = account
+            return account
+
+        async def create_account_link(
+            self,
+            account_id: str,
+            refresh_url: str,
+            return_url: str,
+        ) -> str:
+            del refresh_url, return_url
+            return f"https://connect.example/{account_id}"
+
+        async def get_account(self, account_id: str) -> ConnectAccount:
+            return self.accounts[account_id]
+
+    with TestClient(app) as client:
+        partner = app.state.partner_registry.register(
+            "Integration Partner",
+            "integration@example.com",
+            "affiliate",
+        )
+        stripe = _Stripe()
+        app.state.marketplace_onboarding.stripe_client = stripe
+        response = client.post(
+            "/marketplace/developers/onboard",
+            json={
+                "partner_id": partner.partner_id,
+                "email": partner.email,
+                "country": "US",
+            },
+            headers=_auth_headers(tenant="tenant-enterprise", tier="enterprise"),
+        )
+        stripe.accounts["acct_onboard"] = ConnectAccount(
+            account_id="acct_onboard",
+            email=partner.email,
+            country="US",
+            charges_enabled=True,
+            payouts_enabled=True,
+            details_submitted=True,
+            created_at=time.time(),
+        )
+        completed = asyncio.run(app.state.marketplace_onboarding.complete(partner.partner_id))
+        refreshed = app.state.partner_registry.get(partner.partner_id)
+
+    assert response.status_code == 200
+    assert response.json()["onboarding_url"] == "https://connect.example/acct_onboard"
+    assert completed is True
+    assert refreshed is not None
+    assert refreshed.status == "active"
+
+
+def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Marketplace integration: record revenue, queue payout, auto-approve, execute transfer."""
+
+    _set_marketplace_envs(tmp_path, monkeypatch)
+
+    class _Stripe:
+        async def create_transfer(
+            self,
+            destination_account_id: str,
+            amount_usd: float,
+            *,
+            metadata: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            assert destination_account_id == "acct_marketplace"
+            assert amount_usd >= 10.0
+            assert metadata is not None
+            return {"id": "tr_marketplace_1"}
+
+    with TestClient(app) as client:
+        del client
+        registry = app.state.partner_registry
+        ledger = app.state.marketplace_revenue_ledger
+        queue = app.state.marketplace_payout_queue
+        partner = registry.register("Revenue Partner", "revenue@example.com", "affiliate")
+        registry.update_metadata(
+            partner.partner_id, {CONNECT_ACCOUNT_METADATA_KEY: "acct_marketplace"}
+        )
+        registry.update_status(partner.partner_id, "active", "ready-for-payout")
+        ledger.upsert_listing("listing-market", partner.partner_id, "pro_only")
+        ledger.record("tenant-market", "listing-market", 100.0)
+        queue.approval_gate.auto_approve_in_test = True
+        queue.stripe_client = _Stripe()
+        payout = queue.enqueue(partner.partner_id, 0.0, time.time() + 60.0)
+        approved = asyncio.run(queue.approve(payout.payout_id))
+        result = asyncio.run(queue.execute(payout.payout_id))
+
+    assert payout is not None
+    assert approved.status == "approved"
+    assert result.status == "paid"
+    assert result.transfer_id == "tr_marketplace_1"
+
+
+def test_marketplace_earnings_api_isolates_partner_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Marketplace integration: partner A cannot read partner B earnings via API."""
+
+    _set_marketplace_envs(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        partner_a = app.state.partner_registry.register("Partner A", "a@example.com", "affiliate")
+        partner_b = app.state.partner_registry.register("Partner B", "b@example.com", "affiliate")
+        response = client.get(
+            f"/marketplace/developers/{partner_b.partner_id}/earnings",
+            headers=_auth_headers(tenant=partner_a.partner_id, tier="business"),
+        )
+
+    assert response.status_code == 401
 
 
 def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -752,12 +929,20 @@ def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatc
     class _Client:
         def get(self, url: str):  # type: ignore[no-untyped-def]
             if url.endswith("/api/tags"):
-                return type("Response", (), {"status_code": 200, "json": lambda self=None: {"models": []}})()
-            return type("Response", (), {"status_code": 200, "json": lambda self=None: {"status": "ok", "db_status": "ok"}})()
+                return type(
+                    "Response", (), {"status_code": 200, "json": lambda self=None: {"models": []}}
+                )()
+            return type(
+                "Response",
+                (),
+                {"status_code": 200, "json": lambda self=None: {"status": "ok", "db_status": "ok"}},
+            )()
 
         def post(self, url: str, json: dict[str, object]):  # type: ignore[no-untyped-def]
             del url, json
-            return type("Response", (), {"status_code": 200, "json": lambda self=None: {"token": "token"}})()
+            return type(
+                "Response", (), {"status_code": 200, "json": lambda self=None: {"token": "token"}}
+            )()
 
     monkeypatch.setattr("archon.onprem.validator.verify_webchat_token", lambda token: {"ok": True})
     monkeypatch.setattr(
@@ -766,7 +951,9 @@ def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatc
     )
     monkeypatch.setattr(
         "archon.onprem.validator.subprocess.run",
-        lambda *args, **kwargs: __import__("subprocess").CompletedProcess(args=args[0], returncode=0, stdout="ok", stderr=""),  # type: ignore[index]
+        lambda *args, **kwargs: __import__("subprocess").CompletedProcess(
+            args=args[0], returncode=0, stdout="ok", stderr=""
+        ),  # type: ignore[index]
     )
 
     report = DeployValidator(http_client=_Client()).run_all(
@@ -797,11 +984,15 @@ async def test_multimodal_integration_routes_audio_and_image_to_vision_provider(
 
     monkeypatch.setenv("OPENAI_API_KEY", "integration-openai-key")
     orchestrator = MultimodalOrchestrator(ArchonConfig())
-    image = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aN8AAAAASUVORK5CYII=")
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aN8AAAAASUVORK5CYII="
+    )
     audio = _wav_bytes(1)
 
     async def fake_transcribe(audio_input) -> TranscriptResult:  # type: ignore[no-untyped-def]
-        return TranscriptResult(text="integration speech", language="en", confidence=0.9, method="mock")
+        return TranscriptResult(
+            text="integration speech", language="en", confidence=0.9, method="mock"
+        )
 
     orchestrator.audio_processor.transcribe = fake_transcribe  # type: ignore[assignment]
     response = await orchestrator.process(
@@ -817,14 +1008,29 @@ async def test_multimodal_integration_routes_audio_and_image_to_vision_provider(
     assert response.content
 
 
-def test_studio_integration_roundtrip_save_load_deserialize(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_studio_integration_roundtrip_save_load_deserialize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Studio integration: serialize, save via API, load back, and deserialize."""
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "integration-openrouter-key")
-    monkeypatch.setenv("ARCHON_STUDIO_DB", str(Path("archon/tests/_tmp_integration") / f"studio-{uuid.uuid4().hex[:8]}.sqlite3"))
+    monkeypatch.setenv(
+        "ARCHON_STUDIO_DB",
+        str(Path("archon/tests/_tmp_integration") / f"studio-{uuid.uuid4().hex[:8]}.sqlite3"),
+    )
     nodes = [
-        {"id": "agent-a", "type": "AgentNode", "position": {"x": 0, "y": 0}, "data": {"agent_class": "ResearcherAgent", "action": "research"}},
-        {"id": "output", "type": "OutputNode", "position": {"x": 200, "y": 0}, "data": {"action": "emit"}},
+        {
+            "id": "agent-a",
+            "type": "AgentNode",
+            "position": {"x": 0, "y": 0},
+            "data": {"agent_class": "ResearcherAgent", "action": "research"},
+        },
+        {
+            "id": "output",
+            "type": "OutputNode",
+            "position": {"x": 200, "y": 0},
+            "data": {"action": "emit"},
+        },
     ]
     edges = [{"id": "e1", "source": "agent-a", "target": "output", "label": "text"}]
     workflow = serialize(nodes, edges)
@@ -848,7 +1054,9 @@ def test_studio_integration_roundtrip_save_load_deserialize(monkeypatch: pytest.
 
     with TestClient(app) as client:
         saved = client.post("/studio/workflows", json=payload, headers=_auth_headers())
-        loaded = client.get(f"/studio/workflows/{saved.json()['workflow_id']}", headers=_auth_headers())
+        loaded = client.get(
+            f"/studio/workflows/{saved.json()['workflow_id']}", headers=_auth_headers()
+        )
 
     assert saved.status_code == 200
     assert loaded.status_code == 200

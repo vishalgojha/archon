@@ -99,7 +99,9 @@ class StripeGateway:
             "metadata[plan_id]": plan.plan_id,
         }
         if subscription.external_subscription_id:
-            payload = await self._post(f"/subscriptions/{subscription.external_subscription_id}", data)
+            payload = await self._post(
+                f"/subscriptions/{subscription.external_subscription_id}", data
+            )
             identifier = str(payload.get("id") or subscription.external_subscription_id)
         else:
             payload = await self._post("/subscriptions", data)

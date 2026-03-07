@@ -9,7 +9,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from archon.compliance.encryption import EncryptionLayer
 from archon.compliance.retention import RetentionRule
@@ -60,7 +59,9 @@ class StudioWorkflowStore:
         []
     """
 
-    def __init__(self, path: str | Path = "archon_studio.sqlite3", *, master_key: bytes | None = None) -> None:
+    def __init__(
+        self, path: str | Path = "archon_studio.sqlite3", *, master_key: bytes | None = None
+    ) -> None:
         self.path = Path(path)
         self._master_key = master_key or _default_master_key()
         self._init_db()
@@ -98,7 +99,9 @@ class StudioWorkflowStore:
                 """,
                 (wid, str(tenant_id), workflow.name, encrypted, now, now),
             )
-        return StoredWorkflow(workflow_id=wid, tenant_id=str(tenant_id), name=workflow.name, updated_at=now)
+        return StoredWorkflow(
+            workflow_id=wid, tenant_id=str(tenant_id), name=workflow.name, updated_at=now
+        )
 
     def list(self, tenant_id: str) -> list[StoredWorkflow]:
         """List workflow metadata for one tenant.
@@ -149,7 +152,9 @@ class StudioWorkflowStore:
             ).fetchone()
         if row is None:
             return None
-        return _workflow_from_json(self._decrypt(str(tenant_id), str(row["encrypted_definition_json"])))
+        return _workflow_from_json(
+            self._decrypt(str(tenant_id), str(row["encrypted_definition_json"]))
+        )
 
     def delete(self, tenant_id: str, workflow_id: str) -> bool:
         """Delete one stored workflow definition.
@@ -208,7 +213,9 @@ class StudioWorkflowStore:
             )
 
     def _encrypt(self, tenant_id: str, payload: str) -> str:
-        encrypted = EncryptionLayer.encrypt(payload, EncryptionLayer.derive_key(tenant_id, self._master_key))
+        encrypted = EncryptionLayer.encrypt(
+            payload, EncryptionLayer.derive_key(tenant_id, self._master_key)
+        )
         return json.dumps(
             {
                 "ciphertext_b64": encrypted.ciphertext_b64,

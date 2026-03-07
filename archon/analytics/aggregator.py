@@ -540,7 +540,9 @@ def _dominant_mode(counts: dict[str, int]) -> str:
     return ordered[0][0]
 
 
-def _performance_score(*, avg_confidence: float, avg_cost_usd: float, federation_share: float) -> float:
+def _performance_score(
+    *, avg_confidence: float, avg_cost_usd: float, federation_share: float
+) -> float:
     quality_component = max(0.0, min(1.0, avg_confidence / 100.0)) * 0.75
     cost_component = (1.0 / (1.0 + max(0.0, avg_cost_usd * 20.0))) * 0.20
     federation_component = max(0.0, min(1.0, federation_share)) * 0.05

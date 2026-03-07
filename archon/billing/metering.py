@@ -218,7 +218,9 @@ class UsageMeter:
                 continue
             key = (str(tenant_id), metric, float(period_start), float(period_end))
             if key not in self._aggregate_history:
-                raise RuntimeError(f"aggregate() must be called before flush for metric '{metric}'.")
+                raise RuntimeError(
+                    f"aggregate() must be called before flush for metric '{metric}'."
+                )
             record = await self.stripe_client.create_usage_record(
                 self.metric_item_ids.get(metric, f"si_{metric}"),
                 total,

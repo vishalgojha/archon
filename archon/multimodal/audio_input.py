@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import io
 import json
 import os
@@ -213,7 +212,16 @@ class AudioProcessor:
             txt_path = os.path.join(tmp_dir, audio.input_id)
             with open(audio_path, "wb") as handle:
                 handle.write(audio.data)
-            cmd = [whisper_binary, audio_path, "--model", "base", "--output_format", "json", "--output_dir", tmp_dir]
+            cmd = [
+                whisper_binary,
+                audio_path,
+                "--model",
+                "base",
+                "--output_format",
+                "json",
+                "--output_dir",
+                tmp_dir,
+            ]
             if language:
                 cmd.extend(["--language", str(language)])
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)

@@ -311,7 +311,9 @@ class StripeClient:
                 currency=str(row.get("currency") or "usd"),
                 status=str(row.get("status") or "draft"),
                 pdf_url=str(row.get("invoice_pdf") or ""),
-                period_start=float((row.get("period_start") or _invoice_period(row).get("start") or 0.0)),
+                period_start=float(
+                    (row.get("period_start") or _invoice_period(row).get("start") or 0.0)
+                ),
                 period_end=float((row.get("period_end") or _invoice_period(row).get("end") or 0.0)),
             )
             for row in rows

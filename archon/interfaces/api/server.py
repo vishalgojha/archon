@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
@@ -51,13 +52,17 @@ from archon.interfaces.api.rate_limit import (
     set_rate_limit_store,
 )
 from archon.interfaces.webchat.server import mount_webchat
+from archon.marketplace import DeveloperOnboarding, StripeConnectClient
+from archon.marketplace.payout_orchestrator import PartnerRevenueReport, PayoutOrchestrator
+from archon.marketplace.revenue_share import PayoutQueue, RevenueShareLedger
 from archon.observability.metrics import Metrics
 from archon.observability.setup import configure_observability
 from archon.observability.tracing import TracingSetup
+from archon.partners.registry import PartnerRegistry
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 from archon.studio.runtime import WorkflowRunBroker, execute_workflow_run
 from archon.studio.store import StudioWorkflowStore
-from archon.studio.workflow_serializer import ValidationError, validate as validate_studio_workflow
+from archon.studio.workflow_serializer import validate as validate_studio_workflow
 from archon.web.injection_generator import InjectionGenerator
 from archon.web.intent_classifier import IntentClassifier, SiteIntent
 from archon.web.site_crawler import SiteCrawler
@@ -190,6 +195,23 @@ class StudioRunRequest(BaseModel):
     workflow: dict[str, Any]
 
 
+class MarketplaceOnboardRequest(BaseModel):
+    """Payload for starting developer Stripe Connect onboarding."""
+
+    partner_id: str = Field(min_length=1)
+    email: str = Field(min_length=3)
+    country: str = Field(default="US", min_length=2, max_length=2)
+
+
+class MarketplaceRunCycleRequest(BaseModel):
+    """Payload for manually running a marketplace payout cycle."""
+
+    period: str | None = None
+    period_start: float | None = None
+    period_end: float | None = None
+    auto_approve: bool = False
+
+
 def _to_response(result: OrchestrationResult) -> TaskResponse:
     return TaskResponse(
         task_id=result.task_id,
@@ -212,7 +234,9 @@ async def lifespan(app: FastAPI):
         path=os.getenv("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
     )
     stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "") or os.getenv("STRIPE_SECRET_KEY", "")
-    webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv(
+        "STRIPE_WEBHOOK_SECRET", ""
+    )
     stripe_live_mode = str(os.getenv("ARCHON_STRIPE_LIVE_MODE", "")).strip().lower() == "true"
     app.state.stripe_client = StripeClient(
         secret_key=stripe_api_key,
@@ -245,6 +269,47 @@ async def lifespan(app: FastAPI):
         path=os.getenv("ARCHON_STUDIO_DB", "archon_studio.sqlite3")
     )
     app.state.studio_run_broker = WorkflowRunBroker()
+    app.state.partner_registry = PartnerRegistry(
+        path=os.getenv("ARCHON_PARTNERS_DB", "archon_partners.sqlite3")
+    )
+    marketplace_revenue_db = os.getenv(
+        "ARCHON_MARKETPLACE_REVENUE_DB",
+        "archon_marketplace_revenue.sqlite3",
+    )
+    app.state.marketplace_stripe_client = StripeConnectClient(secret_key=stripe_api_key)
+    app.state.marketplace_onboarding = DeveloperOnboarding(
+        registry=app.state.partner_registry,
+        stripe_client=app.state.marketplace_stripe_client,
+        path=os.getenv(
+            "ARCHON_MARKETPLACE_CONNECT_DB",
+            "archon_marketplace_connect.sqlite3",
+        ),
+    )
+    app.state.marketplace_revenue_ledger = RevenueShareLedger(
+        registry=app.state.partner_registry,
+        path=marketplace_revenue_db,
+    )
+    app.state.marketplace_payout_queue = PayoutQueue(
+        registry=app.state.partner_registry,
+        ledger=app.state.marketplace_revenue_ledger,
+        approval_gate=app.state.orchestrator.approval_gate,
+        stripe_client=app.state.marketplace_stripe_client,
+        path=marketplace_revenue_db,
+    )
+    app.state.marketplace_payout_orchestrator = PayoutOrchestrator(
+        registry=app.state.partner_registry,
+        ledger=app.state.marketplace_revenue_ledger,
+        payout_queue=app.state.marketplace_payout_queue,
+        approval_gate=app.state.orchestrator.approval_gate,
+        path=os.getenv(
+            "ARCHON_MARKETPLACE_CYCLE_DB",
+            "archon_marketplace_cycles.sqlite3",
+        ),
+    )
+    app.state.marketplace_revenue_report = PartnerRevenueReport(
+        ledger=app.state.marketplace_revenue_ledger,
+        payout_queue=app.state.marketplace_payout_queue,
+    )
     app.state.started_monotonic = time.monotonic()
     if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
         app.state.console_tenant_config = {}
@@ -254,6 +319,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        marketplace_stripe_client = getattr(app.state, "marketplace_stripe_client", None)
+        if marketplace_stripe_client is not None and callable(
+            getattr(marketplace_stripe_client, "aclose", None)
+        ):
+            await marketplace_stripe_client.aclose()
         stripe_client = getattr(app.state, "stripe_client", None)
         if stripe_client is not None and callable(getattr(stripe_client, "aclose", None)):
             await stripe_client.aclose()
@@ -316,7 +386,9 @@ app.state.webchat_app = None
 _studio_static_dir = Path(__file__).resolve().parents[1] / "web" / "studio"
 _dashboard_static_dir = Path(__file__).resolve().parents[1] / "web" / "dashboard"
 if _studio_static_dir.exists():
-    app.mount("/studio/assets", StaticFiles(directory=str(_studio_static_dir)), name="studio-assets")
+    app.mount(
+        "/studio/assets", StaticFiles(directory=str(_studio_static_dir)), name="studio-assets"
+    )
 if (_dashboard_static_dir / "src").exists():
     app.mount(
         "/dashboard/src",
@@ -998,7 +1070,10 @@ async def studio_run_workflow(
     if errors:
         raise HTTPException(
             status_code=422,
-            detail=[{"code": error.code, "message": error.message, "node_id": error.node_id} for error in errors],
+            detail=[
+                {"code": error.code, "message": error.message, "node_id": error.node_id}
+                for error in errors
+            ],
         )
     workflow = _workflow_from_payload(payload.workflow)
     broker: WorkflowRunBroker = app.state.studio_run_broker
@@ -1174,6 +1249,269 @@ async def federation_execute(
     return StreamingResponse(_event_stream(), media_type="application/x-ndjson")
 
 
+@app.post("/marketplace/developers/onboard")
+@limiter.limit(limit_for_key)
+async def marketplace_developer_onboard(
+    payload: MarketplaceOnboardRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Create a Stripe Connect onboarding link for one partner."""
+
+    _require_enterprise(request, status_code=401)
+    onboarding = _marketplace_onboarding()
+    try:
+        session = await onboarding.onboard(payload.partner_id, payload.email, payload.country)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "state_change",
+            "partner_id": payload.partner_id,
+            "session_id": session.session_id,
+            "state": "marketplace_onboarding_created",
+        }
+    )
+    return {
+        "onboarding_url": session.onboarding_url,
+        "session_id": session.session_id,
+        "expires_at": session.expires_at,
+    }
+
+
+@app.get("/marketplace/developers/{partner_id}/status")
+@limiter.limit(limit_for_key)
+async def marketplace_developer_status(partner_id: str, request: Request) -> dict[str, Any]:
+    """Return the stored Stripe Connect account projection for one partner."""
+
+    _require_enterprise(request, status_code=401)
+    onboarding = _marketplace_onboarding()
+    try:
+        account, complete = await onboarding.status(partner_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    payload = asdict(account)
+    payload["onboarding_complete"] = complete
+    return payload
+
+
+@app.post("/marketplace/developers/{partner_id}/refresh")
+@limiter.limit(limit_for_key)
+async def marketplace_developer_refresh(partner_id: str, request: Request) -> dict[str, Any]:
+    """Refresh one partner's onboarding link when needed."""
+
+    _require_enterprise(request, status_code=401)
+    onboarding = _marketplace_onboarding()
+    try:
+        session = await onboarding.refresh(partner_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "state_change",
+            "partner_id": partner_id,
+            "session_id": session.session_id,
+            "state": "marketplace_onboarding_refreshed",
+        }
+    )
+    return {
+        "onboarding_url": session.onboarding_url,
+        "session_id": session.session_id,
+        "expires_at": session.expires_at,
+    }
+
+
+@app.get("/marketplace/developers/{partner_id}/earnings")
+@limiter.limit(limit_for_key)
+async def marketplace_developer_earnings(
+    partner_id: str,
+    request: Request,
+    period_start: float | None = None,
+    period_end: float | None = None,
+) -> dict[str, Any]:
+    """Return one developer's earnings plus payout history."""
+
+    _require_partner_or_enterprise(request, partner_id)
+    start, end = _resolve_marketplace_period(period_start=period_start, period_end=period_end)
+    earnings = _marketplace_revenue_ledger().aggregate_developer(partner_id, start, end)
+    payouts = _marketplace_payout_queue().list_payouts(
+        partner_id=partner_id,
+        period_start=start,
+        period_end=end,
+    )
+    payload = asdict(earnings)
+    payload["payout_history"] = [asdict(row) for row in payouts]
+    return payload
+
+
+@app.get("/marketplace/developers/{partner_id}/payouts")
+@limiter.limit(limit_for_key)
+async def marketplace_developer_payouts(partner_id: str, request: Request) -> list[dict[str, Any]]:
+    """Return payout history for one partner."""
+
+    _require_partner_or_enterprise(request, partner_id)
+    return [asdict(row) for row in _marketplace_payout_queue().list_payouts(partner_id=partner_id)]
+
+
+@app.get("/marketplace/revenue/summary")
+@limiter.limit(limit_for_key)
+async def marketplace_revenue_summary(
+    request: Request,
+    period_start: float | None = None,
+    period_end: float | None = None,
+) -> dict[str, Any]:
+    """Return ARCHON marketplace revenue totals for the selected period."""
+
+    _require_enterprise(request, status_code=403)
+    start, end = _resolve_marketplace_period(period_start=period_start, period_end=period_end)
+    return asdict(_marketplace_revenue_ledger().aggregate_archon(start, end))
+
+
+@app.post("/marketplace/revenue/run-cycle")
+@limiter.limit(limit_for_key)
+async def marketplace_revenue_run_cycle(
+    payload: MarketplaceRunCycleRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Run one marketplace payout cycle for the requested monthly period."""
+
+    _require_enterprise(request, status_code=403)
+    start, end = _resolve_marketplace_period(
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        period=payload.period,
+    )
+    orchestrator = _marketplace_payout_orchestrator()
+    sink = None
+    if payload.auto_approve:
+        approval_gate = getattr(app.state.orchestrator, "approval_gate", None)
+
+        async def sink(event: dict[str, Any]) -> None:
+            if event.get("type") == "approval_required" and approval_gate is not None:
+                approval_gate.approve(
+                    str(event.get("request_id", "")),
+                    approver=request.state.auth.tenant_id,
+                    notes="Auto-approved by authenticated marketplace operator.",
+                )
+
+    try:
+        result = await orchestrator.run_cycle(start, end, event_sink=sink)
+    except ApprovalRequiredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApprovalDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "state_change",
+            "cycle_id": result.cycle_id,
+            "state": "marketplace_payout_cycle_executed",
+            "partners_paid": result.partners_paid,
+            "total_paid_usd": result.total_paid_usd,
+        }
+    )
+    return asdict(result)
+
+
+def _marketplace_onboarding() -> DeveloperOnboarding:
+    onboarding = getattr(app.state, "marketplace_onboarding", None)
+    if not isinstance(onboarding, DeveloperOnboarding):
+        raise HTTPException(status_code=503, detail="Marketplace onboarding is unavailable.")
+    return onboarding
+
+
+def _marketplace_revenue_ledger() -> RevenueShareLedger:
+    ledger = getattr(app.state, "marketplace_revenue_ledger", None)
+    if not isinstance(ledger, RevenueShareLedger):
+        raise HTTPException(status_code=503, detail="Marketplace revenue ledger is unavailable.")
+    return ledger
+
+
+def _marketplace_payout_queue() -> PayoutQueue:
+    queue = getattr(app.state, "marketplace_payout_queue", None)
+    if not isinstance(queue, PayoutQueue):
+        raise HTTPException(status_code=503, detail="Marketplace payout queue is unavailable.")
+    return queue
+
+
+def _marketplace_payout_orchestrator() -> PayoutOrchestrator:
+    orchestrator = getattr(app.state, "marketplace_payout_orchestrator", None)
+    if not isinstance(orchestrator, PayoutOrchestrator):
+        raise HTTPException(
+            status_code=503,
+            detail="Marketplace payout orchestrator is unavailable.",
+        )
+    return orchestrator
+
+
+def _marketplace_revenue_report() -> PartnerRevenueReport:
+    reporter = getattr(app.state, "marketplace_revenue_report", None)
+    if not isinstance(reporter, PartnerRevenueReport):
+        raise HTTPException(status_code=503, detail="Marketplace report generator is unavailable.")
+    return reporter
+
+
+def _require_enterprise(request: Request, *, status_code: int) -> None:
+    auth = getattr(request.state, "auth", None)
+    if getattr(auth, "tier", "") != "enterprise":
+        raise HTTPException(status_code=status_code, detail="Enterprise tier required.")
+
+
+def _require_partner_or_enterprise(request: Request, partner_id: str) -> None:
+    auth = getattr(request.state, "auth", None)
+    if getattr(auth, "tier", "") == "enterprise":
+        return
+    if str(getattr(auth, "tenant_id", "")).strip() == str(partner_id or "").strip():
+        return
+    raise HTTPException(status_code=401, detail="Partner scope mismatch.")
+
+
+def _resolve_marketplace_period(
+    *,
+    period_start: float | None = None,
+    period_end: float | None = None,
+    period: str | None = None,
+) -> tuple[float, float]:
+    if period:
+        return _marketplace_month_bounds(period)
+    if period_start is not None and period_end is not None:
+        start = float(period_start)
+        end = float(period_end)
+        if end < start:
+            raise HTTPException(status_code=422, detail="period_end must be >= period_start.")
+        return start, end
+    return _current_month_bounds()
+
+
+def _marketplace_month_bounds(period: str) -> tuple[float, float]:
+    text = str(period or "").strip()
+    try:
+        year, month = text.split("-", 1)
+        year_num = int(year)
+        month_num = int(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="period must be YYYY-MM.") from exc
+    if month_num < 1 or month_num > 12:
+        raise HTTPException(status_code=422, detail="period must be YYYY-MM.")
+    start = datetime(year_num, month_num, 1, tzinfo=timezone.utc)
+    if month_num == 12:
+        end = datetime(year_num + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year_num, month_num + 1, 1, tzinfo=timezone.utc)
+    return start.timestamp(), end.timestamp()
+
+
+def _current_month_bounds() -> tuple[float, float]:
+    now = datetime.now(timezone.utc)
+    start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    if now.month == 12:
+        end = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+    return start.timestamp(), end.timestamp()
+
+
 def run() -> None:
     """Console script entrypoint used by `archon-server`."""
 
@@ -1317,7 +1655,11 @@ def _terminate_process(pid: int) -> None:
             check=False,
         )
         combined = f"{result.stdout}\n{result.stderr}".lower()
-        if result.returncode != 0 and "not found" not in combined and "no running instance" not in combined:
+        if (
+            result.returncode != 0
+            and "not found" not in combined
+            and "no running instance" not in combined
+        ):
             raise RuntimeError(f"ARCHON could not stop the previous server process {pid}.")
         return
     try:
@@ -1553,7 +1895,9 @@ async def _emit_analytics_event(payload: dict[str, Any]) -> None:
     if not callable(record):
         return
     try:
-        event_type = str(payload.get("event_type", "state_change")).strip().lower() or "state_change"
+        event_type = (
+            str(payload.get("event_type", "state_change")).strip().lower() or "state_change"
+        )
         tenant_id = str(payload.get("tenant_id", "system")).strip() or "system"
         maybe = record(
             tenant_id=tenant_id,

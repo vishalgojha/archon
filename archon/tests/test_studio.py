@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 import uuid
@@ -10,22 +11,30 @@ from pathlib import Path
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from archon.core.orchestrator import OrchestrationResult
 from archon.interfaces.api.server import app
 from archon.studio.workflow_serializer import deserialize, serialize, validate
 
+_JWT_SECRET = "archon-dev-secret-change-me-32-bytes"
+
 
 def _auth_token(*, tenant: str = "tenant-studio", tier: str = "business") -> str:
     return jwt.encode(
         {"sub": tenant, "tier": tier},
-        "archon-dev-secret-change-me-32-bytes",
+        os.environ.get("ARCHON_JWT_SECRET", _JWT_SECRET),
         algorithm="HS256",
     )
 
 
 def _auth_headers(*, tenant: str = "tenant-studio", tier: str = "business") -> dict[str, str]:
     return {"Authorization": f"Bearer {_auth_token(tenant=tenant, tier=tier)}"}
+
+
+@pytest.fixture(autouse=True)
+def _jwt_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", _JWT_SECRET)
 
 
 def _tmp_db(name: str) -> Path:
@@ -58,6 +67,16 @@ def _sample_edges() -> list[dict[str, object]]:
     return [{"id": "e1", "source": "agent-a", "target": "output", "label": "text"}]
 
 
+def _receive_ws_json_or_fail(websocket) -> dict[str, object]:
+    try:
+        frame = websocket.receive_json()
+    except WebSocketDisconnect as exc:
+        pytest.fail(f"WS disconnected with code {exc.code}: {exc.reason}")
+    if not isinstance(frame, dict):
+        pytest.fail(f"Unexpected websocket frame: {frame!r}")
+    return frame
+
+
 def test_workflow_serializer_roundtrip_preserves_nodes_and_edges() -> None:
     workflow = serialize(_sample_nodes(), _sample_edges())
     restored = deserialize(workflow)
@@ -71,8 +90,20 @@ def test_workflow_serializer_validate_catches_cycle_orphan_and_missing_agent() -
         "workflow_id": "wf-cycle",
         "name": "Cycle",
         "steps": [
-            {"step_id": "a", "agent": "ResearcherAgent", "action": "a", "config": {"node_type": "AgentNode"}, "dependencies": ["b"]},
-            {"step_id": "b", "agent": "ResearcherAgent", "action": "b", "config": {"node_type": "OutputNode"}, "dependencies": ["a"]},
+            {
+                "step_id": "a",
+                "agent": "ResearcherAgent",
+                "action": "a",
+                "config": {"node_type": "AgentNode"},
+                "dependencies": ["b"],
+            },
+            {
+                "step_id": "b",
+                "agent": "ResearcherAgent",
+                "action": "b",
+                "config": {"node_type": "OutputNode"},
+                "dependencies": ["a"],
+            },
         ],
         "metadata": {},
         "version": 1,
@@ -82,8 +113,20 @@ def test_workflow_serializer_validate_catches_cycle_orphan_and_missing_agent() -
         "workflow_id": "wf-orphan",
         "name": "Orphan",
         "steps": [
-            {"step_id": "a", "agent": "ResearcherAgent", "action": "a", "config": {"node_type": "AgentNode"}, "dependencies": []},
-            {"step_id": "b", "agent": "OutputNode", "action": "b", "config": {"node_type": "OutputNode"}, "dependencies": []},
+            {
+                "step_id": "a",
+                "agent": "ResearcherAgent",
+                "action": "a",
+                "config": {"node_type": "AgentNode"},
+                "dependencies": [],
+            },
+            {
+                "step_id": "b",
+                "agent": "OutputNode",
+                "action": "b",
+                "config": {"node_type": "OutputNode"},
+                "dependencies": [],
+            },
         ],
         "metadata": {},
         "version": 1,
@@ -93,8 +136,20 @@ def test_workflow_serializer_validate_catches_cycle_orphan_and_missing_agent() -
         "workflow_id": "wf-missing",
         "name": "Missing",
         "steps": [
-            {"step_id": "a", "agent": "MissingAgent", "action": "a", "config": {"node_type": "AgentNode"}, "dependencies": []},
-            {"step_id": "b", "agent": "OutputNode", "action": "b", "config": {"node_type": "OutputNode"}, "dependencies": ["a"]},
+            {
+                "step_id": "a",
+                "agent": "MissingAgent",
+                "action": "a",
+                "config": {"node_type": "AgentNode"},
+                "dependencies": [],
+            },
+            {
+                "step_id": "b",
+                "agent": "OutputNode",
+                "action": "b",
+                "config": {"node_type": "OutputNode"},
+                "dependencies": ["a"],
+            },
         ],
         "metadata": {},
         "version": 1,
@@ -167,7 +222,7 @@ def test_studio_api_save_load_delete_and_run_stream(monkeypatch: pytest.MonkeyPa
         ws_path = f"{run.json()['websocket_path']}?token={token}"
 
         with client.websocket_connect(ws_path) as websocket:
-            frame = websocket.receive_json()
+            frame = _receive_ws_json_or_fail(websocket)
             assert frame["type"] in {"workflow_started", "step_started"}
 
         deleted = client.delete(f"/studio/workflows/{workflow_id}", headers=_auth_headers())
@@ -212,48 +267,116 @@ def test_workflow_serializer_node_type_matrix(node_type: str) -> None:
     [
         (
             [
-                {"step_id": "a", "agent": "ResearcherAgent", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": []},
+                {
+                    "step_id": "a",
+                    "agent": "ResearcherAgent",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": [],
+                },
             ],
             "output_unreachable",
         ),
         (
             [
-                {"step_id": "a", "agent": "ResearcherAgent", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": []},
-                {"step_id": "b", "agent": "OutputNode", "action": "emit", "config": {"node_type": "OutputNode"}, "dependencies": ["missing"]},
+                {
+                    "step_id": "a",
+                    "agent": "ResearcherAgent",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": [],
+                },
+                {
+                    "step_id": "b",
+                    "agent": "OutputNode",
+                    "action": "emit",
+                    "config": {"node_type": "OutputNode"},
+                    "dependencies": ["missing"],
+                },
             ],
             "missing_dependency",
         ),
         (
             [
-                {"step_id": "a", "agent": "Unknown", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": []},
-                {"step_id": "b", "agent": "OutputNode", "action": "emit", "config": {"node_type": "OutputNode"}, "dependencies": ["a"]},
+                {
+                    "step_id": "a",
+                    "agent": "Unknown",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": [],
+                },
+                {
+                    "step_id": "b",
+                    "agent": "OutputNode",
+                    "action": "emit",
+                    "config": {"node_type": "OutputNode"},
+                    "dependencies": ["a"],
+                },
             ],
             "missing_agent_class",
         ),
         (
             [
-                {"step_id": "a", "agent": "ResearcherAgent", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": []},
-                {"step_id": "a", "agent": "OutputNode", "action": "emit", "config": {"node_type": "OutputNode"}, "dependencies": []},
+                {
+                    "step_id": "a",
+                    "agent": "ResearcherAgent",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": [],
+                },
+                {
+                    "step_id": "a",
+                    "agent": "OutputNode",
+                    "action": "emit",
+                    "config": {"node_type": "OutputNode"},
+                    "dependencies": [],
+                },
             ],
             "duplicate",
         ),
         (
             [
-                {"step_id": "a", "agent": "ResearcherAgent", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": ["b"]},
-                {"step_id": "b", "agent": "OutputNode", "action": "emit", "config": {"node_type": "OutputNode"}, "dependencies": ["a"]},
+                {
+                    "step_id": "a",
+                    "agent": "ResearcherAgent",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": ["b"],
+                },
+                {
+                    "step_id": "b",
+                    "agent": "OutputNode",
+                    "action": "emit",
+                    "config": {"node_type": "OutputNode"},
+                    "dependencies": ["a"],
+                },
             ],
             "cycle",
         ),
         (
             [
-                {"step_id": "isolated", "agent": "ResearcherAgent", "action": "research", "config": {"node_type": "AgentNode"}, "dependencies": []},
-                {"step_id": "output", "agent": "OutputNode", "action": "emit", "config": {"node_type": "OutputNode"}, "dependencies": []},
+                {
+                    "step_id": "isolated",
+                    "agent": "ResearcherAgent",
+                    "action": "research",
+                    "config": {"node_type": "AgentNode"},
+                    "dependencies": [],
+                },
+                {
+                    "step_id": "output",
+                    "agent": "OutputNode",
+                    "action": "emit",
+                    "config": {"node_type": "OutputNode"},
+                    "dependencies": [],
+                },
             ],
             "orphan",
         ),
     ],
 )
-def test_workflow_serializer_validation_matrix(steps: list[dict[str, object]], expected_code: str) -> None:
+def test_workflow_serializer_validation_matrix(
+    steps: list[dict[str, object]], expected_code: str
+) -> None:
     payload = {
         "workflow_id": "wf-matrix",
         "name": "Matrix",

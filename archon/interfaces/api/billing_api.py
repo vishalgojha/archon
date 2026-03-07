@@ -82,7 +82,11 @@ async def billing_invoices(
 
     scoped_tenant = _tenant_scope(request, tenant_id)
     service = _service(request)
-    return {"invoices": [_payload(row) for row in service.store.list_invoices(scoped_tenant, limit=limit)]}
+    return {
+        "invoices": [
+            _payload(row) for row in service.store.list_invoices(scoped_tenant, limit=limit)
+        ]
+    }
 
 
 @router.post("/customer")

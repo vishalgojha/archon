@@ -218,7 +218,9 @@ class Metrics:
                 counts = value.get("bucket_counts", {})
                 for bucket in buckets:
                     bucket_labels = labels + (("le", str(bucket)),)
-                    lines.append(f"{name}_bucket{_format_labels(bucket_labels)} {counts.get(bucket, 0)}")
+                    lines.append(
+                        f"{name}_bucket{_format_labels(bucket_labels)} {counts.get(bucket, 0)}"
+                    )
                 inf_labels = labels + (("le", "+Inf"),)
                 lines.append(f"{name}_bucket{_format_labels(inf_labels)} {value.get('count', 0)}")
                 lines.append(f"{name}_sum{_format_labels(labels)} {value.get('sum', 0.0)}")
@@ -227,7 +229,13 @@ class Metrics:
 
     def _init_prometheus(self) -> None:
         try:
-            from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+            from prometheus_client import (
+                CollectorRegistry,
+                Counter,
+                Gauge,
+                Histogram,
+                generate_latest,
+            )
         except Exception:
             self._prometheus_enabled = False
             return
@@ -284,9 +292,9 @@ class Metrics:
             for bucket in buckets:
                 if value <= bucket:
                     bucket_counts[bucket] += 1
-            self._histogram_values[name][key]["count"] = int(
-                self._histogram_values[name][key].get("count", 0)
-            ) + 1
+            self._histogram_values[name][key]["count"] = (
+                int(self._histogram_values[name][key].get("count", 0)) + 1
+            )
             self._histogram_values[name][key]["sum"] = float(
                 self._histogram_values[name][key].get("sum", 0.0)
             ) + float(value)

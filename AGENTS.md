@@ -21,6 +21,9 @@
 - SOC2: all new PII-touching code must use `EncryptionLayer` for storage.
 - Retention: every new entity type added must have a `RetentionRule` defined.
 - Audit: every state-changing API endpoint must emit an `AnalyticsEvent`.
+- Marketplace payouts: all payout mutations must go through `ApprovalGate` with action `financial_transaction`.
+- Marketplace developer endpoints: JWT `sub` must match `partner_id` unless the caller is `enterprise` tier.
+- Marketplace revenue records are append-only; do not add update/delete flows for recorded revenue events.
 - Observability: any new agent method that takes an external action must increment the relevant `Metrics` counter.
 - Observability: every new orchestrator execution path must add tracing spans via `TracingSetup`.
 
@@ -65,6 +68,9 @@
 - CLI + config validation:
   - modules: `archon/archon_cli.py`, `archon/validate_config.py`
   - tests: `archon/tests/test_cli.py`, `tests/test_validate_config.py`
+- Marketplace commerce:
+  - modules: `archon/marketplace/connect.py`, `archon/marketplace/revenue_share.py`, `archon/marketplace/payout_orchestrator.py`, `archon/interfaces/api/server.py`, `archon/archon_cli.py`
+  - tests: `archon/tests/test_connect_onboarding.py`, `archon/tests/test_revenue_share.py`, `archon/tests/test_payout_orchestrator.py`, `archon/tests/test_integration.py`
 
 ## Sales & Distribution Layer (Codex Prompt Addendum)
 

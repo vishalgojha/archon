@@ -30,7 +30,13 @@ from archon.interfaces.webchat.session_store import (
     SessionState,
     create_session_store,
 )
-from archon.multimodal import AudioInput, AudioProcessor, ImageInput, ImageProcessor, MultimodalOrchestrator
+from archon.multimodal import (
+    AudioInput,
+    AudioProcessor,
+    ImageInput,
+    ImageProcessor,
+    MultimodalOrchestrator,
+)
 from archon.vernacular.streaming import StreamingTranslator
 
 log = logging.getLogger(__name__)
@@ -267,13 +273,21 @@ def create_webchat_app(
                         image = image_processor.load_from_bytes(payload_bytes)
                         pending_images.append(image)
                         await websocket.send_json(
-                            {"type": "attachment_received", "kind": "image", "input_id": image.input_id}
+                            {
+                                "type": "attachment_received",
+                                "kind": "image",
+                                "input_id": image.input_id,
+                            }
                         )
                     else:
                         audio = audio_processor.load_from_bytes(payload_bytes)
                         pending_audio.append(audio)
                         await websocket.send_json(
-                            {"type": "attachment_received", "kind": "audio", "input_id": audio.input_id}
+                            {
+                                "type": "attachment_received",
+                                "kind": "audio",
+                                "input_id": audio.input_id,
+                            }
                         )
                     continue
 

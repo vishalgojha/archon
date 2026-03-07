@@ -27,7 +27,9 @@ def validate_compose(path: str | Path = "deploy/docker-compose.yml") -> dict[str
     if missing:
         findings.append(f"Missing required compose services: {', '.join(missing)}")
     if "postgres" not in services:
-        findings.append("Compose bundle is missing optional postgres service for enterprise installs.")
+        findings.append(
+            "Compose bundle is missing optional postgres service for enterprise installs."
+        )
     return {
         "ok": not missing,
         "path": str(compose_path),
@@ -86,7 +88,9 @@ def _render_template_docs(
     chart: dict[str, Any],
     values: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    rendered = _render_template(template_path.read_text(encoding="utf-8"), chart=chart, values=values)
+    rendered = _render_template(
+        template_path.read_text(encoding="utf-8"), chart=chart, values=values
+    )
     docs = [doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)]
     return docs
 

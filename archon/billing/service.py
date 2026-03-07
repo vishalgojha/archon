@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import asdict
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -67,7 +66,9 @@ class BillingService:
             "customer": _customer_dict(self.store.get_customer(tenant_id)),
             "subscription": _subscription_dict(subscription),
             "usage_summary": _usage_summary(usage),
-            "recent_invoices": [_invoice_dict(row) for row in self.store.list_invoices(tenant_id, limit=10)],
+            "recent_invoices": [
+                _invoice_dict(row) for row in self.store.list_invoices(tenant_id, limit=10)
+            ],
         }
 
     async def upsert_customer(
@@ -292,7 +293,11 @@ class BillingService:
         if self.store.has_processed_webhook(event.event_id):
             return {"status": "ignored", "event_id": event.event_id}
         tenant_id = _tenant_id_from_webhook(event.payload)
-        object_payload = ((event.payload.get("data") or {}).get("object") or {}) if isinstance(event.payload, dict) else {}
+        object_payload = (
+            ((event.payload.get("data") or {}).get("object") or {})
+            if isinstance(event.payload, dict)
+            else {}
+        )
 
         if event.event_type == "invoice.paid":
             external_invoice_id = str(object_payload.get("id", "")).strip()
@@ -302,7 +307,10 @@ class BillingService:
                 tenant_id = tenant_id or invoice.tenant_id
                 self._emit("billing_invoice_paid", tenant_id, {"invoice_id": invoice.invoice_id})
         elif event.event_type == "customer.subscription.updated" and tenant_id:
-            plan_id = str((((object_payload.get("metadata") or {}).get("plan_id")) or "")).strip() or "growth"
+            plan_id = (
+                str((((object_payload.get("metadata") or {}).get("plan_id")) or "")).strip()
+                or "growth"
+            )
             await self.change_subscription(
                 tenant_id=tenant_id,
                 plan_id=plan_id,
@@ -362,7 +370,9 @@ class BillingService:
             subscription,
             get_plan(subscription.plan_id),
         )
-        return replace(subscription, external_subscription_id=result.external_id, status=result.status)
+        return replace(
+            subscription, external_subscription_id=result.external_id, status=result.status
+        )
 
     async def _sync_invoice(
         self,

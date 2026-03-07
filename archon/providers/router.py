@@ -580,10 +580,14 @@ class ProviderRouter:
         url = f"{selection.base_url.rstrip('/')}/v1/messages"
         res = await self._http.post(url, json=payload, headers=headers)
         if res.status_code >= 400:
-            raise ProviderCallError(f"Anthropic multimodal call failed with HTTP {res.status_code}.")
+            raise ProviderCallError(
+                f"Anthropic multimodal call failed with HTTP {res.status_code}."
+            )
         data = res.json()
         parts = data.get("content") or []
-        response_text = " ".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+        response_text = " ".join(
+            part.get("text", "") for part in parts if isinstance(part, dict)
+        ).strip()
         usage_data = data.get("usage") or {}
         prompt_tokens = int(usage_data.get("input_tokens") or _estimate_tokens(text))
         completion_tokens = int(usage_data.get("output_tokens") or _estimate_tokens(response_text))
@@ -678,7 +682,9 @@ class ProviderRouter:
         ).strip()
         usage_data = data.get("usageMetadata") or {}
         prompt_tokens = int(usage_data.get("promptTokenCount") or _estimate_tokens(text))
-        completion_tokens = int(usage_data.get("candidatesTokenCount") or _estimate_tokens(response_text))
+        completion_tokens = int(
+            usage_data.get("candidatesTokenCount") or _estimate_tokens(response_text)
+        )
         usage = self._usage_for("gemini", prompt_tokens, completion_tokens)
         return ProviderResponse(
             text=response_text,
@@ -736,7 +742,9 @@ class ProviderRouter:
             ).strip()
         usage_data = data.get("usage") or {}
         prompt_tokens = int(usage_data.get("prompt_tokens") or _estimate_tokens(text))
-        completion_tokens = int(usage_data.get("completion_tokens") or _estimate_tokens(response_text))
+        completion_tokens = int(
+            usage_data.get("completion_tokens") or _estimate_tokens(response_text)
+        )
         usage = self._usage_for(selection.provider, prompt_tokens, completion_tokens)
         return ProviderResponse(
             text=response_text,

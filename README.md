@@ -11,28 +11,44 @@ This repository bootstraps the ARCHON runtime with:
 
 ## Quick Start
 
-1. Create a virtual environment and install dependencies:
+1. Install ARCHON globally for your user:
 
 ```powershell
-py -3.11 -m venv .venv
+.\install.cmd
+```
+
+Use `.\install.cmd --dev` if you want the lint/test toolchain inside the dedicated ARCHON runtime.
+The installer:
+
+- uses your available `py -3` or `python` interpreter instead of hardcoding `py -3.11`
+- creates an isolated runtime under `%LOCALAPPDATA%\Programs\Archon`
+- writes `archon` and `archon-server` shims into `%LOCALAPPDATA%\Programs\Archon\bin`
+- avoids replacing the shared `archon.exe` in your system Python
+
+Open a new shell after installation so the updated user `PATH` is picked up.
+
+2. Manual development setup is still available if you want a repo-local virtual environment:
+
+```powershell
+py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
 
-2. Set at least one provider key in your environment:
+3. Set at least one provider key in your environment:
 
 ```powershell
 $env:ANTHROPIC_API_KEY = "..."
 $env:OPENAI_API_KEY = "..."
 ```
 
-3. Validate config:
+4. Validate config:
 
 ```powershell
 python -m archon.validate_config
 ```
 
-4. Start API server:
+5. Start API server:
 
 ```powershell
 archon serve
@@ -63,7 +79,7 @@ Useful commands:
 - `archon studio` opens Studio.
 - `archon debate` and `archon run` execute locally without going through HTTP.
 
-5. Run tasks with explicit orchestration mode:
+6. Run tasks with explicit orchestration mode:
 
 ```json
 POST /v1/tasks
@@ -80,7 +96,7 @@ POST /v1/tasks
 `mode="debate"` (default) runs the adversarial truth swarm.
 `mode="growth"` runs the 7-agent sales/distribution growth swarm.
 
-6. Outbound channels (approval-gated):
+7. Outbound channels (approval-gated):
 
 - `POST /v1/outbound/email`
 - `POST /v1/outbound/webchat`

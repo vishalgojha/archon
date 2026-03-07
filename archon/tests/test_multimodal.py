@@ -4,19 +4,27 @@ from __future__ import annotations
 
 import base64
 import io
-import os
 import wave
-from pathlib import Path
 
 import pytest
 
 from archon.config import ArchonConfig
-from archon.multimodal import AudioProcessor, ImageInput, ImageProcessor, MultimodalOrchestrator, TranscriptResult
+from archon.multimodal import (
+    AudioProcessor,
+    ImageInput,
+    ImageProcessor,
+    MultimodalOrchestrator,
+    TranscriptResult,
+)
+from archon.providers import ProviderUnavailableError
+from archon.providers.types import ProviderResponse, ProviderSelection, ProviderUsage
 
 PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aN8AAAAASUVORK5CYII="
 )
-JPEG_1X1 = b"\xff\xd8\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00\xff\xd9"
+JPEG_1X1 = (
+    b"\xff\xd8\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00\xff\xd9"
+)
 WEBP_1X1 = (
     b"RIFF"
     + (22).to_bytes(4, "little")
@@ -63,7 +71,9 @@ def test_image_processor_load_from_bytes_detects_supported_formats() -> None:
     assert webp.format == "webp"
 
 
-def test_image_processor_resize_if_needed_reduces_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_image_processor_resize_if_needed_reduces_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     processor = ImageProcessor()
     oversized = ImageInput(
         input_id="img_big",
@@ -95,7 +105,10 @@ def test_image_processor_resize_if_needed_reduces_dimensions(monkeypatch: pytest
             return False
 
     monkeypatch.setattr("archon.multimodal.image_input._HAS_PILLOW", True)
-    monkeypatch.setattr("archon.multimodal.image_input.Image", type("ImageStub", (), {"open": lambda stream: _FakeImage()}))
+    monkeypatch.setattr(
+        "archon.multimodal.image_input.Image",
+        type("ImageStub", (), {"open": lambda stream: _FakeImage()}),
+    )
 
     resized = processor.resize_if_needed(oversized, max_dimension=2048)
 
@@ -142,7 +155,9 @@ async def test_image_processor_load_from_url_uses_httpx(monkeypatch: pytest.Monk
                 },
             )()
 
-    monkeypatch.setattr("archon.multimodal.image_input.httpx.AsyncClient", lambda *args, **kwargs: _Client())
+    monkeypatch.setattr(
+        "archon.multimodal.image_input.httpx.AsyncClient", lambda *args, **kwargs: _Client()
+    )
     image = await ImageProcessor().load_from_url("https://example.com/image.png")
 
     assert image.source == "url"
@@ -174,7 +189,9 @@ def test_audio_processor_format_detection_matrix(payload: bytes, expected: str) 
 
 
 @pytest.mark.asyncio
-async def test_audio_processor_transcribe_calls_whisper_api(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_audio_processor_transcribe_calls_whisper_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
     class _Client:
@@ -191,11 +208,17 @@ async def test_audio_processor_transcribe_calls_whisper_api(monkeypatch: pytest.
                 (),
                 {
                     "raise_for_status": lambda self=None: None,
-                    "json": lambda self=None: {"text": "hello world", "language": "en", "segments": [{"start": 0.0, "end": 1.0}]},
+                    "json": lambda self=None: {
+                        "text": "hello world",
+                        "language": "en",
+                        "segments": [{"start": 0.0, "end": 1.0}],
+                    },
                 },
             )()
 
-    monkeypatch.setattr("archon.multimodal.audio_input.httpx.AsyncClient", lambda *args, **kwargs: _Client())
+    monkeypatch.setattr(
+        "archon.multimodal.audio_input.httpx.AsyncClient", lambda *args, **kwargs: _Client()
+    )
     result = await AudioProcessor().transcribe(AudioProcessor().load_from_bytes(_wav_bytes(1)))
 
     assert result.text == "hello world"
@@ -227,7 +250,9 @@ async def test_audio_processor_transcribe_long_chunks_and_joins() -> None:
 
 
 @pytest.mark.asyncio
-async def test_audio_processor_fallback_method_when_openai_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_audio_processor_fallback_method_when_openai_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr("archon.multimodal.audio_input.shutil.which", lambda name: None)
 
@@ -271,6 +296,57 @@ async def test_multimodal_orchestrator_appends_audio_uses_vision_provider_and_ex
     orchestrator.detect_structured_data = fake_detect  # type: ignore[assignment]
     orchestrator.extract_structured_data = fake_extract  # type: ignore[assignment]
 
+    fixed_selection = ProviderSelection(
+        provider="openai",
+        role="vision",
+        model="gpt-4o",
+        base_url="https://api.openai.com/v1",
+        api_key="openai-key",
+    )
+
+    def fake_resolve_provider(  # type: ignore[no-untyped-def]
+        role: str,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+    ) -> ProviderSelection:
+        del model_override
+        assert role == "vision"
+        if provider_override != "openai":
+            raise ProviderUnavailableError("skip non-openai providers in deterministic test")
+        return fixed_selection
+
+    async def fake_invoke_multimodal(  # type: ignore[no-untyped-def]
+        *,
+        role: str,
+        text: str,
+        content_blocks: list[dict[str, object]],
+        task_id: str | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        system_prompt: str | None = None,
+    ) -> ProviderResponse:
+        del text, content_blocks, task_id, model_override, system_prompt
+        assert role == "vision"
+        assert provider_override == "openai"
+        return ProviderResponse(
+            text="mocked multimodal response",
+            provider="openai",
+            model="gpt-4o",
+            usage=ProviderUsage(
+                prompt_tokens=12,
+                completion_tokens=8,
+                total_tokens=20,
+                cost_usd=0.002,
+            ),
+        )
+
+    monkeypatch.setattr(orchestrator.provider_router, "resolve_provider", fake_resolve_provider)
+    monkeypatch.setattr(
+        orchestrator.provider_router,
+        "invoke_multimodal",
+        fake_invoke_multimodal,
+    )
+
     response = await orchestrator.process(
         text="describe this",
         images=[PNG_1X1],
@@ -288,7 +364,11 @@ async def test_multimodal_orchestrator_appends_audio_uses_vision_provider_and_ex
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("vision_provider", "env_name"),
-    [("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("gemini", "GEMINI_API_KEY")],
+    [
+        ("openai", "OPENAI_API_KEY"),
+        ("anthropic", "ANTHROPIC_API_KEY"),
+        ("gemini", "GEMINI_API_KEY"),
+    ],
 )
 async def test_multimodal_orchestrator_vision_provider_selection_matrix(
     monkeypatch: pytest.MonkeyPatch,

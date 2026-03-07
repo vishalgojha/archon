@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
-from typing import Any
+from typing import Any, Literal
 
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalTimeoutError
 
@@ -101,7 +101,7 @@ class _SpanContextManager:
                 self._delegate_span = None
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type, exc, tb) -> Literal[False]:
         if exc is not None:
             self._record.status = "error"
             self._record.error = str(exc)
@@ -175,14 +175,17 @@ class TracingSetup:
     _fastapi_apps: set[int] = set()
 
     @classmethod
-    def configure(cls, service_name: str = "archon", otlp_endpoint: str | None = None) -> _TracerAdapter:
+    def configure(
+        cls, service_name: str = "archon", otlp_endpoint: str | None = None
+    ) -> _TracerAdapter:
         if cls._configured:
             return cls.get_tracer(service_name)
 
         cls._service_name = str(service_name or "archon")
-        endpoint = str(otlp_endpoint or "").strip() or str(
-            os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-        ).strip()
+        endpoint = (
+            str(otlp_endpoint or "").strip()
+            or str(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")).strip()
+        )
         cls._delegate_api = None
         cls._delegate_provider = None
         if cls._force_noop is not True and _module_available("opentelemetry.sdk"):
@@ -192,10 +195,16 @@ class TracingSetup:
                 from opentelemetry.sdk.trace import TracerProvider
                 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 
-                provider = TracerProvider(resource=Resource.create({SERVICE_NAME: cls._service_name}))
+                provider = TracerProvider(
+                    resource=Resource.create({SERVICE_NAME: cls._service_name})
+                )
                 exporter = None
-                if endpoint and _module_available("opentelemetry.exporter.otlp.proto.http.trace_exporter"):
-                    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+                if endpoint and _module_available(
+                    "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+                ):
+                    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                        OTLPSpanExporter,
+                    )
 
                     exporter = OTLPSpanExporter(endpoint=endpoint)
                 if exporter is None:
@@ -222,7 +231,9 @@ class TracingSetup:
         cached = cls._tracers.get(tracer_name)
         if cached is not None:
             return cached
-        delegate = cls._delegate_api.get_tracer(tracer_name) if cls._delegate_api is not None else None
+        delegate = (
+            cls._delegate_api.get_tracer(tracer_name) if cls._delegate_api is not None else None
+        )
         tracer = _TracerAdapter(
             name=tracer_name,
             service_name=cls._service_name,
@@ -290,7 +301,7 @@ class TracingSetup:
             effective_context = dict(kwargs.get("context") or {})
             tenant_id = _tenant_from_context(effective_context)
             mode = str(kwargs.get("mode", "debate"))
-            stats = {
+            stats: dict[str, Any] = {
                 "tenant_id": tenant_id,
                 "mode": mode,
                 "agent_count": 0,
@@ -306,7 +317,9 @@ class TracingSetup:
                     result = await original_execute(*args, **kwargs)
                 except Exception as exc:
                     span.set_attribute("agent_count", int(stats["agent_count"]))
-                    span.set_attribute("token_count", int(stats["input_tokens"] + stats["output_tokens"]))
+                    span.set_attribute(
+                        "token_count", int(stats["input_tokens"] + stats["output_tokens"])
+                    )
                     span.set_attribute("cost_usd", round(float(stats["cost_usd"]), 6))
                     span.record_exception(exc)
                     raise
@@ -331,7 +344,9 @@ class TracingSetup:
 
     @classmethod
     def _instrument_provider_router(cls, provider_router: Any) -> None:
-        if provider_router is None or getattr(provider_router, "_archon_tracing_instrumented", False):
+        if provider_router is None or getattr(
+            provider_router, "_archon_tracing_instrumented", False
+        ):
             return
         setattr(provider_router, "_archon_tracing_instrumented", True)
         tracer = cls.get_tracer("archon.providers")
@@ -371,8 +386,13 @@ class TracingSetup:
                         span.record_exception(exc)
                         raise
                     usage = getattr(response, "usage", None)
-                    provider = str(getattr(response, "provider", "") or getattr(selection, "provider", "unknown"))
-                    model = str(getattr(response, "model", "") or getattr(selection, "model", "unknown"))
+                    provider = str(
+                        getattr(response, "provider", "")
+                        or getattr(selection, "provider", "unknown")
+                    )
+                    model = str(
+                        getattr(response, "model", "") or getattr(selection, "model", "unknown")
+                    )
                     input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
                     output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
                     latency_ms = round((time.perf_counter() - started) * 1000.0, 3)
@@ -480,7 +500,11 @@ class TracingSetup:
 
     @classmethod
     def _instrument_agent(cls, agent: Any) -> None:
-        if agent is None or getattr(agent, "_archon_tracing_agent", False) or not hasattr(agent, "run"):
+        if (
+            agent is None
+            or getattr(agent, "_archon_tracing_agent", False)
+            or not hasattr(agent, "run")
+        ):
             return
         setattr(agent, "_archon_tracing_agent", True)
         tracer = cls.get_tracer(f"archon.agent.{getattr(agent, 'name', 'unknown')}")
@@ -511,7 +535,11 @@ class TracingSetup:
 
     @classmethod
     def _instrument_email_agent(cls, email_agent: Any) -> None:
-        if email_agent is None or getattr(email_agent, "_archon_email_metrics", False) or not hasattr(email_agent, "send_email"):
+        if (
+            email_agent is None
+            or getattr(email_agent, "_archon_email_metrics", False)
+            or not hasattr(email_agent, "send_email")
+        ):
             return
         setattr(email_agent, "_archon_email_metrics", True)
         original_send = getattr(email_agent, "send_email")

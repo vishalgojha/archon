@@ -320,7 +320,11 @@ class BillingStore:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE invoices SET status = ?, updated_at = ? WHERE invoice_id = ?",
-                (str(status), float(time.time() if updated_at is None else updated_at), str(invoice_id)),
+                (
+                    str(status),
+                    float(time.time() if updated_at is None else updated_at),
+                    str(invoice_id),
+                ),
             )
         row = self.find_invoice_by_id(invoice_id)
         if row is None:

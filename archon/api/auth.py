@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Callable, Literal, Protocol
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTError
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 TierName = Literal["free", "pro", "enterprise"]
 TOKEN_TYPE = "tenant"
@@ -220,7 +220,7 @@ def verify_tenant_token(token: str, *, secret: str | None = None) -> dict[str, A
         payload = jwt.decode(token, secret or _jwt_secret(), algorithms=[ALGORITHM])
     except ExpiredSignatureError as exc:
         raise TenantTokenError("Token expired.") from exc
-    except JWTError as exc:
+    except InvalidTokenError as exc:
         raise TenantTokenError(f"Invalid token: {exc}") from exc
 
     token_type = str(payload.get("type", "")).strip().lower()

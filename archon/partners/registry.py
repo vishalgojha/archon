@@ -191,6 +191,42 @@ class PartnerRegistry:
             raise KeyError(f"Partner '{target_id}' not found after update.")
         return updated
 
+    def update_metadata(self, partner_id: str, updates: dict[str, Any]) -> Partner:
+        """Merge metadata fields for one partner and persist the result.
+
+        Example:
+            >>> registry = PartnerRegistry(path=":memory:")
+            >>> partner = registry.register("Partner", "partner@example.com", "affiliate")
+            >>> registry.update_metadata(partner.partner_id, {"region": "US"}).metadata["region"]
+            'US'
+        """
+
+        target_id = str(partner_id or "").strip()
+        if not target_id:
+            raise ValueError("partner_id is required.")
+        if not isinstance(updates, dict):
+            raise ValueError("updates must be a dict.")
+
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT metadata FROM partners WHERE partner_id = ?",
+                (target_id,),
+            ).fetchone()
+            if existing is None:
+                raise KeyError(f"Partner '{target_id}' not found.")
+
+            metadata = json.loads(str(existing["metadata"])) if existing["metadata"] else {}
+            metadata.update(dict(updates))
+            conn.execute(
+                "UPDATE partners SET metadata = ? WHERE partner_id = ?",
+                (json.dumps(metadata), target_id),
+            )
+
+        updated = self.get(target_id)
+        if updated is None:
+            raise KeyError(f"Partner '{target_id}' not found after metadata update.")
+        return updated
+
     def _generate_unique_referral_code(self) -> str:
         alphabet = string.ascii_uppercase + string.digits
         for _ in range(64):

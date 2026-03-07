@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from dataclasses import dataclass
@@ -119,7 +118,9 @@ def deserialize(workflow: WorkflowDefinition | dict[str, Any]) -> dict[str, list
         for step in steps if isinstance(steps, list) else []:
             if not isinstance(step, dict):
                 continue
-            for dependency in step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []:
+            for dependency in (
+                step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+            ):
                 edges.append(
                     {
                         "id": f"{dependency}->{step.get('step_id')}",
@@ -169,9 +170,13 @@ def validate(workflow: WorkflowDefinition | dict[str, Any]) -> list[ValidationEr
             output_nodes.append(step_id)
         agent = str(step.get("agent") or "").strip()
         if node_type == "AgentNode" and agent not in known_agents:
-            errors.append(ValidationError("missing_agent_class", f"Unknown agent_class '{agent}'.", step_id))
+            errors.append(
+                ValidationError("missing_agent_class", f"Unknown agent_class '{agent}'.", step_id)
+            )
         if node_type != "AgentNode" and agent and agent not in known_agents:
-            errors.append(ValidationError("unknown_node_agent", f"Unknown node agent '{agent}'.", step_id))
+            errors.append(
+                ValidationError("unknown_node_agent", f"Unknown node agent '{agent}'.", step_id)
+            )
         dependencies = step.get("dependencies", [])
         if not isinstance(dependencies, list):
             errors.append(ValidationError("schema", "dependencies must be a list.", step_id))
@@ -182,7 +187,9 @@ def validate(workflow: WorkflowDefinition | dict[str, Any]) -> list[ValidationEr
             incoming.setdefault(step_id, set()).add(dep_id)
 
     for step_id, step in step_map.items():
-        for dep in step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []:
+        for dep in (
+            step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+        ):
             if str(dep) not in step_map:
                 errors.append(
                     ValidationError(
@@ -250,11 +257,15 @@ def _reachable_from_any_root(step_map: dict[str, dict[str, Any]], target_id: str
     roots = [
         step_id
         for step_id, step in step_map.items()
-        if not list(step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else [])
+        if not list(
+            step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+        )
     ]
     reverse: dict[str, list[str]] = {}
     for step_id, step in step_map.items():
-        for dep in step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []:
+        for dep in (
+            step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+        ):
             reverse.setdefault(str(dep), []).append(step_id)
     for root in roots:
         queue = [root]

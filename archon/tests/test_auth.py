@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+import jwt
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from archon.api import auth as auth_module
 

@@ -24,7 +24,7 @@ from archon.billing import (
     StripeWebhookVerifier,
     UsageMeter,
 )
-from archon.billing.invoices import InvoiceLineItem, METRIC_PRICES
+from archon.billing.invoices import METRIC_PRICES
 from archon.billing.metering import SUPPORTED_METRICS
 from archon.billing.models import SubscriptionChange
 from archon.billing.stripe_client import UsageRecord as StripeUsageRecord
@@ -169,7 +169,13 @@ class _MockStripeHttpClient:
         del headers
         self.posts.append((url, dict(data)))
         if url.endswith("/customers"):
-            return _MockResponse({"id": "cus_123", "email": data.get("email", ""), "metadata": {"tenant_id": data.get("metadata[tenant_id]", "")}})
+            return _MockResponse(
+                {
+                    "id": "cus_123",
+                    "email": data.get("email", ""),
+                    "metadata": {"tenant_id": data.get("metadata[tenant_id]", "")},
+                }
+            )
         if "/subscription_items/" in url:
             subscription_item_id = url.rsplit("/", 2)[1]
             return _MockResponse(
@@ -216,7 +222,9 @@ class _MockStripeHttpClient:
 @pytest.mark.asyncio
 async def test_stripe_client_create_customer_posts_correct_form_data_and_list_invoices() -> None:
     http_client = _MockStripeHttpClient()
-    client = StripeClient(secret_key="sk_test_123", webhook_secret="whsec_test", http_client=http_client)  # type: ignore[arg-type]
+    client = StripeClient(
+        secret_key="sk_test_123", webhook_secret="whsec_test", http_client=http_client
+    )  # type: ignore[arg-type]
 
     customer = await client.create_customer("tenant-a", "owner@example.com", "Owner")
     invoices = await client.list_invoices("cus_123", limit=2)
@@ -229,10 +237,16 @@ async def test_stripe_client_create_customer_posts_correct_form_data_and_list_in
     assert http_client.gets[0][1]["limit"] == 2
 
 
-def test_stripe_client_construct_webhook_event_accepts_valid_signature_and_rejects_invalid() -> None:
-    payload = b'{"id":"evt_42","type":"invoice.paid","created":100,"data":{"object":{"id":"in_42"}}}'
+def test_stripe_client_construct_webhook_event_accepts_valid_signature_and_rejects_invalid() -> (
+    None
+):
+    payload = (
+        b'{"id":"evt_42","type":"invoice.paid","created":100,"data":{"object":{"id":"in_42"}}}'
+    )
     client = StripeClient(secret_key="sk_test_123", webhook_secret="whsec_test")
-    valid = build_stripe_signature_header(payload.decode("utf-8"), "whsec_test", timestamp=int(__import__("time").time()))
+    valid = build_stripe_signature_header(
+        payload.decode("utf-8"), "whsec_test", timestamp=int(__import__("time").time())
+    )
 
     event = client.construct_webhook_event(payload, valid)
 
@@ -254,7 +268,9 @@ def test_usage_meter_record_and_aggregate_sum_period_totals() -> None:
 
 
 @pytest.mark.asyncio
-async def test_usage_meter_flush_to_stripe_calls_gate_before_posting_and_flushes_multiple_metrics() -> None:
+async def test_usage_meter_flush_to_stripe_calls_gate_before_posting_and_flushes_multiple_metrics() -> (
+    None
+):
     order: list[str] = []
 
     class _Gate:
@@ -265,7 +281,9 @@ async def test_usage_meter_flush_to_stripe_calls_gate_before_posting_and_flushes
             return action_id
 
     class _Stripe:
-        async def create_usage_record(self, subscription_item_id: str, quantity: float, timestamp: float) -> StripeUsageRecord:
+        async def create_usage_record(
+            self, subscription_item_id: str, quantity: float, timestamp: float
+        ) -> StripeUsageRecord:
             order.append(subscription_item_id)
             return StripeUsageRecord(
                 record_id=f"ur_{subscription_item_id}",
@@ -299,13 +317,19 @@ def test_invoice_generator_line_items_subtotal_tax_and_export_json() -> None:
     assert len(invoice.line_items) == 2
     assert invoice.subtotal_usd == round(expected_input + expected_runs, 6)
     assert invoice.tax_usd == round(invoice.subtotal_usd * 0.1, 6)
-    lines = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert lines[0]["type"] == "invoice"
     assert lines[1]["type"] == "line_item"
 
 
 @pytest.mark.asyncio
-async def test_stripe_webhook_handler_invoice_paid_updates_status_and_subscription_deleted_downgrades() -> None:
+async def test_stripe_webhook_handler_invoice_paid_updates_status_and_subscription_deleted_downgrades() -> (
+    None
+):
     store = BillingStore(path=_tmp_db("webhook-handler"))
     service = BillingService(store=store)
     store.upsert_subscription(

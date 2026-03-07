@@ -242,7 +242,9 @@ class CostOptimizerAgent(BaseAgent):
                     "historical quality stayed within the configured guardrail."
                 ),
             )
-            if winner is None or _recommendation_rank(recommendation) < _recommendation_rank(winner):
+            if winner is None or _recommendation_rank(recommendation) < _recommendation_rank(
+                winner
+            ):
                 winner = recommendation
         return winner
 
@@ -288,7 +290,9 @@ class CostOptimizerAgent(BaseAgent):
 
         del goal, task_id
         selection = context.get("selection") if isinstance(context.get("selection"), dict) else {}
-        role = str(selection.get("role", context.get("role", "primary"))).strip().lower() or "primary"
+        role = (
+            str(selection.get("role", context.get("role", "primary"))).strip().lower() or "primary"
+        )
         provider = str(selection.get("provider", "")).strip().lower()
         model = str(selection.get("model", "")).strip()
         recommendation = self.recommend(
@@ -322,7 +326,10 @@ class CostOptimizerAgent(BaseAgent):
             role=self.role,
             output=output,
             confidence=84,
-            metadata={"recommendation": asdict(recommendation), "profiles": self.profile_rows(role=role)},
+            metadata={
+                "recommendation": asdict(recommendation),
+                "profiles": self.profile_rows(role=role),
+            },
         )
 
 
@@ -334,7 +341,9 @@ def _profile_key(role: str, provider: str, model: str) -> tuple[str, str, str]:
     )
 
 
-def _recommendation_rank(recommendation: OptimizationRecommendation) -> tuple[float, float, str, str]:
+def _recommendation_rank(
+    recommendation: OptimizationRecommendation,
+) -> tuple[float, float, str, str]:
     return (
         -float(recommendation.estimated_savings_ratio),
         -float(recommendation.candidate_quality),

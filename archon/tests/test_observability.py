@@ -119,7 +119,9 @@ archon_pending_approvals 1
 archon_llm_calls_total{provider="openai",model="gpt-4o"} 9
 """
 
-    monkeypatch.setattr("archon.archon_cli._request_text", lambda method, url, **kwargs: metrics_payload)
+    monkeypatch.setattr(
+        "archon.archon_cli._request_text", lambda method, url, **kwargs: metrics_payload
+    )
     runner = CliRunner()
     result = runner.invoke(cli, ["metrics"])
 
@@ -162,17 +164,27 @@ def test_cli_monitor_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda method, url, **kwargs: (
             {"status": "ok", "version": "0.1.0"}
             if url.endswith("/health")
-            else [{"span_id": "1", "parent_id": None, "name": "agent.run", "status": "ok", "duration_ms": 1.0}]
+            else [
+                {
+                    "span_id": "1",
+                    "parent_id": None,
+                    "name": "agent.run",
+                    "status": "ok",
+                    "duration_ms": 1.0,
+                }
+            ]
         ),
     )
     monkeypatch.setattr(
         "archon.archon_cli._request_text",
-        lambda method, url, **kwargs: """
+        lambda method, url, **kwargs: (
+            """
 archon_requests_total{method="GET",path="/health",status="200"} 10
 archon_active_sessions 2
 archon_pending_approvals 0
 archon_agents_recruited_total{agent_name="ResearcherAgent"} 4
-""",
+"""
+        ),
     )
     monkeypatch.setattr("archon.archon_cli._clear_monitor_screen", lambda: None)
 

@@ -9,6 +9,7 @@ import pytest
 from archon.config import ArchonConfig
 from archon.core.growth_router import GrowthSwarmRouter
 from archon.providers import ProviderRouter
+from archon.providers.types import ProviderResponse, ProviderUsage
 
 
 def test_growth_swarm_builder_instantiates_all_agents(
@@ -32,6 +33,30 @@ def test_growth_swarm_builder_instantiates_all_agents(
 def test_growth_agents_produce_action_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     provider_router = ProviderRouter(config=ArchonConfig(), live_mode=False)
+
+    async def fake_invoke(  # type: ignore[no-untyped-def]
+        role: str,
+        prompt: str,
+        *,
+        task_id: str | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        system_prompt: str | None = None,
+    ) -> ProviderResponse:
+        del role, prompt, task_id, model_override, provider_override, system_prompt
+        return ProviderResponse(
+            text="mocked growth response",
+            provider="openrouter",
+            model="anthropic/claude-sonnet-4-5",
+            usage=ProviderUsage(
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+                cost_usd=0.001,
+            ),
+        )
+
+    monkeypatch.setattr(provider_router, "invoke", fake_invoke)
     swarm = GrowthSwarmRouter(provider_router).build_growth_swarm()
 
     async def _run_all():

@@ -76,7 +76,9 @@ class MultimodalOrchestrator(Orchestrator):
         prompt_text = str(text or "").strip()
         transcripts: list[TranscriptResult] = []
         for item in audio or []:
-            loaded_audio = item if isinstance(item, AudioInput) else self.audio_processor.load_from_bytes(item)
+            loaded_audio = (
+                item if isinstance(item, AudioInput) else self.audio_processor.load_from_bytes(item)
+            )
             transcript = (
                 await self.audio_processor.transcribe_long(loaded_audio)
                 if loaded_audio.duration_s > 30
@@ -84,7 +86,9 @@ class MultimodalOrchestrator(Orchestrator):
             )
             transcripts.append(transcript)
             if transcript.text.strip():
-                prompt_text = "\n".join(part for part in [prompt_text, transcript.text.strip()] if part)
+                prompt_text = "\n".join(
+                    part for part in [prompt_text, transcript.text.strip()] if part
+                )
 
         loaded_images: list[ImageInput] = []
         for item in images or []:
@@ -100,7 +104,9 @@ class MultimodalOrchestrator(Orchestrator):
 
         structured_payloads: list[dict[str, Any] | str] = []
         for image in loaded_images:
-            if await self.detect_structured_data(image, session_id=session_id, tenant_ctx=tenant_ctx):
+            if await self.detect_structured_data(
+                image, session_id=session_id, tenant_ctx=tenant_ctx
+            ):
                 extracted = await self.extract_structured_data(
                     image,
                     session_id=session_id,
@@ -112,7 +118,9 @@ class MultimodalOrchestrator(Orchestrator):
                     for part in [
                         prompt_text,
                         "Structured extraction:",
-                        extracted if isinstance(extracted, str) else json.dumps(extracted, separators=(",", ":")),
+                        extracted
+                        if isinstance(extracted, str)
+                        else json.dumps(extracted, separators=(",", ":")),
                     ]
                     if part
                 )
@@ -199,7 +207,9 @@ class MultimodalOrchestrator(Orchestrator):
                 candidates.append(normalized)
         for provider in candidates:
             try:
-                selection = self.provider_router.resolve_provider("vision", provider_override=provider)
+                selection = self.provider_router.resolve_provider(
+                    "vision", provider_override=provider
+                )
             except ProviderUnavailableError:
                 continue
             if selection.provider in VISION_CAPABLE_PROVIDERS:

@@ -4,10 +4,10 @@
 - Date: 2026-03-07
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Sprint status: Prompts 1-41 built
-- Verification: full suite passing (`pytest tests archon/tests -q` -> 545 passed, 9 skipped)
+- Sprint status: Prompts 1-44 built
+- Verification: full suite passing (`pytest tests archon/tests -q` -> 579 passed, 9 skipped)
 
-## Built ✅ (41 Items)
+## Built ✅ (44 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
 2. Growth swarm runtime (Prospector, ICP, Outreach, Nurture, RevenueIntel, Partner, ChurnDefense).
 3. Approval gate framework for high/medium risk action enforcement and audit trail.
@@ -49,17 +49,38 @@
 39. Cost optimizer agent (`archon/agents/optimization/`) wired into `ProviderRouter` and `CostGovernor` to learn lower-cost provider/model profiles, auto-downgrade under budget pressure, and emit optimization analytics.
 40. Agent performance leaderboard (`archon/analytics/aggregator.py`, `archon/analytics/dashboard_api.py`, dashboard SPA) with anonymized cross-tenant benchmarking, tenant-safe access control, and Mission Control UI card.
 41. Observability stack (`archon/observability/`, `/metrics`, `/observability/traces`, Grafana assets, CLI monitor commands) with optional OpenTelemetry hooks, Prometheus-compatible metrics, and local dev trace inspection.
+42. Marketplace Stripe Connect onboarding (`archon/marketplace/connect.py`, `/marketplace/developers/*`) with encrypted account storage, session TTL persistence, and enterprise-gated onboarding/status/refresh APIs.
+43. Marketplace revenue-share accounting (`archon/marketplace/revenue_share.py`) with append-only listing revenue ledger, tier-based splits, approval-gated payout queueing, and Stripe Connect transfer execution.
+44. Marketplace payout orchestration and reporting (`archon/marketplace/payout_orchestrator.py`, `archon/archon_cli.py`) with monthly batch cycles, developer earnings/payout APIs, partner revenue reports, and payout CLI commands.
 
 ## Pending
-- No open items remain from the previous sprint backlog.
+- Marketplace: agent sandboxing security audit
+- ARCHON mobile: background sync + silent push
+- Studio: one-click deploy workflow to production
+- Automated regression on payout flows (financial mutation tests)
+- Multi-currency payout support (USD, EUR, GBP, INR)
 
 ## NEXT CODEX PROMPT
-Continue building ARCHON. Observability is complete and the full suite passes.
+Continue building ARCHON on Windows. All 44 modules are complete.
+Current verification baseline: `pytest tests archon/tests -q` -> `579 passed, 9 skipped`.
 
-Suggested next sprint:
-- Build Stripe Connect marketplace developer onboarding.
-- Implement marketplace revenue-share accounting and payout orchestration.
-- Add approval-gated partner payout flows with tenant-safe reporting.
+Next sprint: ARCHON Mobile Background Sync + Silent Push
 
-Verification baseline:
-- `pytest tests archon/tests -q`
+Build all of the following:
+- Add background sync job orchestration for the mobile client so queued approvals, notification inbox state, and lightweight dashboard summaries refresh while the app is backgrounded.
+- Implement silent push handling for iOS and Android to wake the app for approval-state refresh without forcing visible notifications.
+- Persist last-successful-sync watermark, retry/backoff metadata, and offline queue state in the existing mobile storage layer.
+- Add tenant-safe API endpoints or extend existing ones only where needed for incremental mobile sync (`since` watermark, bounded page size, idempotent cursors).
+- Ensure all background-triggered mutations remain approval-gated and analytics-emitting.
+- Add tests for:
+  - background sync scheduling and deduplication
+  - silent push payload parsing and routing
+  - offline queue replay after reconnect
+  - sync watermark progression and stale watermark recovery
+  - auth isolation across tenants during background refresh
+
+Constraints:
+- Windows-safe paths and process handling only.
+- Extend existing mobile/API modules; do not rewrite server foundations.
+- Keep background sync idempotent and resumable.
+- Full suite must pass before updating `SESSION_HANDOFF.md` again.

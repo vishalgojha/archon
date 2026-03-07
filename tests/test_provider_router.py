@@ -96,7 +96,9 @@ def test_router_applies_cost_optimizer_override_under_budget_pressure(
 
     governor.start_task("pressure-task")
     governor.add_cost("pressure-task", 0.9)
-    response = asyncio.run(router.invoke(role="coding", prompt="Build index", task_id="pressure-task"))
+    response = asyncio.run(
+        router.invoke(role="coding", prompt="Build index", task_id="pressure-task")
+    )
     snapshot = governor.snapshot("pressure-task")
 
     assert response.provider == "groq"
