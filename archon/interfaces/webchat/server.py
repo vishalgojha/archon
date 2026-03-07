@@ -16,6 +16,8 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from archon.analytics.aggregator import AnalyticsAggregator
+from archon.analytics.collector import AnalyticsCollector
 from archon.core.orchestrator import Orchestrator
 from archon.interfaces.webchat.auth import (
     WebChatTokenError,
@@ -37,6 +39,9 @@ from archon.multimodal import (
     ImageProcessor,
     MultimodalOrchestrator,
 )
+from archon.mobile.sync_store import MobileSyncPage, MobileSyncStore
+from archon.notifications.device_registry import DeviceRegistry
+from archon.notifications.push import PushNotifier
 from archon.vernacular.streaming import StreamingTranslator
 
 log = logging.getLogger(__name__)
@@ -54,6 +59,10 @@ class WebChatRuntime:
 
     session_store: AbstractSessionStore
     orchestrator: Orchestrator | None = None
+    analytics_collector: AnalyticsCollector | None = None
+    mobile_sync_store: MobileSyncStore | None = None
+    device_registry: DeviceRegistry | None = None
+    push_notifier: PushNotifier | None = None
 
 
 class CreateTokenRequest(BaseModel):
@@ -68,6 +77,14 @@ class UpgradeTokenRequest(BaseModel):
     token: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
     tier: str = Field(min_length=1)
+
+
+class RegisterMobileDeviceRequest(BaseModel):
+    """Mobile push token registration payload."""
+
+    token: str = Field(min_length=1)
+    platform: str = Field(min_length=1)
+    device_token: str = Field(min_length=1)
 
 
 def create_webchat_app(
@@ -186,6 +203,99 @@ def create_webchat_app(
             "session": session.to_dict(),
             "messages": [row.to_dict() for row in rows],
             "message_count": len(rows),
+        }
+
+    @app.post("/mobile/devices")
+    async def register_mobile_device(payload: RegisterMobileDeviceRequest) -> dict[str, Any]:
+        """Register one mobile push device to the current tenant.
+
+        Example:
+            >>> # POST /webchat/mobile/devices
+            >>> True
+            True
+        """
+
+        runtime = _runtime(app)
+        identity = _verify_token_or_401(payload.token)
+        if runtime.device_registry is None:
+            raise HTTPException(status_code=503, detail="Mobile device registry unavailable.")
+        row = runtime.device_registry.register(
+            tenant_id=identity.tenant_id,
+            platform=payload.platform,
+            token=payload.device_token,
+        )
+        if runtime.analytics_collector is not None:
+            runtime.analytics_collector.record(
+                tenant_id=identity.tenant_id,
+                event_type="state_change",
+                properties={
+                    "action": "mobile_device_registered",
+                    "platform": row.platform,
+                    "token_id": row.token_id,
+                    "session_id": identity.session_id,
+                },
+            )
+        return {
+            "status": "registered",
+            "token_id": row.token_id,
+            "platform": row.platform,
+            "tenant_id": row.tenant_id,
+            "session_id": identity.session_id,
+        }
+
+    @app.get("/mobile/sync/{session_id}")
+    async def mobile_sync(
+        session_id: str,
+        token: str = Query(..., min_length=1),
+        since: float = Query(default=0.0),
+        cursor: str | None = Query(default=None),
+        page_size: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Return incremental mobile sync data for one authenticated session.
+
+        Example:
+            >>> # GET /webchat/mobile/sync/{session_id}?token=...
+            >>> True
+            True
+        """
+
+        runtime = _runtime(app)
+        identity = _verify_token_or_401(token)
+        _authorize_session(identity.session_id, session_id)
+        page = (
+            runtime.mobile_sync_store.list_events(
+                identity.tenant_id,
+                since=since,
+                cursor=cursor,
+                limit=page_size,
+            )
+            if runtime.mobile_sync_store is not None
+            else MobileSyncPage(
+                events=[],
+                next_cursor=None,
+                has_more=False,
+                watermark=max(0.0, float(since or 0.0)),
+                stale_watermark_recovered=False,
+            )
+        )
+        pending = _pending_approvals_for_tenant(runtime, identity.tenant_id)
+        summary = _dashboard_summary(runtime, identity.tenant_id)
+        summary["pending_approvals"] = len(pending)
+        summary["notifications"] = len(page.events)
+        return {
+            "session_id": identity.session_id,
+            "tenant_id": identity.tenant_id,
+            "notifications": [row.to_dict() for row in page.events],
+            "pending_approvals": pending,
+            "dashboard_summary": summary,
+            "sync": {
+                "watermark": page.watermark,
+                "next_cursor": page.next_cursor,
+                "has_more": page.has_more,
+                "stale_watermark_recovered": page.stale_watermark_recovered,
+                "page_size": page_size,
+                "server_time": time.time(),
+            },
         }
 
     @app.delete("/session/{session_id}")
@@ -440,6 +550,24 @@ async def _handle_approval_action(
             approver=approver,
             notes=notes,
         )
+    if ok and runtime.analytics_collector is not None:
+        runtime.analytics_collector.record(
+            tenant_id=approver,
+            event_type="approval_granted" if action == "approve" else "approval_denied",
+            properties={"request_id": request_id, "approver": approver, "channel": "webchat"},
+        )
+    if ok and runtime.mobile_sync_store is not None:
+        runtime.mobile_sync_store.record_event(
+            tenant_id=approver,
+            event_type="approval_resolved",
+            payload={"request_id": request_id, "action": action, "channel": "webchat"},
+        )
+    if ok and runtime.push_notifier is not None:
+        runtime.push_notifier.send_background_refresh(
+            approver,
+            reason="approval_resolved",
+            request_id=request_id,
+        )
     await websocket.send_json(
         {"type": "approval_result", "ok": ok, "request_id": request_id, "action": action}
     )
@@ -598,16 +726,81 @@ async def _assistant_reply(
 
     async def sink(event: dict[str, Any]) -> None:
         event_type = str(event.get("type", ""))
+        if event_type == "approval_required" and runtime.analytics_collector is not None:
+            runtime.analytics_collector.record(
+                tenant_id=tenant_id,
+                event_type="approval_requested",
+                properties={
+                    "request_id": str(event.get("request_id") or event.get("action_id") or ""),
+                    "action": str(event.get("action") or event.get("action_type") or ""),
+                    "session_id": session_id,
+                },
+            )
         if event_type in {"approval_required", "approval_resolved", "growth_agent_completed"}:
             await websocket.send_json(event)
 
     result = await runtime.orchestrator.execute(
         goal=prompt,
         mode="debate",
-        context={"session_id": session_id},
+        context={"session_id": session_id, "tenant_id": tenant_id},
         event_sink=sink,
     )
     return result.final_answer
+
+
+def _pending_approvals_for_tenant(
+    runtime: WebChatRuntime,
+    tenant_id: str,
+) -> list[dict[str, Any]]:
+    if runtime.orchestrator is None:
+        return []
+    gate = runtime.orchestrator.approval_gate
+    timeout_total = float(gate.default_timeout_seconds)
+    visible: list[dict[str, Any]] = []
+    for row in gate.pending_actions:
+        context = row.get("context", {})
+        if not isinstance(context, dict):
+            continue
+        context_tenant = str(context.get("tenant_id", "")).strip()
+        if not context_tenant or context_tenant != tenant_id:
+            continue
+        created_at = float(row.get("created_at", time.time()))
+        elapsed = max(0.0, time.time() - created_at)
+        visible.append(
+            {
+                "action_id": str(row.get("action_id", "")),
+                "action": str(row.get("action", "")),
+                "risk_level": row.get("risk_level"),
+                "created_at": created_at,
+                "context": dict(context),
+                "timeout_remaining_s": round(max(0.0, timeout_total - elapsed), 3),
+            }
+        )
+    return visible
+
+
+def _dashboard_summary(runtime: WebChatRuntime, tenant_id: str) -> dict[str, Any]:
+    collector = runtime.analytics_collector
+    if collector is None:
+        return {
+            "sessions_24h": 0,
+            "total_cost_usd_24h": 0.0,
+            "approval_rate_30d": 0.0,
+            "pending_approvals": 0,
+            "notifications": 0,
+        }
+    aggregator = AnalyticsAggregator(path=collector.path)
+    period_end = time.time()
+    period_start_24h = period_end - 86400
+    period_start_30d = period_end - (30 * 86400)
+    cost_map = aggregator.cost_by_provider(tenant_id, period_start_24h, period_end)
+    return {
+        "sessions_24h": aggregator.total_sessions(tenant_id, period_start_24h, period_end),
+        "total_cost_usd_24h": round(sum(cost_map.values()), 6),
+        "approval_rate_30d": aggregator.approval_rate(tenant_id, period_start_30d, period_end),
+        "pending_approvals": 0,
+        "notifications": 0,
+    }
 
 
 def _tokenize(text: str) -> list[str]:

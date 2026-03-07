@@ -6,6 +6,7 @@ import argparse
 import ctypes
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -192,6 +193,30 @@ def _write_windows_shims(bin_dir: Path, *, dry_run: bool = False) -> None:
     )
 
 
+def resolve_command_path(command_name: str, *, path_value: str | None = None) -> Path | None:
+    resolved = shutil.which(command_name, path=path_value)
+    if not resolved:
+        return None
+    try:
+        return Path(resolved).resolve()
+    except OSError:
+        return Path(resolved)
+
+
+def _print_resolution_guidance(bin_dir: Path) -> None:
+    expected_dir = bin_dir.resolve()
+    resolved = resolve_command_path("archon", path_value=os.environ.get("PATH"))
+    if resolved is not None and resolved.parent == expected_dir:
+        print(f"  Launcher:     {resolved}")
+        return
+
+    print("  Launcher:     unresolved conflict")
+    if resolved is not None:
+        print(f"  Resolved to:  {resolved}")
+    print(f"  Expected:     {expected_dir / 'archon.cmd'}")
+    print("  Fix now:      open a new shell or run the .cmd shim directly")
+
+
 def _broadcast_environment_change() -> None:
     if not sys.platform.startswith("win"):
         return
@@ -328,6 +353,7 @@ def install(
     print(f"  Runtime:      {venv_dir}")
     print(f"  Commands:     {bin_dir}")
     print(f"  Dependencies: {'base + dev' if include_dev else 'base'}")
+    _print_resolution_guidance(bin_dir)
     if dry_run:
         print("  Mode:         dry-run")
     elif path_updated:

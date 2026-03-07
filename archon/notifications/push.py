@@ -30,6 +30,7 @@ class Notification:
     data: dict[str, str] = field(default_factory=dict)
     badge: int | None = None
     sound: str | None = "default"
+    silent: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -90,16 +91,23 @@ class FCMBackend:
                 error="missing_fcm_credentials",
             )
 
-        payload: dict[str, Any] = {
-            "message": {
-                "token": device_token.token,
-                "notification": {
-                    "title": notification.title,
-                    "body": notification.body,
-                },
-                "data": _string_map(notification.data),
-            }
+        message: dict[str, Any] = {
+            "token": device_token.token,
+            "data": _string_map(notification.data),
         }
+        if notification.silent:
+            message["android"] = {"priority": "high"}
+            message["apns"] = {
+                "headers": {"apns-push-type": "background", "apns-priority": "5"},
+                "payload": {"aps": {"content-available": 1}},
+            }
+        else:
+            message["notification"] = {
+                "title": notification.title,
+                "body": notification.body,
+            }
+
+        payload: dict[str, Any] = {"message": message}
 
         try:
             response = httpx.post(
@@ -191,19 +199,23 @@ class APNsBackend:
         headers = {
             "authorization": f"bearer {token}",
             "apns-topic": self.bundle_id,
-            "apns-push-type": "alert",
-            "apns-priority": "10",
             "content-type": "application/json",
         }
-        aps: dict[str, Any] = {
-            "alert": {
+        aps: dict[str, Any] = {}
+        if notification.silent:
+            headers["apns-push-type"] = "background"
+            headers["apns-priority"] = "5"
+            aps["content-available"] = 1
+        else:
+            headers["apns-push-type"] = "alert"
+            headers["apns-priority"] = "10"
+            aps["alert"] = {
                 "title": notification.title,
                 "body": notification.body,
-            },
-            "sound": notification.sound or "default",
-        }
-        if notification.badge is not None:
-            aps["badge"] = int(notification.badge)
+            }
+            aps["sound"] = notification.sound or "default"
+            if notification.badge is not None:
+                aps["badge"] = int(notification.badge)
         payload: dict[str, Any] = {"aps": aps}
         payload.update(_string_map(notification.data))
 
@@ -298,6 +310,44 @@ class PushNotifier:
         for token in self.registry.get_tokens_for_tenant(tenant_id):
             results.append(self.send(token, notification))
         return results
+
+    def send_background_refresh(
+        self,
+        tenant_id: str,
+        *,
+        reason: str,
+        session_id: str | None = None,
+        request_id: str | None = None,
+    ) -> list[PushResult]:
+        """Send a silent refresh signal to all registered tenant devices.
+
+        Example:
+            >>> registry = DeviceRegistry(path="archon/tests/_tmp_push_refresh.sqlite3")
+            >>> notifier = PushNotifier(registry)
+            >>> isinstance(notifier.send_background_refresh("tenant-a", reason="approval_resolved"), list)
+            True
+        """
+
+        data = {
+            "kind": "background_sync",
+            "silent": "true",
+            "reason": str(reason or "refresh"),
+            "tenant_id": str(tenant_id or ""),
+        }
+        if str(session_id or "").strip():
+            data["session_id"] = str(session_id)
+        if str(request_id or "").strip():
+            data["request_id"] = str(request_id)
+        return self.send_to_tenant(
+            str(tenant_id),
+            Notification(
+                title="",
+                body="",
+                data=data,
+                sound=None,
+                silent=True,
+            ),
+        )
 
     async def send_approval_request(
         self,

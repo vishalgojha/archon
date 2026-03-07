@@ -15,7 +15,7 @@ import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from archon.config import SUPPORTED_PROVIDERS, ArchonConfig
+from archon.config import SUPPORTED_PROVIDERS, ArchonConfig, resolve_config_path
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 
 RoleName = Literal["primary", "coding", "vision", "fast", "embedding", "fallback"]
@@ -147,6 +147,9 @@ class RuntimeValidationConfig(BaseModel):
     tenants: list[TenantSection]
     memory: MemorySection
     evolution: EvolutionSection
+    supervised_mode: bool = False
+    deployment_mode: str | None = None
+    default_tier: str | None = None
 
 
 @dataclass(slots=True)
@@ -209,7 +212,7 @@ def validate_config(
         True
     """
 
-    config_path = Path(path)
+    config_path = resolve_config_path(path)
     report = ValidationReport(config_path=str(config_path), dry_run=dry_run, schema_valid=False)
 
     try:
@@ -417,10 +420,10 @@ def _load_raw_config(path: Path) -> dict[str, Any]:
 
 def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = dict(raw)
+    defaults = ArchonConfig().byok
 
     if "providers" not in normalized and isinstance(raw.get("byok"), dict):
         byok = raw["byok"]
-        defaults = ArchonConfig().byok
         normalized["providers"] = {
             "primary": byok.get("primary", defaults.primary),
             "coding": byok.get("coding", defaults.coding),
@@ -433,17 +436,49 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
             "custom_endpoints": byok.get("custom_endpoints", []),
         }
 
-    if "budget" not in normalized and isinstance(raw.get("byok"), dict):
+    per_request_default = float(defaults.budget_per_task_usd)
+    monthly_default = float(defaults.budget_per_month_usd)
+    alert_default = 0.80
+    budget_source = raw.get("budget") if isinstance(raw.get("budget"), dict) else {}
+    if not budget_source and isinstance(raw.get("byok"), dict):
         byok = raw["byok"]
-        defaults = ArchonConfig().byok
-        per_request = float(byok.get("budget_per_task_usd", defaults.budget_per_task_usd))
-        monthly = float(byok.get("budget_per_month_usd", defaults.budget_per_month_usd))
-        daily = max(per_request, round(monthly / 30.0, 6))
+        budget_source = {
+            "per_request_usd": byok.get("budget_per_task_usd", per_request_default),
+            "monthly_usd": byok.get("budget_per_month_usd", monthly_default),
+            "alert_threshold": alert_default,
+        }
+
+    if budget_source:
+        per_request = float(
+            budget_source.get(
+                "per_request_usd",
+                budget_source.get("per_request_limit_usd", per_request_default),
+            )
+        )
+        monthly = float(
+            budget_source.get(
+                "monthly_usd",
+                budget_source.get("monthly_limit_usd", monthly_default),
+            )
+        )
+        daily = float(
+            budget_source.get(
+                "daily_usd",
+                budget_source.get("daily_limit_usd", max(per_request, round(monthly / 30.0, 6))),
+            )
+        )
+        alert_threshold_raw = budget_source.get(
+            "alert_threshold",
+            budget_source.get("alert_threshold_pct", alert_default * 100.0),
+        )
+        alert_threshold = float(alert_threshold_raw)
+        if alert_threshold > 1.0:
+            alert_threshold = round(alert_threshold / 100.0, 4)
         normalized["budget"] = {
             "per_request_usd": per_request,
             "daily_usd": daily,
             "monthly_usd": monthly,
-            "alert_threshold": 0.80,
+            "alert_threshold": alert_threshold,
         }
 
     normalized.setdefault("tenants", [])

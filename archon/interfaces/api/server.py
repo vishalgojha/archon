@@ -55,6 +55,10 @@ from archon.interfaces.webchat.server import mount_webchat
 from archon.marketplace import DeveloperOnboarding, StripeConnectClient
 from archon.marketplace.payout_orchestrator import PartnerRevenueReport, PayoutOrchestrator
 from archon.marketplace.revenue_share import PayoutQueue, RevenueShareLedger
+from archon.mobile.sync_store import MobileSyncStore
+from archon.notifications.approval_notifier import wrap_gate
+from archon.notifications.device_registry import DeviceRegistry
+from archon.notifications.push import PushNotifier
 from archon.observability.metrics import Metrics
 from archon.observability.setup import configure_observability
 from archon.observability.tracing import TracingSetup
@@ -233,6 +237,12 @@ async def lifespan(app: FastAPI):
     app.state.analytics_collector = AnalyticsCollector(
         path=os.getenv("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
     )
+    app.state.mobile_sync_store = MobileSyncStore(
+        path=os.getenv("ARCHON_MOBILE_SYNC_DB", "archon_mobile_sync.sqlite3")
+    )
+    app.state.mobile_device_registry = DeviceRegistry(
+        path=os.getenv("ARCHON_DEVICE_TOKENS_DB", "archon_device_tokens.sqlite3")
+    )
     stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "") or os.getenv("STRIPE_SECRET_KEY", "")
     webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv(
         "STRIPE_WEBHOOK_SECRET", ""
@@ -310,11 +320,25 @@ async def lifespan(app: FastAPI):
         ledger=app.state.marketplace_revenue_ledger,
         payout_queue=app.state.marketplace_payout_queue,
     )
+    app.state.mobile_push_notifier = PushNotifier(
+        registry=app.state.mobile_device_registry,
+        approval_gate=app.state.orchestrator.approval_gate,
+    )
+    wrap_gate(
+        app.state.orchestrator.approval_gate,
+        app.state.mobile_device_registry,
+        app.state.mobile_push_notifier,
+        sync_store=app.state.mobile_sync_store,
+    )
     app.state.started_monotonic = time.monotonic()
     if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
         app.state.console_tenant_config = {}
     if getattr(app.state, "webchat_app", None) is not None:
         app.state.webchat_app.state.runtime.orchestrator = app.state.orchestrator
+        app.state.webchat_app.state.runtime.analytics_collector = app.state.analytics_collector
+        app.state.webchat_app.state.runtime.mobile_sync_store = app.state.mobile_sync_store
+        app.state.webchat_app.state.runtime.device_registry = app.state.mobile_device_registry
+        app.state.webchat_app.state.runtime.push_notifier = app.state.mobile_push_notifier
     configure_observability(app)
     try:
         yield
@@ -775,6 +799,15 @@ async def run_task_ws(websocket: WebSocket) -> None:
         context.setdefault("tenant_id", websocket.state.auth.tenant_id)
 
         async def sink(event: dict[str, Any]) -> None:
+            if str(event.get("type", "")) == "approval_required":
+                await _emit_analytics_event(
+                    {
+                        "tenant_id": websocket.state.auth.tenant_id,
+                        "event_type": "approval_requested",
+                        "request_id": str(event.get("request_id") or event.get("action_id") or ""),
+                        "action": str(event.get("action") or event.get("action_type") or ""),
+                    }
+                )
             await websocket.send_json({"type": "event", "payload": event})
 
         result = await orchestrator.execute(
@@ -822,6 +855,20 @@ async def approve_guarded_action(
             "approver": approver,
         }
     )
+    sync_store = getattr(app.state, "mobile_sync_store", None)
+    if isinstance(sync_store, MobileSyncStore):
+        sync_store.record_event(
+            tenant_id=request.state.auth.tenant_id,
+            event_type="approval_resolved",
+            payload={"request_id": request_id, "action": "approve", "channel": "api"},
+        )
+    push_notifier = getattr(app.state, "mobile_push_notifier", None)
+    if isinstance(push_notifier, PushNotifier):
+        push_notifier.send_background_refresh(
+            request.state.auth.tenant_id,
+            reason="approval_resolved",
+            request_id=request_id,
+        )
     return {"status": "approved", "request_id": request_id}
 
 
@@ -847,6 +894,20 @@ async def deny_guarded_action(
             "approver": approver,
         }
     )
+    sync_store = getattr(app.state, "mobile_sync_store", None)
+    if isinstance(sync_store, MobileSyncStore):
+        sync_store.record_event(
+            tenant_id=request.state.auth.tenant_id,
+            event_type="approval_resolved",
+            payload={"request_id": request_id, "action": "deny", "channel": "api"},
+        )
+    push_notifier = getattr(app.state, "mobile_push_notifier", None)
+    if isinstance(push_notifier, PushNotifier):
+        push_notifier.send_background_refresh(
+            request.state.auth.tenant_id,
+            reason="approval_resolved",
+            request_id=request_id,
+        )
     return {"status": "denied", "request_id": request_id}
 
 

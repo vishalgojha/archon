@@ -74,6 +74,18 @@ class ArchonConfig(BaseModel):
     byok: ByokConfig = Field(default_factory=ByokConfig)
 
 
+def resolve_config_path(path: str | Path = "config.archon.yaml") -> Path:
+    """Resolve a config path, falling back to the repo root for relative defaults."""
+
+    config_path = Path(path)
+    if config_path.is_absolute() or config_path.exists():
+        return config_path
+    repo_candidate = Path(__file__).resolve().parents[1] / config_path
+    if repo_candidate.exists():
+        return repo_candidate
+    return config_path
+
+
 def load_archon_config(path: str | Path = "config.archon.yaml") -> ArchonConfig:
     """Load and validate ARCHON config from YAML.
 
@@ -83,7 +95,7 @@ def load_archon_config(path: str | Path = "config.archon.yaml") -> ArchonConfig:
         'anthropic'
     """
 
-    config_path = Path(path)
+    config_path = resolve_config_path(path)
     if not config_path.exists():
         return ArchonConfig()
 

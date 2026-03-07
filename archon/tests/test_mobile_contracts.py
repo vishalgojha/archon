@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from archon.interfaces.api.server import app
 
-_MOBILE_HOOK_PATH = Path("archon/interfaces/mobile/useARCHONMobile.ts")
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_MOBILE_HOOK_PATH = _REPO_ROOT / "archon" / "interfaces" / "mobile" / "useARCHONMobile.ts"
 
 
 class SessionStateModel(BaseModel):

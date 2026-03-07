@@ -287,3 +287,34 @@ evolution:
     finally:
         healthy.unlink(missing_ok=True)
         failing.unlink(missing_ok=True)
+
+
+def test_normalize_config_accepts_onboarding_metadata_and_legacy_budget_shape() -> None:
+    config = _write_yaml(
+        """
+byok:
+  primary: openrouter
+  coding: openrouter
+  vision: openrouter
+  fast: openrouter
+  embedding: ollama
+  fallback: openrouter
+  budget_per_task_usd: 0.5
+  budget_per_month_usd: 150.0
+  ollama_base_url: http://localhost:11434/v1
+  openrouter_base_url: https://openrouter.ai/api/v1
+  custom_endpoints: []
+budget:
+  daily_limit_usd: 5.0
+  alert_threshold_pct: 80
+supervised_mode: true
+deployment_mode: personal_assistant
+default_tier: free
+""",
+    )
+    try:
+        report = validate_module.validate_config(path=config, dry_run=True)
+        assert report.schema_valid is True
+        assert report.ok is True
+    finally:
+        config.unlink(missing_ok=True)

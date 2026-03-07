@@ -1,21 +1,27 @@
 # SESSION_HANDOFF
 
 ## Snapshot
-- Date: 2026-03-07
+- Date: 2026-03-08
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Sprint status: Prompts 1-44 built
-- Verification: full suite passing (`pytest tests archon/tests -q` -> 579 passed, 9 skipped)
+- Sprint status: Prompts 1-46 built
+- Verification: full suite passing from `C:\Users\visha` (`pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> 612 passed, 9 skipped)
 
 ## Post-Sprint Fixes
 - Global installer now prioritizes `%LOCALAPPDATA%\Programs\Archon\bin` ahead of stale Python `Scripts` launchers, and prints the direct shim path for immediate use in the current shell.
 - Mission Control dashboard now validates persisted webchat session tokens before reconnecting, auto-recovers from stale-token WebSocket auth closures, and adds an expandable swarm graph with zoom, pan, drag, and node detail inspection.
+- Mobile background sync is now implemented with silent push wakeups, device registration, tenant-safe incremental sync feed, persisted watermarks/backoff state, and offline queue replay.
+- Studio shell no longer loads blank pages: browser-executable assets are shipped, Studio API calls use the same JWT token pattern as Console, and the dashboard defaults to a less technical civilian operations view.
+- Validation, installer, and test harnesses are now hardened for Windows cwd/path edge cases: config resolution falls back to repo root, onboarding metadata / legacy budget config shapes validate cleanly, frontend/mobile contract tests resolve paths from the repo, and pytest no longer depends on the broken sandbox `tmp_path` temp root.
 
 ## Incremental Verification
-- `pytest tests/test_global_installer.py -q` -> 8 passed
-- `pytest tests/test_api_server.py -q` -> 21 passed
+- `pytest archon/tests/test_mobile_sync.py archon/tests/test_mobile_background_sync_contracts.py archon/tests/test_notifications.py -q` -> passed
+- `pytest archon/tests/test_webchat.py archon/tests/test_mobile_contracts.py -q` -> passed
+- `pytest archon/tests/test_web_shell_contracts.py tests/test_api_server.py::test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected -q` -> passed
+- `pytest tests/test_global_installer.py -q` -> 10 passed
+- `pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> 612 passed, 9 skipped
 
-## Built ✅ (44 Items)
+## Built ✅ (46 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
 2. Growth swarm runtime (Prospector, ICP, Outreach, Nurture, RevenueIntel, Partner, ChurnDefense).
 3. Approval gate framework for high/medium risk action enforcement and audit trail.
@@ -60,35 +66,35 @@
 42. Marketplace Stripe Connect onboarding (`archon/marketplace/connect.py`, `/marketplace/developers/*`) with encrypted account storage, session TTL persistence, and enterprise-gated onboarding/status/refresh APIs.
 43. Marketplace revenue-share accounting (`archon/marketplace/revenue_share.py`) with append-only listing revenue ledger, tier-based splits, approval-gated payout queueing, and Stripe Connect transfer execution.
 44. Marketplace payout orchestration and reporting (`archon/marketplace/payout_orchestrator.py`, `archon/archon_cli.py`) with monthly batch cycles, developer earnings/payout APIs, partner revenue reports, and payout CLI commands.
+45. Mobile background sync + silent push refresh (`archon/mobile/sync_store.py`, `archon/interfaces/webchat/server.py`, `archon/interfaces/mobile/useARCHONMobile.ts`, `archon/notifications/push.py`) with device registration, incremental sync, watermark recovery, and offline replay.
+46. Studio/dashboard polish + launcher/path hardening (`archon/interfaces/web/studio/*`, `archon/interfaces/web/dashboard/src/App.jsx`, `tools/install_archon.py`, `archon/config.py`, `archon/validate_config.py`) with blank-page fix, civilian dashboard mode, repo-root config fallback, and clearer global-install launcher guidance.
 
 ## Pending
 - Marketplace: agent sandboxing security audit
-- ARCHON mobile: background sync + silent push
 - Studio: one-click deploy workflow to production
 - Automated regression on payout flows (financial mutation tests)
 - Multi-currency payout support (USD, EUR, GBP, INR)
+- Launcher cleanup / packaging hardening for stale legacy `archon.exe` installs already on PATH
 
 ## NEXT CODEX PROMPT
-Continue building ARCHON on Windows. All 44 modules are complete.
-Current verification baseline: `pytest tests archon/tests -q` -> `579 passed, 9 skipped`.
+Continue building ARCHON on Windows. All 46 modules are complete.
+Current verification baseline: `pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> `612 passed, 9 skipped`.
 
-Next sprint: ARCHON Mobile Background Sync + Silent Push
+Next sprint: Studio Deploy Flow + Launcher Cleanup
 
 Build all of the following:
-- Add background sync job orchestration for the mobile client so queued approvals, notification inbox state, and lightweight dashboard summaries refresh while the app is backgrounded.
-- Implement silent push handling for iOS and Android to wake the app for approval-state refresh without forcing visible notifications.
-- Persist last-successful-sync watermark, retry/backoff metadata, and offline queue state in the existing mobile storage layer.
-- Add tenant-safe API endpoints or extend existing ones only where needed for incremental mobile sync (`since` watermark, bounded page size, idempotent cursors).
-- Ensure all background-triggered mutations remain approval-gated and analytics-emitting.
+- Add a one-click Studio deploy flow from saved workflow to runnable production endpoint, reusing existing Studio workflow persistence and API auth.
+- Make `archon dashboard` and `archon studio` resilient against stale global launcher installs by detecting conflicts and offering a self-heal / reinstall path from the CLI itself.
+- Add CLI diagnostics for command resolution, active runtime root, and current PATH precedence so users can understand which launcher is being used.
+- Harden shell opening behavior so dashboard/studio commands can optionally target an already-running server or auto-start a local one with clear error messages.
 - Add tests for:
-  - background sync scheduling and deduplication
-  - silent push payload parsing and routing
-  - offline queue replay after reconnect
-  - sync watermark progression and stale watermark recovery
-  - auth isolation across tenants during background refresh
+  - Studio deploy workflow serialization + execution handoff
+  - launcher conflict detection and guidance
+  - CLI runtime diagnostics output
+  - dashboard/studio command behavior with healthy server, missing server, and stale launcher cases
 
 Constraints:
 - Windows-safe paths and process handling only.
-- Extend existing mobile/API modules; do not rewrite server foundations.
-- Keep background sync idempotent and resumable.
+- Do not break existing `archon serve` or `archon-server` behavior.
+- Keep all deploy mutations approval-gated and analytics-emitting where applicable.
 - Full suite must pass before updating `SESSION_HANDOFF.md` again.

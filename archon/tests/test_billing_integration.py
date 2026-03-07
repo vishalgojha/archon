@@ -31,12 +31,35 @@ def _tmp_db(name: str) -> Path:
     return folder / "db.sqlite3"
 
 
+def _tmp_config(name: str) -> Path:
+    path = _tmp_db(name).with_name("config.archon.yaml")
+    path.write_text(
+        """
+byok:
+  primary: openrouter
+  coding: openrouter
+  vision: openrouter
+  fast: openrouter
+  embedding: ollama
+  fallback: openrouter
+  budget_per_task_usd: 0.5
+  budget_per_month_usd: 150.0
+  ollama_base_url: http://localhost:11434/v1
+  openrouter_base_url: https://openrouter.ai/api/v1
+  custom_endpoints: []
+""".strip(),
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_task_cost_is_metered_into_billing_summary_and_invoice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     monkeypatch.setenv("ARCHON_BILLING_DB", str(_tmp_db("billing")))
     monkeypatch.setenv("ARCHON_ANALYTICS_DB", str(_tmp_db("analytics")))
+    monkeypatch.setenv("ARCHON_CONFIG", str(_tmp_config("config")))
 
     with TestClient(app) as client:
         subscription = client.post(

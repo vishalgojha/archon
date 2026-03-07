@@ -262,6 +262,69 @@
     );
   }
 
+  function friendlyStatusLabel(status) {
+    if (status === "connected") {
+      return "Online";
+    }
+    if (status === "initializing" || status === "connecting") {
+      return "Starting up";
+    }
+    if (status === "error") {
+      return "Needs attention";
+    }
+    return "Offline";
+  }
+
+  function buildCivilianUpdates(history) {
+    return history
+      .slice(-6)
+      .reverse()
+      .map((event, idx) => {
+        const type = String(event?.type || "update").toLowerCase();
+        const agent = String(event?.agent || event?.agent_name || "").trim();
+        if (type === "approval_required") {
+          return {
+            id: `update-${idx}`,
+            title: "Approval needed",
+            detail: String(event?.action || event?.action_type || "ARCHON is waiting for approval."),
+          };
+        }
+        if (type === "approval_result" || type === "approval_resolved") {
+          return {
+            id: `update-${idx}`,
+            title: "Approval updated",
+            detail: String(event?.action || "A queued approval was updated."),
+          };
+        }
+        if (type === "agent_start") {
+          return {
+            id: `update-${idx}`,
+            title: `${agent || "An agent"} started work`,
+            detail: "ARCHON is actively processing the current task.",
+          };
+        }
+        if (type === "agent_end" || type === "growth_agent_completed") {
+          return {
+            id: `update-${idx}`,
+            title: `${agent || "An agent"} finished a step`,
+            detail: shortJson(event?.output || event?.result || event?.payload || event, 160),
+          };
+        }
+        if (type === "done" || type === "task_result") {
+          return {
+            id: `update-${idx}`,
+            title: "A result is ready",
+            detail: shortJson(event?.message || event?.payload || event, 160),
+          };
+        }
+        return {
+          id: `update-${idx}`,
+          title: type.replace(/_/g, " ") || "Update",
+          detail: shortJson(event?.payload || event, 160),
+        };
+      });
+  }
+
   function App() {
     const archon = window.useARCHONContext ? window.useARCHONContext() : {};
     const status = archon?.status || "disconnected";
@@ -279,7 +342,7 @@
     const agentStates = archon?.agentStates || {};
     const costState = archon?.costState || { spent: 0, budget: 0, history: [] };
 
-    const [mode, setMode] = useState(() => safeStorageGet("archon.dashboard.mode") || "mission_control");
+    const [mode, setMode] = useState(() => safeStorageGet("archon.dashboard.mode") || "civilian");
     const [swarmExpanded, setSwarmExpanded] = useState(false);
     const [selectedSwarmAgentId, setSelectedSwarmAgentId] = useState("orchestrator");
     const [agentsStatus, setAgentsStatus] = useState({ agents: {}, edges: [] });
@@ -516,6 +579,41 @@
           }
         : undefined;
     const sessionLabel = shortSessionLabel(sessionId);
+    const recentUpdates = useMemo(() => buildCivilianUpdates(history), [history]);
+    const latestAnswer = useMemo(() => {
+      for (let idx = history.length - 1; idx >= 0; idx -= 1) {
+        const event = history[idx] || {};
+        const candidate =
+          event?.message?.content ||
+          event?.payload?.final_answer ||
+          event?.final_answer ||
+          event?.content ||
+          "";
+        if (candidate) {
+          return String(candidate);
+        }
+      }
+      return "";
+    }, [history]);
+    const civilianActions = useMemo(() => {
+      const actions = [];
+      if (pendingApprovals.length > 0) {
+        actions.push(`Review ${pendingApprovals.length} pending approval${pendingApprovals.length === 1 ? "" : "s"}.`);
+      }
+      if (displayStatus !== "connected") {
+        actions.push("Reconnect the dashboard before relying on live activity.");
+      }
+      if (costState.budget > 0 && costState.spent / costState.budget >= 0.8) {
+        actions.push("Budget usage is above 80%. Check limits before the next run.");
+      }
+      if (swarmSummary.thinking > 0) {
+        actions.push(`${swarmSummary.thinking} agent${swarmSummary.thinking === 1 ? " is" : "s are"} currently working.`);
+      }
+      if (!actions.length) {
+        actions.push("Everything is stable. You can let ARCHON continue and only step in for approvals.");
+      }
+      return actions.slice(0, 4);
+    }, [costState.budget, costState.spent, displayStatus, pendingApprovals.length, swarmSummary.thinking]);
     const renderSwarmGraph = (expanded = false) => (
       <>
         <div className={`card-header ${expanded ? "card-header-modal" : ""}`}>
@@ -636,7 +734,7 @@
     return (
       <div className={`dashboard-root ${showMissionControl ? "mission-control" : "civilian"}`}>
         <header className="top-bar">
-          <div className="brand">ARCHON Mission Control</div>
+          <div className="brand">{showMissionControl ? "ARCHON Mission Control" : "ARCHON Overview"}</div>
           <div className="mode-switch">
             <button
               type="button"
@@ -658,13 +756,25 @@
             <span>{displayStatus}</span>
           </div>
           <div className="tenant-info">
-            tenant: {tenantId} | tier: {tier} | session: {sessionLabel}
+            {showMissionControl
+              ? `tenant: ${tenantId} | tier: ${tier} | session: ${sessionLabel}`
+              : `session ${sessionLabel} | ${pendingApprovals.length > 0 ? "approval waiting" : "no blockers"}`}
           </div>
         </header>
 
         {readyToRender ? (
           <>
-            <div className="main-grid">
+            <div
+              className="main-grid"
+              style={
+                showMissionControl
+                  ? undefined
+                  : {
+                      gridTemplateColumns: "1fr",
+                      gap: 12,
+                    }
+              }
+            >
               {showMissionControl ? (
                 <aside className="left-panel panel">
                   <div className="card" style={{ minHeight: 0, flex: 1 }}>
@@ -677,28 +787,197 @@
                 </aside>
               ) : null}
 
-              <main className="center-panel">
-                <section className="card">
-                  <div className="card-header">Active Task DAG</div>
-                  <div className="card-body">
-                    {window.TaskDAG ? (
-                      <window.TaskDAG workflow={workflow} history={history} />
-                    ) : (
-                      <div className="empty-state">Task DAG component unavailable.</div>
-                    )}
-                  </div>
-                </section>
+              {showMissionControl ? (
+                <main className="center-panel">
+                  <section className="card">
+                    <div className="card-header">Active Task DAG</div>
+                    <div className="card-body">
+                      {window.TaskDAG ? (
+                        <window.TaskDAG workflow={workflow} history={history} />
+                      ) : (
+                        <div className="empty-state">Task DAG component unavailable.</div>
+                      )}
+                    </div>
+                  </section>
 
-                <section className="card">
-                  <div className="card-body" style={{ height: "100%" }}>
-                    {window.DebatePanel && confidence !== null ? (
-                      <window.DebatePanel rounds={rounds} confidence={confidence} />
-                    ) : (
-                      <div className="empty-state">Awaiting task activity...</div>
-                    )}
-                  </div>
-                </section>
-              </main>
+                  <section className="card">
+                    <div className="card-body" style={{ height: "100%" }}>
+                      {window.DebatePanel && confidence !== null ? (
+                        <window.DebatePanel rounds={rounds} confidence={confidence} />
+                      ) : (
+                        <div className="empty-state">Awaiting task activity...</div>
+                      )}
+                    </div>
+                  </section>
+                </main>
+              ) : (
+                <main
+                  className="panel"
+                  style={{
+                    padding: 18,
+                    overflow: "auto",
+                    display: "grid",
+                    gap: 14,
+                  }}
+                >
+                  <section
+                    className="card"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(15,118,110,0.18), rgba(37,48,65,0.34))",
+                      borderRadius: 18,
+                    }}
+                  >
+                    <div className="card-body" style={{ height: "auto", padding: 20 }}>
+                      <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: "#8bd3cb" }}>
+                        Operations Overview
+                      </div>
+                      <h1 style={{ margin: "10px 0 8px", fontSize: "clamp(28px, 4vw, 40px)" }}>
+                        {friendlyStatusLabel(displayStatus)} and {pendingApprovals.length > 0 ? "waiting on a decision" : "ready to continue"}.
+                      </h1>
+                      <p style={{ margin: 0, maxWidth: 760, color: "#c6d0dc", lineHeight: 1.7 }}>
+                        {pendingApprovals.length > 0
+                          ? `ARCHON has ${pendingApprovals.length} approval${pendingApprovals.length === 1 ? "" : "s"} queued. Review them here without opening the technical trace.`
+                          : "No approvals are blocking work right now. Use Mission Control only when you need the deep technical trace."}
+                      </p>
+                    </div>
+                  </section>
+
+                  <section
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {[
+                      { label: "System", value: friendlyStatusLabel(displayStatus) },
+                      { label: "Pending approvals", value: String(pendingApprovals.length) },
+                      { label: "Agents working", value: String(swarmSummary.thinking) },
+                      {
+                        label: "Budget used",
+                        value: costState.budget > 0
+                          ? `${Math.round((costState.spent / costState.budget) * 100)}%`
+                          : `$${Number(costState.spent || 0).toFixed(2)}`,
+                      },
+                    ].map((card) => (
+                      <div
+                        key={card.label}
+                        className="card"
+                        style={{ padding: 16, minHeight: "unset" }}
+                      >
+                        <div style={{ fontSize: 12, color: "#8fa0b8", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                          {card.label}
+                        </div>
+                        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 700 }}>{card.value}</div>
+                      </div>
+                    ))}
+                  </section>
+
+                  <section
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <section className="card">
+                      <div className="card-header">What Needs Attention</div>
+                      <div className="card-body" style={{ height: "auto", padding: 16 }}>
+                        <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 10, color: "#d7deea" }}>
+                          {civilianActions.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </section>
+
+                    <section className="card">
+                      <div className="card-header">Pending Approvals</div>
+                      <div className="card-body" style={{ height: "auto", padding: 16, display: "grid", gap: 12 }}>
+                        {pendingApprovals.length === 0 ? (
+                          <div className="empty-state">Nothing is waiting for approval.</div>
+                        ) : (
+                          pendingApprovals.slice(0, 4).map((approval) => {
+                            const requestId = String(approval.action_id || approval.request_id || "");
+                            const action = String(approval.action || approval.action_type || "action");
+                            return (
+                              <div
+                                key={requestId}
+                                style={{
+                                  display: "grid",
+                                  gap: 8,
+                                  padding: 14,
+                                  borderRadius: 14,
+                                  border: "1px solid var(--border)",
+                                  background: "rgba(15, 23, 42, 0.36)",
+                                }}
+                              >
+                                <div style={{ fontWeight: 600 }}>{action}</div>
+                                <div style={{ fontSize: 13, color: "#9fb0c8" }}>
+                                  Request ID: {requestId || "pending"}
+                                </div>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => send({ type: "approve", request_id: requestId })}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => send({ type: "deny", request_id: requestId })}
+                                  >
+                                    Deny
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </section>
+                  </section>
+
+                  <section
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <section className="card">
+                      <div className="card-header">Recent Updates</div>
+                      <div className="card-body" style={{ height: "auto", padding: 16, display: "grid", gap: 12 }}>
+                        {recentUpdates.length === 0 ? (
+                          <div className="empty-state">No recent updates yet.</div>
+                        ) : (
+                          recentUpdates.map((item) => (
+                            <div key={item.id} style={{ display: "grid", gap: 4 }}>
+                              <div style={{ fontWeight: 600 }}>{item.title}</div>
+                              <div style={{ color: "#9fb0c8", fontSize: 14 }}>{item.detail}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="card">
+                      <div className="card-header">Latest Answer</div>
+                      <div className="card-body" style={{ height: "auto", padding: 16 }}>
+                        {latestAnswer ? (
+                          <div style={{ color: "#d7deea", lineHeight: 1.7 }}>
+                            {latestAnswer.length > 420 ? `${latestAnswer.slice(0, 420)}...` : latestAnswer}
+                          </div>
+                        ) : (
+                          <div className="empty-state">ARCHON has not completed a response yet.</div>
+                        )}
+                      </div>
+                    </section>
+                  </section>
+                </main>
+              )}
 
               {showMissionControl ? (
                 <aside className="right-panel panel">
@@ -740,16 +1019,33 @@
               ) : null}
             </div>
 
-            <footer className="memory-wrap panel">
-              <div className="card-header">Memory Timeline</div>
-              <div className="card-body">
-                {window.MemoryTimeline ? (
-                  <window.MemoryTimeline sessionId={sessionId} apiBase={apiBase} />
-                ) : (
-                  <div className="empty-state">Memory timeline component unavailable.</div>
-                )}
-              </div>
-            </footer>
+            {showMissionControl ? (
+              <footer className="memory-wrap panel">
+                <div className="card-header">Memory Timeline</div>
+                <div className="card-body">
+                  {window.MemoryTimeline ? (
+                    <window.MemoryTimeline sessionId={sessionId} apiBase={apiBase} />
+                  ) : (
+                    <div className="empty-state">Memory timeline component unavailable.</div>
+                  )}
+                </div>
+              </footer>
+            ) : (
+              <footer
+                className="memory-wrap panel"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0 18px",
+                  color: "#9fb0c8",
+                }}
+              >
+                <span>Session {sessionLabel}</span>
+                <span>{pendingApprovals.length > 0 ? "Waiting for approval" : "No blockers"}</span>
+                <span>{swarmSummary.thinking > 0 ? `${swarmSummary.thinking} agent(s) active` : "No active agents"}</span>
+              </footer>
+            )}
             {showMissionControl && swarmExpanded ? (
               <div className="graph-modal-backdrop" onClick={() => setSwarmExpanded(false)}>
                 <section

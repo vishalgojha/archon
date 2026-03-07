@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, Awaitable, Callable
 
 from archon.core.approval_gate import ApprovalGate
+from archon.mobile.sync_store import MobileSyncStore
 from archon.notifications.device_registry import DeviceRegistry
 from archon.notifications.push import Notification, PushNotifier
 
@@ -21,10 +22,12 @@ class ApprovalNotifier:
         notifier: PushNotifier,
         *,
         deep_link_prefix: str = "archon://approvals",
+        sync_store: MobileSyncStore | None = None,
     ) -> None:
         self.registry = registry
         self.notifier = notifier
         self.deep_link_prefix = deep_link_prefix.rstrip("/")
+        self.sync_store = sync_store
 
     async def handle_event(
         self,
@@ -40,6 +43,19 @@ class ApprovalNotifier:
             return
         if not str(tenant_id or "").strip():
             return
+        if self.sync_store is not None:
+            self.sync_store.record_event(
+                tenant_id=tenant_id,
+                event_type="approval_required",
+                payload={
+                    "action_id": action_id,
+                    "action": action_name,
+                    "timeout_seconds": timeout_seconds,
+                    "context": dict(event.get("context", {}))
+                    if isinstance(event.get("context"), dict)
+                    else {},
+                },
+            )
 
         base = Notification(
             title="Approval required",
@@ -90,13 +106,19 @@ class ApprovalNotifier:
             self.notifier.send_to_tenant(tenant_id, reminder)
 
 
-def wrap_gate(gate: ApprovalGate, registry: DeviceRegistry, notifier: PushNotifier) -> ApprovalGate:
+def wrap_gate(
+    gate: ApprovalGate,
+    registry: DeviceRegistry,
+    notifier: PushNotifier,
+    *,
+    sync_store: MobileSyncStore | None = None,
+) -> ApprovalGate:
     """Wrap gate.check so emitted approval events also trigger push notifications."""
 
     if getattr(gate, "_approval_notifier_wrapped", False):
         return gate
 
-    bridge = ApprovalNotifier(registry=registry, notifier=notifier)
+    bridge = ApprovalNotifier(registry=registry, notifier=notifier, sync_store=sync_store)
     original_check = gate.check
 
     async def wrapped_check(action: str, context: dict[str, Any], action_id: str) -> str:
@@ -109,6 +131,8 @@ def wrap_gate(gate: ApprovalGate, registry: DeviceRegistry, notifier: PushNotifi
             base_sink = requested_sink
         else:
             base_sink = getattr(gate, "_event_sink", None)
+        if not callable(base_sink):
+            return await original_check(action=action, context=raw_context, action_id=action_id)
 
         async def combined_sink(event: dict[str, Any]) -> None:
             if callable(base_sink):

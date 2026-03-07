@@ -15,6 +15,7 @@ import pytest
 import archon.notifications.approval_notifier as approval_notifier_mod
 import archon.notifications.push as push_mod
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalGate
+from archon.mobile.sync_store import MobileSyncStore
 from archon.notifications.approval_notifier import wrap_gate
 from archon.notifications.device_registry import DeviceRegistry, DeviceToken
 from archon.notifications.push import APNsBackend, FCMBackend, Notification, PushResult
@@ -98,6 +99,37 @@ def test_fcm_backend_invalid_token_marks_stale(monkeypatch: pytest.MonkeyPatch) 
     assert result.stale is True
 
 
+def test_fcm_backend_silent_background_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return _FakeResponse(status_code=200, payload={"name": "projects/demo/messages/msg-1"})
+
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.setattr(push_mod.httpx, "post", fake_post)
+
+    backend = FCMBackend(project_id="demo-project", server_key="legacy-key")
+    result = backend.send(
+        _device_token(platform="android"),
+        Notification(
+            title="",
+            body="",
+            data={"kind": "background_sync", "silent": "true"},
+            silent=True,
+            sound=None,
+        ),
+    )
+
+    assert result.success is True
+    message = captured["kwargs"]["json"]["message"]
+    assert "notification" not in message
+    assert message["android"]["priority"] == "high"
+    assert message["apns"]["headers"]["apns-push-type"] == "background"
+    assert message["apns"]["payload"]["aps"]["content-available"] == 1
+
+
 def test_fcm_backend_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_post(url: str, **kwargs):  # type: ignore[no-untyped-def]
         del url, kwargs
@@ -177,6 +209,38 @@ def test_apns_backend_development_vs_production_endpoint(monkeypatch: pytest.Mon
     assert "api.push.apple.com" in urls[1]
 
 
+def test_apns_backend_silent_background_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return _FakeResponse(status_code=200, text='{"reason":"Success"}')
+
+    monkeypatch.setattr(push_mod.httpx, "post", fake_post)
+    monkeypatch.setenv("APNS_KEY_ID", "KEY123")
+    monkeypatch.setenv("APNS_TEAM_ID", "TEAM123")
+    monkeypatch.setenv("APNS_KEY_FILE", str(_tmp_file("apns-silent", ".p8")))
+
+    backend = APNsBackend(bundle_id="com.archon.test")
+    result = backend.send(
+        _device_token(platform="ios"),
+        Notification(
+            title="",
+            body="",
+            data={"kind": "background_sync", "silent": "true"},
+            silent=True,
+            sound=None,
+        ),
+    )
+
+    assert result.success is True
+    assert captured["kwargs"]["headers"]["apns-push-type"] == "background"
+    assert captured["kwargs"]["headers"]["apns-priority"] == "5"
+    assert captured["kwargs"]["json"]["aps"]["content-available"] == 1
+    assert "alert" not in captured["kwargs"]["json"]["aps"]
+
+
 def test_device_registry_register_upsert_subset_and_prune() -> None:
     path = _tmp_db("registry")
     registry = DeviceRegistry(path=path)
@@ -233,12 +297,18 @@ async def test_approval_notifier_wrap_gate_sends_push_and_timeout_reminder(
 ) -> None:
     path = _tmp_db("approval-notifier")
     registry = DeviceRegistry(path=path)
+    sync_store = MobileSyncStore(path=_tmp_db("approval-sync-store"))
     registry.register("tenant-x", "ios", "ios-token-1")
     registry.register("tenant-x", "android", "android-token-1")
 
     notifier = _RecordingNotifier(registry)
     gate = ApprovalGate(default_timeout_seconds=0.02)
-    wrapped = wrap_gate(gate, registry, notifier)  # type: ignore[arg-type]
+    wrapped = wrap_gate(
+        gate,
+        registry,
+        notifier,  # type: ignore[arg-type]
+        sync_store=sync_store,
+    )
 
     sleep_calls: list[float] = []
 
@@ -271,3 +341,7 @@ async def test_approval_notifier_wrap_gate_sends_push_and_timeout_reminder(
     assert all(call["count"] == 2 for call in notifier.sent)
     assert sleep_calls
     assert sleep_calls[0] == pytest.approx(0.01, rel=1e-6, abs=1e-6)
+    sync_page = sync_store.list_events("tenant-x", since=0.0, limit=10)
+    assert len(sync_page.events) == 1
+    assert sync_page.events[0].event_type == "approval_required"
+    assert sync_page.events[0].payload["action_id"] == "approval-action-1"

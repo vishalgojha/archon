@@ -92,6 +92,26 @@ def test_render_windows_shims_target_repo_runtime() -> None:
     assert '"$PSScriptRoot\\..\\venv\\Scripts\\python.exe" -m archon.archon_cli @args' in ps1
 
 
+def test_resolve_command_path_returns_none_when_unavailable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    module = _installer_module()
+    monkeypatch.setattr(module.shutil, "which", lambda *_args, **_kwargs: None)
+
+    resolved = module.resolve_command_path("archon")
+
+    assert resolved is None
+
+
+def test_resolve_command_path_wraps_shutil_which_result(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    module = _installer_module()
+    shim = tmp_path / "archon.cmd"
+    shim.write_text("@echo off\r\n", encoding="utf-8")
+    monkeypatch.setattr(module.shutil, "which", lambda *_args, **_kwargs: str(shim))
+
+    resolved = module.resolve_command_path("archon")
+
+    assert resolved == shim.resolve()
+
+
 def test_default_install_root_uses_user_local_programs_on_windows(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\visha\AppData\Local")
 
