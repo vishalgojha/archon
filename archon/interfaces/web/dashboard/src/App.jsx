@@ -226,6 +226,7 @@
     const [mode, setMode] = useState(() => safeStorageGet("archon.dashboard.mode") || "mission_control");
     const [session, setSession] = useState(() => readStoredSession());
     const [agentsStatus, setAgentsStatus] = useState({ agents: {}, edges: [] });
+    const [leaderboard, setLeaderboard] = useState({ loading: false, rows: [], scope: "tenant" });
     const apiBase = useMemo(() => resolveApiBase(), []);
 
     useEffect(() => {
@@ -273,6 +274,49 @@
     const claims = useMemo(() => decodeJwtClaims(session.token), [session.token]);
     const tenantId = String(claims.sub || claims.tenant_id || claims.tid || "anonymous");
     const tier = String(claims.tier || "free");
+
+    useEffect(() => {
+      const token = String(session.token || "").trim();
+      const scope = tier === "enterprise" ? "global" : "tenant";
+      if (!token) {
+        setLeaderboard({ loading: false, rows: [], scope });
+        return;
+      }
+
+      let cancelled = false;
+      const params = new URLSearchParams({ days: "30", limit: "6", scope });
+      if (scope !== "global") {
+        params.set("tenant_id", tenantId);
+      }
+      setLeaderboard((previous) => ({ ...previous, loading: true, scope }));
+      fetch(`${apiBase}/analytics/leaderboard?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`leaderboard:${response.status}`);
+          }
+          return response.json();
+        })
+        .then((payload) => {
+          if (cancelled) {
+            return;
+          }
+          setLeaderboard({
+            loading: false,
+            rows: Array.isArray(payload) ? payload : [],
+            scope,
+          });
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setLeaderboard({ loading: false, rows: [], scope });
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [apiBase, session.token, tenantId, tier]);
 
     const workflow = useMemo(() => workflowFromHistory(history), [history]);
     const rounds = useMemo(() => buildDebateRounds(history), [history]);
@@ -392,6 +436,17 @@
                     <window.CostMeter spent={costState.spent} budget={costState.budget} history={costState.history} />
                   ) : (
                     <div className="empty-state">Cost meter component unavailable.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="card" style={{ minHeight: 200 }}>
+                <div className="card-header">Performance Leaderboard</div>
+                <div className="card-body">
+                  {window.LeaderboardCard ? (
+                    <window.LeaderboardCard rows={leaderboard.rows} loading={leaderboard.loading} scope={leaderboard.scope} />
+                  ) : (
+                    <div className="empty-state">Leaderboard component unavailable.</div>
                   )}
                 </div>
               </section>

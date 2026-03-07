@@ -18,10 +18,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from starlette.responses import Response, StreamingResponse
 
+from archon.analytics import AnalyticsCollector
+from archon.analytics.dashboard_api import create_router as create_analytics_router
+from archon.billing import BillingService, BillingStore, StripeGateway, StripeWebhookVerifier
 from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalRequiredError
 from archon.core.orchestrator import OrchestrationResult, Orchestrator
 from archon.interfaces.api.auth import AuthMiddleware, AuthSettings, websocket_auth_context
+from archon.interfaces.api.billing_api import create_router as create_billing_router
 from archon.interfaces.api.rate_limit import (
     InMemoryTierRateLimitStore,
     create_limiter,
@@ -52,7 +56,7 @@ class TaskResponse(BaseModel):
     mode: Literal["debate", "growth"]
     final_answer: str
     confidence: int
-    budget: dict[str, float | bool]
+    budget: dict[str, Any]
     debate: dict[str, Any] | None = None
     growth: dict[str, Any] | None = None
 
@@ -163,6 +167,21 @@ async def lifespan(app: FastAPI):
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
     app.state.orchestrator = Orchestrator(load_archon_config(config_path))
     app.state.auth_settings = AuthSettings.from_env()
+    app.state.analytics_collector = AnalyticsCollector(
+        path=os.getenv("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
+    )
+    stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "")
+    webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "")
+    stripe_live_mode = str(os.getenv("ARCHON_STRIPE_LIVE_MODE", "")).strip().lower() == "true"
+    app.state.billing_service = BillingService(
+        store=BillingStore(path=os.getenv("ARCHON_BILLING_DB", "archon_billing.sqlite3")),
+        approval_gate=app.state.orchestrator.approval_gate,
+        collector=app.state.analytics_collector,
+        gateway=StripeGateway(api_key=stripe_api_key, live_mode=stripe_live_mode),
+        webhook_verifier=(
+            StripeWebhookVerifier(webhook_secret) if str(webhook_secret).strip() else None
+        ),
+    )
     app.state.started_monotonic = time.monotonic()
     if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
         app.state.console_tenant_config = {}
@@ -171,6 +190,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        billing_service = getattr(app.state, "billing_service", None)
+        if isinstance(billing_service, BillingService) and billing_service.gateway is not None:
+            await billing_service.gateway.aclose()
         await app.state.orchestrator.aclose()
 
 
@@ -183,6 +205,7 @@ _exempt_paths = {
     "/webchat",
     "/webchat/token",
     "/webchat/upgrade",
+    "/v1/billing/webhooks/stripe",
     "/openapi.json",
     "/docs",
     "/redoc",
@@ -201,6 +224,8 @@ _rate_limit_handler = cast(
 )
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 app.state.webchat_app = mount_webchat(app, path="/webchat")
+app.include_router(create_billing_router())
+app.include_router(create_analytics_router())
 
 
 @app.get("/health")
@@ -478,6 +503,15 @@ async def run_task(request: Request, payload: TaskRequest) -> TaskResponse:
             language=payload.language,
             context=payload.context,
         )
+        await _meter_task_billing_usage(
+            tenant_id=request.state.auth.tenant_id,
+            task_id=result.task_id,
+            budget=result.budget,
+        )
+        await _emit_task_analytics(
+            tenant_id=request.state.auth.tenant_id,
+            result=result,
+        )
     except Exception as exc:  # pragma: no cover - generic scaffold guard
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return _to_response(result)
@@ -511,6 +545,15 @@ async def run_task_ws(websocket: WebSocket) -> None:
             context=request.context,
             event_sink=sink,
         )
+        await _meter_task_billing_usage(
+            tenant_id=websocket.state.auth.tenant_id,
+            task_id=result.task_id,
+            budget=result.budget,
+        )
+        await _emit_task_analytics(
+            tenant_id=websocket.state.auth.tenant_id,
+            result=result,
+        )
         await websocket.send_json({"type": "result", "payload": _to_response(result).model_dump()})
     except WebSocketDisconnect:
         return
@@ -532,6 +575,14 @@ async def approve_guarded_action(
     ok = orchestrator.approval_gate.approve(request_id, approver=approver, notes=payload.notes)
     if not ok:
         raise HTTPException(status_code=404, detail="Approval request not found.")
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "approval_granted",
+            "request_id": request_id,
+            "approver": approver,
+        }
+    )
     return {"status": "approved", "request_id": request_id}
 
 
@@ -549,6 +600,14 @@ async def deny_guarded_action(
     ok = orchestrator.approval_gate.deny(request_id, approver=approver, notes=payload.notes)
     if not ok:
         raise HTTPException(status_code=404, detail="Approval request not found.")
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "approval_denied",
+            "request_id": request_id,
+            "approver": approver,
+        }
+    )
     return {"status": "denied", "request_id": request_id}
 
 
@@ -594,6 +653,21 @@ async def send_outbound_email(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - external transport failure
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    provider_name = str(result.metadata.get("provider", "")).strip()
+    await _meter_outbound_action(
+        tenant_id=request.state.auth.tenant_id,
+        action_type="outbound_email",
+        provider=provider_name,
+        task_id=f"email-{request.state.auth.tenant_id}",
+    )
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "email_sent",
+            "provider": provider_name,
+            "task_id": f"email-{request.state.auth.tenant_id}",
+        }
+    )
 
     return EmailOutboundResponse(
         status="sent",
@@ -645,6 +719,22 @@ async def send_outbound_webchat(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - external transport failure
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    provider_name = str(result.metadata.get("provider", "")).strip()
+    await _meter_outbound_action(
+        tenant_id=request.state.auth.tenant_id,
+        action_type="outbound_webchat",
+        provider=provider_name,
+        task_id=f"webchat-{request.state.auth.tenant_id}",
+    )
+    await _emit_analytics_event(
+        {
+            "tenant_id": request.state.auth.tenant_id,
+            "event_type": "message_sent",
+            "provider": provider_name,
+            "task_id": f"webchat-{request.state.auth.tenant_id}",
+            "session_id": payload.session_id,
+        }
+    )
 
     return WebChatOutboundResponse(
         status="sent",
@@ -696,8 +786,8 @@ async def federation_execute(
 ) -> StreamingResponse:
     """Execute federated task locally and stream result tokens back to requester."""
 
-    del request
     orchestrator: Orchestrator = app.state.orchestrator
+    tenant_id = getattr(request.state.auth, "tenant_id", "system")
 
     async def _event_stream():
         started = time.monotonic()
@@ -716,6 +806,16 @@ async def federation_execute(
             )
             result_text = str(result.final_answer or "")
             spent_usd = float(result.budget.get("spent_usd", 0.0) or 0.0)
+            await _meter_task_billing_usage(
+                tenant_id=tenant_id,
+                task_id=result.task_id,
+                budget=result.budget,
+            )
+            await _emit_task_analytics(
+                tenant_id=tenant_id,
+                result=result,
+                federated=True,
+            )
             for token in _tokenize_federation(result_text):
                 yield json.dumps({"type": "token", "content": token}) + "\n"
             yield (
@@ -750,6 +850,7 @@ async def federation_execute(
         finally:
             await _emit_analytics_event(
                 {
+                    "tenant_id": tenant_id,
                     "event_type": "federation_task_executed",
                     "task_id": payload.task_id,
                     "requester_instance_id": payload.requester_instance_id,
@@ -976,12 +1077,192 @@ async def _emit_analytics_event(payload: dict[str, Any]) -> None:
     if not callable(record):
         return
     try:
+        event_type = str(payload.get("event_type", "state_change")).strip().lower() or "state_change"
+        tenant_id = str(payload.get("tenant_id", "system")).strip() or "system"
         maybe = record(
-            tenant_id="system",
-            event_type="state_change",
-            properties=dict(payload),
+            tenant_id=tenant_id,
+            event_type=event_type,
+            properties={
+                key: value
+                for key, value in dict(payload).items()
+                if key not in {"tenant_id", "event_type"}
+            },
         )
         if hasattr(maybe, "__await__"):
             await maybe
     except Exception:
         return
+
+
+async def _meter_task_billing_usage(
+    *,
+    tenant_id: str,
+    task_id: str,
+    budget: dict[str, Any],
+) -> None:
+    service = getattr(app.state, "billing_service", None)
+    if not isinstance(service, BillingService):
+        return
+    raw = budget.get("cost_by_provider_model", {})
+    if not isinstance(raw, dict):
+        return
+    normalized: dict[str, float] = {}
+    for key, value in raw.items():
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            continue
+        if amount > 0:
+            normalized[str(key)] = amount
+    if normalized:
+        await service.record_provider_model_spend(
+            tenant_id=tenant_id,
+            task_id=task_id,
+            cost_by_provider_model=normalized,
+        )
+
+
+async def _meter_outbound_action(
+    *,
+    tenant_id: str,
+    action_type: str,
+    provider: str,
+    task_id: str,
+) -> None:
+    service = getattr(app.state, "billing_service", None)
+    if not isinstance(service, BillingService):
+        return
+    await service.record_outbound_action(
+        tenant_id=tenant_id,
+        action_type=action_type,
+        provider=provider,
+        task_id=task_id,
+    )
+
+
+async def _emit_task_analytics(
+    *,
+    tenant_id: str,
+    result: OrchestrationResult,
+    federated: bool = False,
+) -> None:
+    budget = result.budget if isinstance(result.budget, dict) else {}
+    session_id = str(result.task_id).strip() or f"session-{int(time.time())}"
+
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "session_started",
+            "session_id": session_id,
+            "task_id": result.task_id,
+            "mode": result.mode,
+            "federated": federated,
+        }
+    )
+
+    for row in _task_agent_rows(result):
+        metadata = row.get("metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "agent_recruited",
+                "session_id": session_id,
+                "task_id": result.task_id,
+                "mode": result.mode,
+                "agent": row.get("agent"),
+                "role": row.get("role"),
+                "confidence": row.get("confidence"),
+                "provider": metadata.get("provider"),
+                "model": metadata.get("model"),
+                "cost_usd": metadata.get("cost_usd", 0.0),
+                "federated": federated,
+            }
+        )
+
+    for provider_model, amount in dict(budget.get("cost_by_provider_model", {}) or {}).items():
+        provider, model = _split_provider_model(str(provider_model))
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "cost_incurred",
+                "session_id": session_id,
+                "task_id": result.task_id,
+                "mode": result.mode,
+                "provider": provider,
+                "model": model,
+                "cost_usd": float(amount or 0.0),
+                "federated": federated,
+            }
+        )
+
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "quality_evaluated",
+            "session_id": session_id,
+            "task_id": result.task_id,
+            "mode": result.mode,
+            "quality_score": round(float(result.confidence) / 100.0, 4),
+            "confidence": result.confidence,
+            "federated": federated,
+        }
+    )
+
+    for optimization in list(budget.get("optimizations", []) or []):
+        if not isinstance(optimization, dict):
+            continue
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "cost_optimization_applied",
+                "session_id": session_id,
+                "task_id": result.task_id,
+                "mode": result.mode,
+                "federated": federated,
+                **optimization,
+            }
+        )
+
+    completion_event = "debate_completed" if result.mode == "debate" else "state_change"
+    completion_payload = {
+        "tenant_id": tenant_id,
+        "event_type": completion_event,
+        "session_id": session_id,
+        "task_id": result.task_id,
+        "mode": result.mode,
+        "confidence": result.confidence,
+        "spent_usd": float(budget.get("spent_usd", 0.0) or 0.0),
+        "federated": federated,
+    }
+    if completion_event == "state_change":
+        completion_payload["state"] = "growth_completed"
+    await _emit_analytics_event(completion_payload)
+
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "session_ended",
+            "session_id": session_id,
+            "task_id": result.task_id,
+            "mode": result.mode,
+            "confidence": result.confidence,
+            "spent_usd": float(budget.get("spent_usd", 0.0) or 0.0),
+            "federated": federated,
+        }
+    )
+
+
+def _task_agent_rows(result: OrchestrationResult) -> list[dict[str, Any]]:
+    if isinstance(result.debate, dict):
+        rounds = result.debate.get("rounds", [])
+        return [row for row in rounds if isinstance(row, dict)]
+    if isinstance(result.growth, dict):
+        reports = result.growth.get("agent_reports", [])
+        return [row for row in reports if isinstance(row, dict)]
+    return []
+
+
+def _split_provider_model(raw: str) -> tuple[str, str]:
+    provider, _sep, model = str(raw or "").partition("/")
+    return provider or "unknown", model or "unknown"

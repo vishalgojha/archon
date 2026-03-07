@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 
+from archon.agents.optimization import CostOptimizerAgent
 from archon.agents.outbound import EmailAgent, WebChatAgent
 from archon.config import ArchonConfig
 from archon.core.approval_gate import ApprovalDecision, ApprovalGate
@@ -51,6 +52,8 @@ class Orchestrator:
             cost_governor=self.cost_governor,
             live_mode=live_provider_calls,
         )
+        self.cost_optimizer = CostOptimizerAgent(self.provider_router)
+        self.provider_router.set_cost_optimizer(self.cost_optimizer)
         self.swarm_router = SwarmRouter(self.provider_router)
         self.growth_router = GrowthSwarmRouter(self.provider_router)
         self.approval_gate = ApprovalGate()
@@ -123,6 +126,10 @@ class Orchestrator:
                 delta="Debate-mode synthesis generated.",
                 reuse_conditions="Use for tasks requiring high-confidence synthesis.",
             )
+            self.provider_router.record_task_feedback(
+                effective_task_id,
+                quality_score=(outcome.confidence / 100.0),
+            )
 
             return OrchestrationResult(
                 task_id=effective_task_id,
@@ -167,6 +174,10 @@ class Orchestrator:
                 actual_outcome=growth_output["final_answer"],
                 delta="Growth-mode plan and action recommendations generated.",
                 reuse_conditions="Use for sales/distribution strategy and execution planning tasks.",
+            )
+            self.provider_router.record_task_feedback(
+                effective_task_id,
+                quality_score=(float(growth_output["confidence"]) / 100.0),
             )
 
             return OrchestrationResult(

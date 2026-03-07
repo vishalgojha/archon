@@ -26,6 +26,20 @@ ANALYTICS_EVENT_TYPES: tuple[str, ...] = (
     "partner_conversion",
     "session_started",
     "session_ended",
+    "state_change",
+    "quality_evaluated",
+    "cost_optimization_applied",
+    "federation_bid_requested",
+    "federation_task_executed",
+    "billing_customer_upserted",
+    "billing_subscription_changed",
+    "billing_usage_recorded",
+    "billing_invoice_generated",
+    "billing_invoice_paid",
+    "billing_webhook_processed",
+    "workflow_created",
+    "workflow_staged",
+    "workflow_rolled_back",
 )
 
 

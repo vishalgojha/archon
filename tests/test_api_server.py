@@ -385,3 +385,33 @@ def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyP
     assert payload["site_intent"]["primary"] == "saas"
     assert "script_tag" in payload["embed"]
     assert "<script" in payload["embed"]["script_tag"]
+
+
+def test_analytics_leaderboard_route_is_mounted_on_main_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    tenant = "tenant-analytics-mounted"
+
+    with TestClient(app) as client:
+        app.state.analytics_collector.record(
+            tenant_id=tenant,
+            event_type="agent_recruited",
+            properties={
+                "agent": "ResearcherAgent",
+                "mode": "debate",
+                "confidence": 81,
+                "cost_usd": 0.04,
+            },
+        )
+        response = client.get(
+            "/analytics/leaderboard",
+            params={"tenant_id": tenant, "scope": "tenant"},
+            headers=_auth_headers(tenant=tenant, tier="business"),
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert payload
+    assert payload[0]["agent"] == "ResearcherAgent"

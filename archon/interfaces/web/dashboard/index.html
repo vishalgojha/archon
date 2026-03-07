@@ -500,6 +500,87 @@
         margin-bottom: 4px;
       }
 
+      .leaderboard-list {
+        display: grid;
+        gap: 8px;
+        padding: 8px;
+      }
+
+      .leaderboard-item {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 8px;
+        align-items: start;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.22);
+        padding: 8px;
+      }
+
+      .leaderboard-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        border-radius: 8px;
+        background: rgba(15, 118, 110, 0.2);
+        color: #d4f4ef;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .leaderboard-main {
+        display: grid;
+        gap: 6px;
+      }
+
+      .leaderboard-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 13px;
+      }
+
+      .leaderboard-tenant {
+        font-size: 11px;
+        color: #dbeafe;
+        background: rgba(59, 130, 246, 0.2);
+        border-radius: 999px;
+        padding: 2px 6px;
+        white-space: nowrap;
+      }
+
+      .leaderboard-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .leaderboard-score {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .leaderboard-track {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 99px;
+        background: #242b34;
+      }
+
+      .leaderboard-fill {
+        height: 100%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #0f766e, #3b82f6);
+      }
+
       .task-dag-shell {
         min-height: 0;
         height: 100%;
@@ -629,6 +710,7 @@
     <script type="text/babel" src="./src/TaskDAG.jsx"></script>
     <script type="text/babel" src="./src/DebatePanel.jsx"></script>
     <script type="text/babel" src="./src/CostMeter.jsx"></script>
+    <script type="text/babel" src="./src/LeaderboardCard.jsx"></script>
     <script type="text/babel" src="./src/ApprovalQueue.jsx"></script>
     <script type="text/babel" src="./src/MemoryTimeline.jsx"></script>
     <script type="text/babel" src="./src/App.jsx"></script>

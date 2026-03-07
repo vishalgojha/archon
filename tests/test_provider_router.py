@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+from archon.agents.optimization import CostOptimizerAgent
 from archon.config import ArchonConfig
 from archon.core.cost_governor import CostGovernor
 from archon.providers.router import ProviderRouter, ProviderUnavailableError
@@ -62,5 +63,44 @@ def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch
     assert response.text.startswith("[simulated:openai/")
     assert snapshot["spent_usd"] > 0
     assert snapshot["remaining_usd"] < snapshot["budget_usd"]
+
+    asyncio.run(router.aclose())
+
+
+def test_router_applies_cost_optimizer_override_under_budget_pressure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+
+    governor = CostGovernor(default_budget_usd=1.0)
+    config = ArchonConfig()
+    router = ProviderRouter(config=config, cost_governor=governor, live_mode=False)
+    optimizer = CostOptimizerAgent(router, min_samples=1, pressure_threshold=0.8)
+    router.set_cost_optimizer(optimizer)
+
+    governor.start_task("learn-openai")
+    asyncio.run(router.invoke(role="coding", prompt="Write SQL", task_id="learn-openai"))
+    router.record_task_feedback("learn-openai", quality_score=0.93)
+
+    governor.start_task("learn-groq")
+    asyncio.run(
+        router.invoke(
+            role="coding",
+            prompt="Write SQL",
+            task_id="learn-groq",
+            provider_override="groq",
+        )
+    )
+    router.record_task_feedback("learn-groq", quality_score=0.90)
+
+    governor.start_task("pressure-task")
+    governor.add_cost("pressure-task", 0.9)
+    response = asyncio.run(router.invoke(role="coding", prompt="Build index", task_id="pressure-task"))
+    snapshot = governor.snapshot("pressure-task")
+
+    assert response.provider == "groq"
+    assert snapshot["optimizations"]
+    assert snapshot["optimizations"][0]["to_provider"] == "groq"
 
     asyncio.run(router.aclose())

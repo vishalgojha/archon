@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 class BudgetExceededError(RuntimeError):
@@ -16,6 +17,10 @@ class TaskSpendState:
     budget_usd: float
     spent_usd: float = 0.0
     soft_limit_notified: bool = False
+    cost_by_provider: dict[str, float] | None = None
+    cost_by_model: dict[str, float] | None = None
+    cost_by_provider_model: dict[str, float] | None = None
+    optimizations: list[dict[str, Any]] | None = None
 
 
 class CostGovernor:
@@ -42,7 +47,13 @@ class CostGovernor:
             1.0
         """
 
-        state = TaskSpendState(budget_usd=budget_usd or self.default_budget_usd)
+        state = TaskSpendState(
+            budget_usd=budget_usd or self.default_budget_usd,
+            cost_by_provider={},
+            cost_by_model={},
+            cost_by_provider_model={},
+            optimizations=[],
+        )
         self._tasks[task_id] = state
         return state
 
@@ -61,17 +72,38 @@ class CostGovernor:
             return False
         return True
 
-    def add_cost(self, task_id: str, cost_usd: float) -> dict[str, float | bool]:
+    def add_cost(
+        self,
+        task_id: str,
+        cost_usd: float,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> dict[str, float | bool | dict[str, float]]:
         """Add usage cost and enforce budget thresholds.
 
         Example:
-            >>> report = governor.add_cost("task-1", 0.05)
+            >>> report = governor.add_cost("task-1", 0.05, provider="openai", model="gpt-4o")
             >>> report["remaining_usd"] > 0
             True
         """
 
         state = self._require_state(task_id)
-        state.spent_usd = round(state.spent_usd + float(cost_usd), 6)
+        normalized_cost = float(cost_usd)
+        state.spent_usd = round(state.spent_usd + normalized_cost, 6)
+        if provider:
+            bucket = state.cost_by_provider or {}
+            bucket[provider] = round(bucket.get(provider, 0.0) + normalized_cost, 6)
+            state.cost_by_provider = bucket
+        if model:
+            bucket = state.cost_by_model or {}
+            bucket[model] = round(bucket.get(model, 0.0) + normalized_cost, 6)
+            state.cost_by_model = bucket
+        if provider or model:
+            composite = f"{provider or 'unknown'}/{model or 'unknown'}"
+            bucket = state.cost_by_provider_model or {}
+            bucket[composite] = round(bucket.get(composite, 0.0) + normalized_cost, 6)
+            state.cost_by_provider_model = bucket
 
         soft_limit_hit = False
         if not state.soft_limit_notified and state.spent_usd >= (
@@ -92,9 +124,29 @@ class CostGovernor:
             "spent_usd": state.spent_usd,
             "remaining_usd": remaining,
             "soft_limit_hit": soft_limit_hit,
+            "cost_by_provider": dict(state.cost_by_provider or {}),
+            "cost_by_model": dict(state.cost_by_model or {}),
+            "cost_by_provider_model": dict(state.cost_by_provider_model or {}),
+            "optimizations": list(state.optimizations or []),
         }
 
-    def snapshot(self, task_id: str) -> dict[str, float | bool]:
+    def record_optimization(self, task_id: str, optimization: dict[str, Any]) -> None:
+        """Persist one optimizer action on the task snapshot.
+
+        Example:
+            >>> governor = CostGovernor()
+            >>> governor.start_task("task-1")
+            >>> governor.record_optimization("task-1", {"role": "primary"})
+            >>> governor.snapshot("task-1")["optimizations"][0]["role"]
+            'primary'
+        """
+
+        state = self._require_state(task_id)
+        bucket = state.optimizations or []
+        bucket.append(dict(optimization))
+        state.optimizations = bucket
+
+    def snapshot(self, task_id: str) -> dict[str, Any]:
         """Return current budget snapshot for one task.
 
         Example:
@@ -108,6 +160,10 @@ class CostGovernor:
             "spent_usd": state.spent_usd,
             "remaining_usd": round(max(0.0, state.budget_usd - state.spent_usd), 6),
             "soft_limit_notified": state.soft_limit_notified,
+            "cost_by_provider": dict(state.cost_by_provider or {}),
+            "cost_by_model": dict(state.cost_by_model or {}),
+            "cost_by_provider_model": dict(state.cost_by_provider_model or {}),
+            "optimizations": list(state.optimizations or []),
         }
 
     def _require_state(self, task_id: str) -> TaskSpendState:

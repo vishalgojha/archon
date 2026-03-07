@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -257,6 +258,83 @@ class AnalyticsAggregator:
             for name, count in ordered[: max(1, min(int(limit), 20))]
         ]
 
+    def agent_leaderboard(
+        self,
+        start: Any,
+        end: Any,
+        *,
+        limit: int = 10,
+        tenant_id: str | None = None,
+        viewer_tenant_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Rank agent performance with anonymized cross-tenant benchmarking.
+
+        Example:
+            >>> aggregator.agent_leaderboard(0, 1, limit=5)
+            []
+        """
+
+        start_ts, end_ts = self._coerce_window(start, end)
+        scoped_rows = self._query_events(
+            tenant_id=tenant_id,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            event_type="agent_recruited",
+        )
+        if not scoped_rows:
+            return []
+
+        peer_rows = self._query_events(
+            tenant_id=None,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            event_type="agent_recruited",
+        )
+        scoped_stats = _aggregate_agent_rows(scoped_rows)
+        peer_stats = _aggregate_agent_rows(peer_rows)
+        peer_average_by_agent: dict[str, list[float]] = {}
+        for (_tenant, agent), stats in peer_stats.items():
+            peer_average_by_agent.setdefault(agent, [])
+        for (_tenant, agent), stats in peer_stats.items():
+            peer_average_by_agent[agent].append(float(stats["score"]))
+        benchmark_score = {
+            agent: round(sum(scores) / float(len(scores)), 4) if scores else 0.0
+            for agent, scores in peer_average_by_agent.items()
+        }
+
+        rows: list[dict[str, Any]] = []
+        for (row_tenant_id, agent), stats in scoped_stats.items():
+            alias = (
+                "self"
+                if viewer_tenant_id and row_tenant_id == viewer_tenant_id
+                else _anonymize_tenant(row_tenant_id)
+            )
+            peer_score = benchmark_score.get(agent, float(stats["score"]))
+            rows.append(
+                {
+                    "tenant": alias,
+                    "agent": agent,
+                    "mode": str(stats["mode"]),
+                    "score": round(float(stats["score"]), 4),
+                    "avg_confidence": round(float(stats["avg_confidence"]), 2),
+                    "avg_cost_usd": round(float(stats["avg_cost_usd"]), 6),
+                    "sample_size": int(stats["sample_size"]),
+                    "federation_share": round(float(stats["federation_share"]), 4),
+                    "benchmark_delta": round(float(stats["score"]) - float(peer_score), 4),
+                    "is_self": bool(viewer_tenant_id and row_tenant_id == viewer_tenant_id),
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                -float(item["score"]),
+                -float(item["avg_confidence"]),
+                str(item["agent"]),
+                str(item["tenant"]),
+            )
+        )
+        return rows[: max(1, min(int(limit), 100))]
+
     def raw_events(
         self,
         tenant_id: str,
@@ -302,21 +380,24 @@ class AnalyticsAggregator:
     def _query_events(
         self,
         *,
-        tenant_id: str,
+        tenant_id: str | None,
         start_ts: float | None,
         end_ts: float | None,
         event_type: str | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        tenant = str(tenant_id or "").strip()
-        if not tenant:
-            return []
-
         query = (
             "SELECT event_id, tenant_id, event_type, properties_json, timestamp, session_id "
-            "FROM analytics_events WHERE tenant_id = ?"
+            "FROM analytics_events WHERE 1=1"
         )
-        params: list[Any] = [tenant]
+        params: list[Any] = []
+
+        if tenant_id is not None:
+            tenant = str(tenant_id).strip()
+            if not tenant:
+                return []
+            query += " AND tenant_id = ?"
+            params.append(tenant)
 
         if event_type:
             query += " AND event_type = ?"
@@ -404,3 +485,68 @@ def _to_timestamp(value: Any) -> float:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.timestamp()
+
+
+def _aggregate_agent_rows(rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        props = row["properties"]
+        agent = str(props.get("agent") or props.get("agent_name") or "unknown").strip() or "unknown"
+        tenant_id = str(row["tenant_id"]).strip()
+        if not tenant_id:
+            continue
+        key = (tenant_id, agent)
+        bucket = grouped.setdefault(
+            key,
+            {
+                "sample_size": 0,
+                "total_confidence": 0.0,
+                "total_cost_usd": 0.0,
+                "federated": 0,
+                "mode_counts": {},
+            },
+        )
+        confidence = float(props.get("confidence", 0.0) or 0.0)
+        cost_usd = float(props.get("cost_usd", 0.0) or 0.0)
+        mode = str(props.get("mode") or "unknown").strip().lower() or "unknown"
+        bucket["sample_size"] += 1
+        bucket["total_confidence"] += confidence
+        bucket["total_cost_usd"] += cost_usd
+        bucket["federated"] += 1 if bool(props.get("federated")) else 0
+        mode_counts = bucket["mode_counts"]
+        mode_counts[mode] = int(mode_counts.get(mode, 0)) + 1
+
+    for bucket in grouped.values():
+        count = max(1, int(bucket["sample_size"]))
+        avg_confidence = bucket["total_confidence"] / float(count)
+        avg_cost = bucket["total_cost_usd"] / float(count)
+        federation_share = bucket["federated"] / float(count)
+        bucket["avg_confidence"] = avg_confidence
+        bucket["avg_cost_usd"] = avg_cost
+        bucket["federation_share"] = federation_share
+        bucket["mode"] = _dominant_mode(bucket["mode_counts"])
+        bucket["score"] = _performance_score(
+            avg_confidence=avg_confidence,
+            avg_cost_usd=avg_cost,
+            federation_share=federation_share,
+        )
+    return grouped
+
+
+def _dominant_mode(counts: dict[str, int]) -> str:
+    if not counts:
+        return "unknown"
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ordered[0][0]
+
+
+def _performance_score(*, avg_confidence: float, avg_cost_usd: float, federation_share: float) -> float:
+    quality_component = max(0.0, min(1.0, avg_confidence / 100.0)) * 0.75
+    cost_component = (1.0 / (1.0 + max(0.0, avg_cost_usd * 20.0))) * 0.20
+    federation_component = max(0.0, min(1.0, federation_share)) * 0.05
+    return round((quality_component + cost_component + federation_component) * 100.0, 4)
+
+
+def _anonymize_tenant(tenant_id: str) -> str:
+    digest = hashlib.sha256(str(tenant_id).encode("utf-8")).hexdigest()[:8]
+    return f"tenant-{digest}"

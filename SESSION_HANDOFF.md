@@ -1,13 +1,13 @@
 # SESSION_HANDOFF
 
 ## Snapshot
-- Date: 2026-03-06
+- Date: 2026-03-07
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Sprint status: Prompts 1-30 built
-- Test count target: 350+ passing
+- Sprint status: Prompts 1-40 built
+- Verification: full suite passing (`pytest tests archon/tests -q` -> 316 passed, 9 skipped)
 
-## Built ✅ (30 Items)
+## Built ✅ (40 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
 2. Growth swarm runtime (Prospector, ICP, Outreach, Nurture, RevenueIntel, Partner, ChurnDefense).
 3. Approval gate framework for high/medium risk action enforcement and audit trail.
@@ -38,33 +38,29 @@
 28. SOC2 audit export module (`archon/compliance/audit_export.py`).
 29. Data retention policy module (`archon/compliance/retention.py`).
 30. Encryption-at-rest layer (`archon/compliance/encryption.py`) with tenant-scoped key derivation and rotation.
+31. Real-time translation streaming (`archon/vernacular/streaming.py`) with WebChat translation-mode protocol wiring.
+32. Multi-agent federation co-solving (`archon/federation/collab.py`) with bid/delegate flow and federation API endpoints.
+33. Marketplace agent sandboxing (`archon/marketplace/sandbox.py`, `archon/marketplace/runner.py`) for isolated third-party execution.
+34. Automated red-teaming (`archon/redteam/`) for adversarial payload generation, scanning, and auto-hardening hooks.
+35. Civilian mobile approval deep-link routing (`archon/notifications/deeplink.py`) and push approval-request integration.
+36. ARCHON billing stack (`archon/billing/`, `archon/interfaces/api/billing_api.py`) with Stripe abstraction, metering, invoices, webhooks, tenant isolation, and approval-gated external mutations.
+37. On-prem enterprise delivery (`deploy/`, `archon/deploy/`) with production compose bundle, Helm chart, deploy validation CLI, and worker entrypoint.
+38. Automated PR red-team regression (`archon/redteam/regression.py`, CLI, `.github/workflows/ci.yml`) with markdown/JSON artifacts and failure thresholds wired into required CI checks.
+39. Cost optimizer agent (`archon/agents/optimization/`) wired into `ProviderRouter` and `CostGovernor` to learn lower-cost provider/model profiles, auto-downgrade under budget pressure, and emit optimization analytics.
+40. Agent performance leaderboard (`archon/analytics/aggregator.py`, `archon/analytics/dashboard_api.py`, dashboard SPA) with anonymized cross-tenant benchmarking, tenant-safe access control, and Mission Control UI card.
 
 ## Pending
-1. Real-time translation streaming
-2. Multi-agent federation (cross-instance co-solving)
-3. Civilian mobile: push deep-link to approval screen
-4. Marketplace: agent sandboxing (run third-party agents in isolated subprocess)
-5. Automated red-teaming (adversarial inputs to find agent failure modes)
+- No open items remain from the previous sprint backlog.
 
 ## NEXT CODEX PROMPT
-Continue building ARCHON. SOC2 module done and tests pass.
+Continue building ARCHON. Sprint 4 is fully complete and the full suite passes.
 
-Build real-time translation streaming in `archon/vernacular/` and API wiring in `archon/interfaces/api/`:
-- Stream translated partial tokens while source tokens arrive (not just final translation).
-- Add `StreamingTranslator` with provider abstraction and fallback buffering.
-- Add `translate_stream(source_lang, target_lang, token_iter)` async generator yielding `{source_chunk, translated_chunk, is_final}`.
-- Preserve sentence boundaries and punctuation stability across partial updates.
-- Add timeout, cancellation, and retry behavior for unstable provider streams.
-- Emit analytics events for stream_started, stream_chunk, stream_completed, stream_failed.
-- Add FastAPI endpoint `POST /v1/translate/stream` (SSE) with tenant auth + rate limit.
-- Ensure tenant isolation and ApprovalGate for any external translation provider calls.
+Suggested next sprint:
+- Persist cost optimizer profiles into analytics-backed storage so downgrade decisions survive process restarts.
+- Add regression trend reporting / PR annotations so red-team regressions are visible without downloading artifacts.
+- Extend leaderboard drill-downs with per-agent timeseries, federation-only slices, and exportable benchmark snapshots.
 
-Tests to add/update:
-- Unit tests for chunk accumulation, fallback behavior, and cancellation safety.
-- API tests for SSE shape, auth enforcement, and tenant mismatch handling.
-- Integration test validating translated chunk progression and final completion event.
-
-Constraints:
-- Do not break existing APIs.
-- Full passing tests before done (`pytest tests archon/tests -q`).
-- Update `SESSION_HANDOFF.md` with pass count and remaining backlog after completion.
+Verification baseline:
+- `pytest tests/test_provider_router.py tests/test_cost_governor.py tests/test_api_server.py archon/tests/test_analytics.py archon/tests/test_cli.py archon/tests/test_redteam.py archon/tests/test_redteam_regression.py archon/tests/test_cost_optimizer.py -q`
+- `pytest tests archon/tests/test_integration.py -q`
+- `pytest tests archon/tests -q`

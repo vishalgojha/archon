@@ -16,8 +16,10 @@ import yaml
 from archon.api.auth import create_tenant_token
 from archon.config import load_archon_config
 from archon.core.orchestrator import Orchestrator
+from archon.deploy.cli import deploy_group
 from archon.federation.peer_discovery import Peer, PeerRegistry
 from archon.memory.store import MemoryStore
+from archon.redteam import RegressionRunner
 from archon.validate_config import main as validate_config_main
 
 try:  # pragma: no cover - optional dependency
@@ -101,6 +103,9 @@ def _resolve_git_sha() -> str:
 @click.group()
 def cli() -> None:
     """ARCHON CLI."""
+
+
+cli.add_command(deploy_group)
 
 
 @cli.command("validate")
@@ -279,6 +284,62 @@ def peers_add_command(address: str, capabilities: tuple[str, ...], config_path: 
     printer.print(f"Peer added: {registered.peer_id} @ {registered.address}")
 
 
+@cli.group("redteam")
+def redteam_group() -> None:
+    """Automated red-team regression operations."""
+
+
+@redteam_group.command("regression")
+@click.option("--config", "config_path", default=DEFAULT_CONFIG_PATH, show_default=True)
+@click.option(
+    "--output-dir",
+    default="artifacts/redteam",
+    show_default=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--payloads-per-vector", default=1, show_default=True, type=int)
+@click.option("--live-providers", is_flag=True, default=False)
+def redteam_regression_command(
+    config_path: str,
+    output_dir: Path,
+    payloads_per_vector: int,
+    live_providers: bool,
+) -> None:
+    """Run a deterministic red-team regression sweep and export artifacts."""
+
+    outcome = asyncio.run(
+        _run_redteam_regression(
+            config_path=config_path,
+            output_dir=output_dir,
+            payloads_per_vector=payloads_per_vector,
+            live_provider_calls=live_providers,
+        )
+    )
+    printer = _Printer()
+    printer.print(f"Regression scan: {outcome.report.scan_id}")
+    printer.print(f"Payloads: {outcome.report.total_payloads}")
+    printer.print(f"Findings: {len(outcome.report.findings)}")
+    printer.print(f"Markdown report: {outcome.markdown_path}")
+    printer.print(f"JSON report: {outcome.json_path}")
+    if outcome.failed_categories:
+        printer.print(
+            "Failed categories: "
+            + ", ".join(
+                f"{category}={value:.3f}" for category, value in sorted(outcome.failed_categories.items())
+            )
+        )
+    if outcome.blocking_findings:
+        printer.print(
+            "Blocking findings: "
+            + ", ".join(
+                f"{finding.agent_name}:{finding.failure_mode}:{finding.severity}"
+                for finding in outcome.blocking_findings
+            )
+        )
+    if not outcome.passed:
+        raise click.ClickException("Red-team regression failed.")
+
+
 @cli.group("token")
 def token_group() -> None:
     """Tenant token operations."""
@@ -302,6 +363,25 @@ def version_command() -> None:
     """Print ARCHON version + git sha."""
 
     click.echo(f"ARCHON {_resolve_version()} (git {_resolve_git_sha()})")
+
+
+async def _run_redteam_regression(
+    *,
+    config_path: str,
+    output_dir: Path,
+    payloads_per_vector: int,
+    live_provider_calls: bool,
+):
+    config = _load_config(config_path)
+    orchestrator = Orchestrator(config=config, live_provider_calls=live_provider_calls)
+    try:
+        runner = RegressionRunner(orchestrator=orchestrator)
+        return await runner.run(
+            output_dir=output_dir,
+            payloads_per_vector=payloads_per_vector,
+        )
+    finally:
+        await orchestrator.aclose()
 
 
 def main() -> None:

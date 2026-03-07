@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -117,3 +118,29 @@ def test_version_command_prints_version_string(monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(cli, ["version"])
     assert result.exit_code == 0
     assert "ARCHON 9.9.9 (git abc1234)" in result.output
+
+
+def test_redteam_regression_command_reports_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp_path = Path("archon/tests/_tmp_redteam/cli-command")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    async def fake_run_redteam_regression(**kwargs):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(
+            report=SimpleNamespace(scan_id="scan-1", total_payloads=8, findings=[]),
+            passed=True,
+            markdown_path=tmp_path / "scan.md",
+            json_path=tmp_path / "scan.json",
+            failed_categories={},
+            blocking_findings=[],
+        )
+
+    monkeypatch.setattr("archon.archon_cli._run_redteam_regression", fake_run_redteam_regression)
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["redteam", "regression", "--output-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "Regression scan: scan-1" in result.output
+    assert "Markdown report:" in result.output

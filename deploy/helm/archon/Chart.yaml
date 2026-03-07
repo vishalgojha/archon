@@ -1,0 +1,6 @@
+apiVersion: v2
+name: archon
+description: On-prem deployment chart for ARCHON
+type: application
+version: 0.1.0
+appVersion: 0.1.0

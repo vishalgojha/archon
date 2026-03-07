@@ -8,6 +8,7 @@ from archon.redteam.adversarial import (
     TrialResult,
 )
 from archon.redteam.hardening import AutoHardener, HardeningResult, sanitize_prompt
+from archon.redteam.regression import RegressionOutcome, RegressionRunner, RegressionThresholds
 from archon.redteam.scanner import Finding, ScanReport, VulnerabilityScanner
 
 __all__ = [
@@ -18,6 +19,9 @@ __all__ = [
     "Finding",
     "HardeningResult",
     "RedTeamer",
+    "RegressionOutcome",
+    "RegressionRunner",
+    "RegressionThresholds",
     "ScanReport",
     "TrialResult",
     "VulnerabilityScanner",

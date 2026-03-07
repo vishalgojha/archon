@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from archon.config import SUPPORTED_PROVIDERS, ArchonConfig
 from archon.core.cost_governor import CostGovernor
 from archon.providers.types import ProviderResponse, ProviderSelection, ProviderUsage
+
+if TYPE_CHECKING:
+    from archon.agents.optimization import CostOptimizerAgent
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -135,11 +138,21 @@ class ProviderRouter:
         self._cost_governor = cost_governor
         self._live_mode = live_mode
         self._http = httpx.AsyncClient(timeout=timeout_seconds)
+        self._cost_optimizer: CostOptimizerAgent | None = None
 
     async def aclose(self) -> None:
         """Close network resources used by the router."""
 
         await self._http.aclose()
+
+    def set_cost_optimizer(self, optimizer: "CostOptimizerAgent | None") -> None:
+        """Attach a cost optimizer agent for budget-pressure downgrades.
+
+        Example:
+            >>> router.set_cost_optimizer(None)
+        """
+
+        self._cost_optimizer = optimizer
 
     def resolve_provider(
         self,
@@ -198,6 +211,7 @@ class ProviderRouter:
             model_override=model_override,
             provider_override=provider_override,
         )
+        selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
 
         if not self._live_mode:
             response = self._simulate_response(prompt, selection)
@@ -209,8 +223,32 @@ class ProviderRouter:
             response = await self._call_openai_compatible(selection, prompt, system_prompt)
 
         if task_id and self._cost_governor:
-            self._cost_governor.add_cost(task_id=task_id, cost_usd=response.usage.cost_usd)
+            self._cost_governor.add_cost(
+                task_id=task_id,
+                cost_usd=response.usage.cost_usd,
+                provider=selection.provider,
+                model=selection.model,
+            )
+        if task_id and self._cost_optimizer is not None:
+            self._cost_optimizer.observe_selection(
+                task_id,
+                role=role,
+                provider=selection.provider,
+                model=selection.model,
+                cost_usd=response.usage.cost_usd,
+            )
         return response
+
+    def record_task_feedback(self, task_id: str, *, quality_score: float) -> None:
+        """Feed task-quality feedback back into the optimizer.
+
+        Example:
+            >>> router.record_task_feedback("task-1", quality_score=0.9)
+        """
+
+        if self._cost_optimizer is None:
+            return
+        self._cost_optimizer.record_task_feedback(task_id, quality_score=quality_score)
 
     def _provider_priority_chain(self, role: str, provider_override: str | None) -> list[str]:
         if provider_override:
@@ -312,10 +350,9 @@ class ProviderRouter:
         prompt_tokens = _estimate_tokens(prompt)
         completion_tokens = max(24, min(256, int(prompt_tokens * 0.6)))
         usage = self._usage_for(selection.provider, prompt_tokens, completion_tokens)
-        preview = " ".join(prompt.split())[:180]
         text = (
             f"[simulated:{selection.provider}/{selection.model}] "
-            f"{preview if preview else 'no prompt content'}"
+            "Policy-compliant simulated response."
         )
         return ProviderResponse(
             text=text,
@@ -324,6 +361,55 @@ class ProviderRouter:
             usage=usage,
             raw={"simulated": True, "source": selection.source},
         )
+
+    def _optimize_selection_if_needed(
+        self,
+        *,
+        task_id: str | None,
+        selection: ProviderSelection,
+    ) -> ProviderSelection:
+        if task_id is None or self._cost_optimizer is None or self._cost_governor is None:
+            return selection
+
+        try:
+            snapshot = self._cost_governor.snapshot(task_id)
+        except KeyError:
+            return selection
+
+        recommendation = self._cost_optimizer.recommend(
+            role=selection.role,
+            current_provider=selection.provider,
+            current_model=selection.model,
+            spend_snapshot=snapshot,
+        )
+        if recommendation is None:
+            return selection
+
+        candidate = self._try_provider(
+            recommendation.to_provider,
+            selection.role,
+            recommendation.to_model,
+        )
+        if candidate is None:
+            return selection
+        if candidate.provider == selection.provider and candidate.model == selection.model:
+            return selection
+
+        self._cost_governor.record_optimization(
+            task_id,
+            {
+                "role": selection.role,
+                "from_provider": selection.provider,
+                "from_model": selection.model,
+                "to_provider": candidate.provider,
+                "to_model": candidate.model,
+                "spend_ratio": recommendation.spend_ratio,
+                "estimated_savings_ratio": recommendation.estimated_savings_ratio,
+                "reason": recommendation.reason,
+                "sample_size": recommendation.sample_size,
+            },
+        )
+        return candidate
 
     async def _call_openai_compatible(
         self, selection: ProviderSelection, prompt: str, system_prompt: str | None

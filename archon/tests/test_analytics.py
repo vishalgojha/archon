@@ -175,6 +175,61 @@ def test_aggregator_metrics_daily_cost_approval_and_swarm_efficiency() -> None:
     assert aggregator.swarm_efficiency("tenant-a", start, end) == 1.5
 
 
+def test_agent_leaderboard_anonymizes_cross_tenant_benchmarks() -> None:
+    db_path = _tmp_db("leaderboard")
+    collector = AnalyticsCollector(path=db_path)
+
+    now = time.time()
+    collector.batch_record(
+        [
+            {
+                "tenant_id": "tenant-a",
+                "event_type": "agent_recruited",
+                "timestamp": now - 10,
+                "properties": {
+                    "agent": "ProspectorAgent",
+                    "mode": "growth",
+                    "confidence": 82,
+                    "cost_usd": 0.04,
+                    "federated": False,
+                },
+            },
+            {
+                "tenant_id": "tenant-b",
+                "event_type": "agent_recruited",
+                "timestamp": now - 9,
+                "properties": {
+                    "agent": "ProspectorAgent",
+                    "mode": "growth",
+                    "confidence": 80,
+                    "cost_usd": 0.02,
+                    "federated": True,
+                },
+            },
+            {
+                "tenant_id": "tenant-b",
+                "event_type": "agent_recruited",
+                "timestamp": now - 8,
+                "properties": {
+                    "agent": "ResearcherAgent",
+                    "mode": "debate",
+                    "confidence": 74,
+                    "cost_usd": 0.05,
+                    "federated": False,
+                },
+            },
+        ]
+    )
+
+    aggregator = AnalyticsAggregator(path=db_path)
+    rows = aggregator.agent_leaderboard(now - 60, now + 60, limit=10, viewer_tenant_id="tenant-a")
+
+    assert rows
+    assert all("tenant_id" not in row for row in rows)
+    assert all(str(row["tenant"]).startswith("tenant-") or row["tenant"] == "self" for row in rows)
+    assert all("benchmark_delta" in row for row in rows)
+
+
 def test_dashboard_api_auth_mismatch_timeseries_and_limit(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("ARCHON_JWT_SECRET", "test-secret")
     auth_module.set_rate_limiter(auth_module.RateLimiter())
@@ -257,3 +312,65 @@ def test_dashboard_api_auth_mismatch_timeseries_and_limit(monkeypatch) -> None: 
         rows = limited.json()
         assert isinstance(rows, list)
         assert len(rows) == 2
+
+
+def test_dashboard_api_leaderboard_requires_enterprise_for_global_scope(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "test-secret")
+    auth_module.set_rate_limiter(auth_module.RateLimiter())
+
+    db_path = _tmp_db("leaderboard-api")
+    app, collector, _aggregator = _build_app(db_path)
+
+    now = time.time()
+    collector.batch_record(
+        [
+            {
+                "tenant_id": "tenant-a",
+                "event_type": "agent_recruited",
+                "timestamp": now - 5,
+                "properties": {
+                    "agent": "ProspectorAgent",
+                    "mode": "growth",
+                    "confidence": 86,
+                    "cost_usd": 0.03,
+                },
+            },
+            {
+                "tenant_id": "tenant-b",
+                "event_type": "agent_recruited",
+                "timestamp": now - 4,
+                "properties": {
+                    "agent": "ResearcherAgent",
+                    "mode": "debate",
+                    "confidence": 79,
+                    "cost_usd": 0.05,
+                },
+            },
+        ]
+    )
+
+    with TestClient(app) as client:
+        tenant_scope = client.get(
+            "/analytics/leaderboard",
+            params={"tenant_id": "tenant-a", "scope": "tenant"},
+            headers=_headers("tenant-a", tier="pro"),
+        )
+        assert tenant_scope.status_code == 200
+
+        global_forbidden = client.get(
+            "/analytics/leaderboard",
+            params={"scope": "global"},
+            headers=_headers("tenant-a", tier="pro"),
+        )
+        assert global_forbidden.status_code == 403
+
+        global_ok = client.get(
+            "/analytics/leaderboard",
+            params={"scope": "global"},
+            headers=_headers("ops-root", tier="enterprise"),
+        )
+        assert global_ok.status_code == 200
+        rows = global_ok.json()
+        assert isinstance(rows, list)
+        assert rows
+        assert all("tenant-a" not in str(row) and "tenant-b" not in str(row) for row in rows)
