@@ -17,6 +17,7 @@ from archon.interfaces.webchat.auth import (
     identity_to_tenant_context,
     verify_webchat_token,
 )
+from archon.interfaces.webchat.server import create_webchat_app
 from archon.interfaces.webchat.session_store import (
     MAX_HISTORY_MESSAGES,
     InMemorySessionStore,
@@ -25,6 +26,7 @@ from archon.interfaces.webchat.session_store import (
     SQLiteSessionStore,
     create_session_store,
 )
+from archon.versioning import resolve_version
 
 
 def _temp_db_path(prefix: str) -> Path:
@@ -82,6 +84,12 @@ def test_message_model_auto_id_and_roundtrip() -> None:
     assert message.id.startswith("msg-")
     assert len(message.id) == len("msg-") + 12
     assert restored.to_dict() == payload
+
+
+def test_webchat_app_uses_runtime_version() -> None:
+    app = create_webchat_app()
+
+    assert app.version == resolve_version()
 
 
 @pytest.mark.asyncio

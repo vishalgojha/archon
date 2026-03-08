@@ -120,6 +120,85 @@ def test_version_command_prints_version_string(monkeypatch: pytest.MonkeyPatch) 
     assert "ARCHON 9.9.9 (git abc1234)" in result.output
 
 
+def test_install_command_invokes_runtime_installer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_install(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        return 0
+
+    monkeypatch.setattr("archon.archon_cli.runtime_installer.install", fake_install)
+    runner = CliRunner()
+    install_root = tmp_path / "archon-home"
+    repo_root = tmp_path / "repo"
+    result = runner.invoke(
+        cli,
+        [
+            "install",
+            "--home",
+            str(install_root),
+            "--repo-root",
+            str(repo_root),
+            "--dev",
+            "--skip-path",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0
+    assert calls == [
+        {
+            "repo_root": repo_root,
+            "install_root": install_root,
+            "include_dev": True,
+            "skip_path": True,
+            "dry_run": True,
+        }
+    ]
+
+
+def test_uninstall_command_cancels_without_confirmation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    called = False
+
+    def fake_uninstall(**kwargs):  # type: ignore[no-untyped-def]
+        nonlocal called
+        called = True
+        return 0
+
+    monkeypatch.setattr("archon.archon_cli.runtime_installer.uninstall", fake_uninstall)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["uninstall", "--home", str(tmp_path)], input="n\n")
+    assert result.exit_code == 0
+    assert "Uninstall cancelled." in result.output
+    assert called is False
+
+
+def test_unistall_alias_invokes_runtime_installer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_uninstall(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        return 0
+
+    monkeypatch.setattr("archon.archon_cli.runtime_installer.uninstall", fake_uninstall)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["unistall", "--home", str(tmp_path), "--yes", "--skip-path", "--dry-run"],
+    )
+    assert result.exit_code == 0
+    assert calls == [
+        {
+            "install_root": tmp_path,
+            "skip_path": True,
+            "dry_run": True,
+        }
+    ]
+
+
 def test_redteam_regression_command_reports_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     tmp_path = Path("archon/tests/_tmp_redteam/cli-command")
     tmp_path.mkdir(parents=True, exist_ok=True)

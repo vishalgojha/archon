@@ -43,6 +43,7 @@ from archon.multimodal import (
 from archon.notifications.device_registry import DeviceRegistry
 from archon.notifications.push import PushNotifier
 from archon.vernacular.streaming import StreamingTranslator
+from archon.versioning import resolve_version
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def create_webchat_app(
         True
     """
 
-    app = FastAPI(title="ARCHON WebChat", version="0.1.0")
+    app = FastAPI(title="ARCHON WebChat", version=resolve_version())
     app.state.runtime = WebChatRuntime(
         session_store=session_store or _build_default_store(),
         orchestrator=orchestrator,

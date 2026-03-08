@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.metadata
 import io
 import json
 import os
@@ -16,12 +15,13 @@ import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import click
 import httpx
 import yaml
 
+from archon import runtime_installer
 from archon.api.auth import create_tenant_token
 from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalGate
@@ -34,6 +34,7 @@ from archon.memory.store import MemoryStore
 from archon.partners.registry import PartnerRegistry
 from archon.redteam import RegressionRunner
 from archon.validate_config import main as validate_config_main
+from archon.versioning import resolve_git_sha, resolve_version
 
 try:  # pragma: no cover - optional dependency
     from rich import box
@@ -48,9 +49,10 @@ except Exception:  # pragma: no cover - optional dependency
     Table = None
     Text = None
 
-ARCHON_VERSION_FALLBACK = "0.1.0"
 DEFAULT_CONFIG_PATH = "config.archon.yaml"
 DEFAULT_SERVER_URL = "http://127.0.0.1:8000"
+DEFAULT_INSTALL_ROOT = str(runtime_installer.default_install_root())
+DEFAULT_INSTALL_REPO_ROOT = str(Path(__file__).resolve().parents[1])
 ARCHON_ASCII_ART = (
     "    ___    ____  ________  ______  _   __",
     "   /   |  / __ \\/ ____/ / / / __ \\/ | / /",
@@ -718,24 +720,46 @@ def _resolve_mode(mode: str, prompt: str) -> str:
 
 
 def _resolve_version() -> str:
-    try:
-        return importlib.metadata.version("archon")
-    except Exception:
-        return ARCHON_VERSION_FALLBACK
+    return resolve_version()
 
 
 def _resolve_git_sha() -> str:
+    return resolve_git_sha()
+
+
+def _run_installer_action(action: str, callback: Callable[[], int]) -> None:
     try:
-        repo_root = Path(__file__).resolve().parents[1]
-        value = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=str(repo_root),
-            stderr=subprocess.DEVNULL,
-            text=True,
+        result = callback()
+    except SystemExit as exc:
+        code = exc.code
+        if code in (None, 0):
+            return
+        if isinstance(code, int):
+            raise click.exceptions.Exit(code) from exc
+        raise click.ClickException(f"{action} failed: {code}") from exc
+
+    exit_code = 0 if result is None else int(result)
+    if exit_code:
+        raise click.exceptions.Exit(exit_code)
+
+
+def _uninstall_command_impl(home: Path, yes: bool, skip_path: bool, dry_run: bool) -> None:
+    if not dry_run and not yes:
+        confirmed = click.confirm(
+            f"Remove the ARCHON runtime at '{home}'?",
+            default=False,
         )
-        return value.strip() or "unknown"
-    except Exception:
-        return "unknown"
+        if not confirmed:
+            click.echo("Uninstall cancelled.")
+            return
+    _run_installer_action(
+        "Uninstall",
+        lambda: runtime_installer.uninstall(
+            install_root=home,
+            skip_path=skip_path,
+            dry_run=dry_run,
+        ),
+    )
 
 
 def _normalize_base_url(base_url: str) -> str:
@@ -1066,6 +1090,75 @@ def onboard_command(config_path: str, yes: bool) -> bool:
     return _run_onboarding_wizard(config_path=config_path, yes=yes)
 
 
+@cli.command("install")
+@click.option(
+    "--home",
+    default=DEFAULT_INSTALL_ROOT,
+    show_default=True,
+    type=click.Path(path_type=Path),
+)
+@click.option(
+    "--repo-root",
+    default=DEFAULT_INSTALL_REPO_ROOT,
+    show_default=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--dev", is_flag=True, default=False)
+@click.option("--skip-path", is_flag=True, default=False)
+@click.option("--dry-run", is_flag=True, default=False)
+def install_command(
+    home: Path,
+    repo_root: Path,
+    dev: bool,
+    skip_path: bool,
+    dry_run: bool,
+) -> None:
+    """Install ARCHON into the dedicated user-local runtime."""
+
+    _run_installer_action(
+        "Install",
+        lambda: runtime_installer.install(
+            repo_root=repo_root,
+            install_root=home,
+            include_dev=dev,
+            skip_path=skip_path,
+            dry_run=dry_run,
+        ),
+    )
+
+
+@cli.command("uninstall")
+@click.option(
+    "--home",
+    default=DEFAULT_INSTALL_ROOT,
+    show_default=True,
+    type=click.Path(path_type=Path),
+)
+@click.option("--skip-path", is_flag=True, default=False)
+@click.option("--dry-run", is_flag=True, default=False)
+@click.option("--yes", is_flag=True, default=False)
+def uninstall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> None:
+    """Uninstall the dedicated ARCHON runtime."""
+
+    _uninstall_command_impl(home=home, yes=yes, skip_path=skip_path, dry_run=dry_run)
+
+
+@cli.command("unistall", hidden=True)
+@click.option(
+    "--home",
+    default=DEFAULT_INSTALL_ROOT,
+    show_default=True,
+    type=click.Path(path_type=Path),
+)
+@click.option("--skip-path", is_flag=True, default=False)
+@click.option("--dry-run", is_flag=True, default=False)
+@click.option("--yes", is_flag=True, default=False)
+def unistall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> None:
+    """Backward-compatible alias for a common misspelling."""
+
+    _uninstall_command_impl(home=home, yes=yes, skip_path=skip_path, dry_run=dry_run)
+
+
 @cli.command("serve")
 @click.pass_context
 @click.option("--host", default="127.0.0.1", show_default=True)
@@ -1102,10 +1195,13 @@ def health_command(base_url: str, timeout_s: float) -> None:
 
     status = str(payload.get("status", "unknown"))
     version = str(payload.get("version", "unknown"))
+    git_sha = str(payload.get("git_sha", "") or "").strip()
     db_status = str(payload.get("db_status", "unknown"))
     uptime_s = float(payload.get("uptime_s", 0.0) or 0.0)
     printer.print(f"Status: {status}")
     printer.print(f"Version: {version}")
+    if git_sha:
+        printer.print(f"Git SHA: {git_sha}")
     printer.print(f"DB: {db_status}")
     printer.print(f"Uptime: {uptime_s:.2f}s")
 

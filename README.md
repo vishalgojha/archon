@@ -11,21 +11,25 @@ This repository bootstraps the ARCHON runtime with:
 
 ## Quick Start
 
-1. Install ARCHON globally for your user:
+1. Install ARCHON globally for your user from PowerShell:
 
 ```powershell
-.\install.cmd
+.\install.ps1
 ```
 
-Use `.\install.cmd --dev` if you want the lint/test toolchain inside the dedicated ARCHON runtime.
+If you are using Command Prompt instead of PowerShell, use `install.cmd`.
+Use `.\install.ps1 --dev` if you want the lint/test toolchain inside the dedicated ARCHON runtime.
 The installer:
 
 - uses your available `py -3` or `python` interpreter instead of hardcoding `py -3.11`
 - creates an isolated runtime under `%LOCALAPPDATA%\Programs\Archon`
 - writes `archon` and `archon-server` shims into `%LOCALAPPDATA%\Programs\Archon\bin`
 - avoids replacing the shared `archon.exe` in your system Python
+- refreshes the current PowerShell session so `archon` works immediately when run via `install.ps1`
 
-Open a new shell after installation so the updated user `PATH` is picked up.
+Open a new shell after installation if you used `install.cmd`; `install.ps1` updates the current PowerShell session automatically.
+You can re-run the same flow later with `archon install`.
+Remove the dedicated runtime with `archon uninstall --yes`.
 
 2. Manual development setup is still available if you want a repo-local virtual environment:
 
@@ -62,6 +66,8 @@ Once installed, ARCHON exposes a full `archon` command:
 
 ```powershell
 archon version
+archon install
+archon uninstall --yes
 archon health
 archon dashboard
 archon studio

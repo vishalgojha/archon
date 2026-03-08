@@ -11,6 +11,7 @@ from archon.agents.outbound.email_agent import EmailSendResult, OutboundEmail
 from archon.agents.outbound.webchat_agent import WebChatMessage, WebChatSendResult
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.versioning import resolve_git_sha
 from archon.web.intent_classifier import PageIntent, SiteIntent
 from archon.web.site_crawler import CrawlResult, PageData
 
@@ -227,6 +228,7 @@ def test_health_endpoint_returns_status_version_and_uptime() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["version"] == app.version
+    assert payload["git_sha"] == resolve_git_sha()
     assert isinstance(payload["uptime_s"], (int, float))
     assert payload["uptime_s"] >= 0
 

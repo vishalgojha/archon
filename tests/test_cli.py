@@ -194,7 +194,13 @@ def test_health_command_prints_server_status(monkeypatch: pytest.MonkeyPatch) ->
         assert method == "GET"
         assert url == "http://127.0.0.1:8000/health"
         assert kwargs["timeout_s"] == 3.5
-        return {"status": "ok", "version": "1.2.3", "db_status": "ok", "uptime_s": 12.345}
+        return {
+            "status": "ok",
+            "version": "1.2.3",
+            "git_sha": "abc1234",
+            "db_status": "ok",
+            "uptime_s": 12.345,
+        }
 
     monkeypatch.setattr("archon.archon_cli._request_json", fake_request_json)
 
@@ -204,6 +210,7 @@ def test_health_command_prints_server_status(monkeypatch: pytest.MonkeyPatch) ->
     assert result.exit_code == 0
     assert "Status: ok" in result.output
     assert "Version: 1.2.3" in result.output
+    assert "Git SHA: abc1234" in result.output
     assert "DB: ok" in result.output
     assert "Uptime: 12.35s" in result.output
 

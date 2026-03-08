@@ -83,6 +83,16 @@ def test_merge_path_value_repositions_existing_entry_when_prioritized() -> None:
     )
 
 
+def test_remove_path_value_strips_matching_entry_once() -> None:
+    trimmed = _installer_module().remove_path_value(
+        r"C:\Archon\bin;C:\Tools;C:\Archon\bin",
+        Path(r"c:\archon\bin"),
+        platform_name="win32",
+    )
+
+    assert trimmed == r"C:\Tools"
+
+
 def test_render_windows_shims_target_repo_runtime() -> None:
     module = _installer_module()
     cmd = module.render_windows_cmd_shim("-m", "archon.archon_cli", "serve")
@@ -93,21 +103,23 @@ def test_render_windows_shims_target_repo_runtime() -> None:
 
 
 def test_resolve_command_path_returns_none_when_unavailable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    module = _installer_module()
-    monkeypatch.setattr(module.shutil, "which", lambda *_args, **_kwargs: None)
+    from archon import runtime_installer
 
-    resolved = module.resolve_command_path("archon")
+    monkeypatch.setattr(runtime_installer.shutil, "which", lambda *_args, **_kwargs: None)
+
+    resolved = runtime_installer.resolve_command_path("archon")
 
     assert resolved is None
 
 
 def test_resolve_command_path_wraps_shutil_which_result(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    module = _installer_module()
+    from archon import runtime_installer
+
     shim = tmp_path / "archon.cmd"
     shim.write_text("@echo off\r\n", encoding="utf-8")
-    monkeypatch.setattr(module.shutil, "which", lambda *_args, **_kwargs: str(shim))
+    monkeypatch.setattr(runtime_installer.shutil, "which", lambda *_args, **_kwargs: str(shim))
 
-    resolved = module.resolve_command_path("archon")
+    resolved = runtime_installer.resolve_command_path("archon")
 
     assert resolved == shim.resolve()
 
@@ -118,3 +130,46 @@ def test_default_install_root_uses_user_local_programs_on_windows(monkeypatch) -
     path = _installer_module().default_install_root("win32")
 
     assert path == Path(r"C:\Users\visha\AppData\Local\Programs\Archon")
+
+
+def test_uninstall_removes_runtime_tree_on_non_windows(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from archon import runtime_installer
+
+    install_root = tmp_path / "Archon"
+    (install_root / "bin").mkdir(parents=True)
+    monkeypatch.setattr(runtime_installer.sys, "platform", "linux")
+    monkeypatch.setattr(runtime_installer, "_remove_user_path", lambda *_args, **_kwargs: False)
+
+    exit_code = runtime_installer.uninstall(
+        install_root=install_root,
+        skip_path=False,
+        dry_run=False,
+    )
+
+    assert exit_code == 0
+    assert not install_root.exists()
+
+
+def test_uninstall_schedules_cleanup_on_windows(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from archon import runtime_installer
+
+    install_root = tmp_path / "Archon"
+    install_root.mkdir()
+    scheduled: list[Path] = []
+    cleanup_script = tmp_path / "cleanup.cmd"
+    monkeypatch.setattr(runtime_installer.sys, "platform", "win32")
+    monkeypatch.setattr(runtime_installer, "_remove_user_path", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        runtime_installer,
+        "_schedule_windows_uninstall",
+        lambda path, **_kwargs: scheduled.append(path) or cleanup_script,
+    )
+
+    exit_code = runtime_installer.uninstall(
+        install_root=install_root,
+        skip_path=False,
+        dry_run=False,
+    )
+
+    assert exit_code == 0
+    assert scheduled == [install_root]

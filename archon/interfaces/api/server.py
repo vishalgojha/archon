@@ -65,6 +65,7 @@ from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 from archon.studio.runtime import WorkflowRunBroker, execute_workflow_run
 from archon.studio.store import StudioWorkflowStore
 from archon.studio.workflow_serializer import validate as validate_studio_workflow
+from archon.versioning import resolve_git_sha, resolve_version
 from archon.web.injection_generator import InjectionGenerator
 from archon.web.intent_classifier import IntentClassifier, SiteIntent
 from archon.web.site_crawler import SiteCrawler
@@ -355,7 +356,7 @@ async def lifespan(app: FastAPI):
         await app.state.orchestrator.aclose()
 
 
-app = FastAPI(title="ARCHON API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ARCHON API", version=resolve_version(), lifespan=lifespan)
 EXEMPT_PREFIXES = {
     "/webchat",
     "/health",
@@ -474,6 +475,7 @@ async def health() -> dict[str, Any]:
         "status": "ok",
         "db_status": "ok",
         "version": app.version,
+        "git_sha": resolve_git_sha(),
         "uptime_s": max(0.0, time.monotonic() - started),
     }
 
