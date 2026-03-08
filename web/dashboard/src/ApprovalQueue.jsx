@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+import { useArchonStream } from "./archonStream";
+
 function formatSeconds(seconds) {
   const clamped = Math.max(0, Math.floor(seconds));
   const mins = Math.floor(clamped / 60);
@@ -7,7 +9,27 @@ function formatSeconds(seconds) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-export default function ApprovalQueue({ ws, approvals = [] }) {
+export default function ApprovalQueue({
+  approvals,
+  stream,
+  sessionId = "",
+  token = "",
+  apiBase = "",
+  wsBase = "",
+  transport = "webchat",
+}) {
+  const liveStream =
+    stream ||
+    useArchonStream({
+      sessionId,
+      token,
+      apiBase,
+      wsBase,
+      transport,
+    });
+  const effectiveApprovals = Array.isArray(approvals)
+    ? approvals
+    : liveStream.pendingApprovals;
   const [now, setNow] = useState(Date.now() / 1000);
 
   useEffect(() => {
@@ -17,20 +39,24 @@ export default function ApprovalQueue({ ws, approvals = [] }) {
 
   const rows = useMemo(
     () =>
-      approvals.map((item) => {
+      effectiveApprovals.map((item) => {
         const timeout = Number(item.timeout_s || 0);
         const created = Number(item.created_at || now);
         const remaining = timeout > 0 ? Math.max(0, timeout - (now - created)) : 0;
         return { ...item, remaining };
       }),
-    [approvals, now],
+    [effectiveApprovals, now],
   );
 
   const sendDecision = (type, actionId) => {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!actionId) {
       return;
     }
-    ws.send(JSON.stringify({ type, action_id: actionId }));
+    if (type === "approve") {
+      liveStream.approve(actionId);
+      return;
+    }
+    liveStream.deny(actionId);
   };
 
   if (!rows.length) {
@@ -59,4 +85,3 @@ export default function ApprovalQueue({ ws, approvals = [] }) {
     </section>
   );
 }
-

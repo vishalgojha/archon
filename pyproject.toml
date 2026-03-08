@@ -45,7 +45,6 @@ include = ["archon*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--import-mode=importlib"
 norecursedirs = ["archon/tests/_tmp_*", "tests/_tmp_*"]
 
 [tool.black]

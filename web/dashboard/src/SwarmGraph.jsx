@@ -1,6 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import * as d3 from "d3";
 
+import { useArchonStream } from "./archonStream";
+import { deriveSwarmAgents, deriveSwarmEdges } from "./streamModel";
+
 const STATUS_COLORS = {
   idle: "#8d99ae",
   thinking: "#3a86ff",
@@ -8,7 +11,29 @@ const STATUS_COLORS = {
   error: "#e63946",
 };
 
-export default function SwarmGraph({ agents = [], edges = [], onNodeClick }) {
+export default function SwarmGraph({
+  agents,
+  edges,
+  onNodeClick,
+  stream,
+  sessionId = "",
+  token = "",
+  apiBase = "",
+  wsBase = "",
+  transport = "webchat",
+}) {
+  const liveStream =
+    stream ||
+    useArchonStream({
+      sessionId,
+      token,
+      apiBase,
+      wsBase,
+      transport,
+    });
+  const renderedAgents =
+    agents || deriveSwarmAgents(liveStream.agentStates, liveStream.history);
+  const renderedEdges = edges || deriveSwarmEdges(renderedAgents, []);
   const svgRef = useRef(null);
 
   useEffect(() => {
@@ -39,8 +64,8 @@ export default function SwarmGraph({ agents = [], edges = [], onNodeClick }) {
     const nodeGroup = svg.append("g").attr("class", "graph-nodes");
     const labelGroup = svg.append("g").attr("class", "graph-labels");
 
-    const simNodes = agents.map((agent) => ({ ...agent }));
-    const simEdges = edges.map((edge) => ({ ...edge }));
+    const simNodes = renderedAgents.map((agent) => ({ ...agent }));
+    const simEdges = renderedEdges.map((edge) => ({ ...edge }));
     const simulation = d3
       .forceSimulation(simNodes)
       .force("charge", d3.forceManyBody().strength(-260))
@@ -110,8 +135,26 @@ export default function SwarmGraph({ agents = [], edges = [], onNodeClick }) {
     return () => {
       simulation.stop();
     };
-  }, [agents, edges, onNodeClick]);
+  }, [onNodeClick, renderedAgents, renderedEdges]);
 
-  return <svg ref={svgRef} style={{ width: "100%", height: "100%" }} role="img" aria-label="Swarm graph" />;
+  const activeAgents = renderedAgents.filter(
+    (agent) => agent.id !== "orchestrator" && agent.status === "thinking",
+  ).length;
+
+  return (
+    <section className="swarm-graph-panel">
+      <header className="swarm-graph-header">
+        <h2>Swarm Graph</h2>
+        <p>
+          {renderedAgents.length} agents, {activeAgents} active
+        </p>
+      </header>
+      <svg
+        ref={svgRef}
+        style={{ width: "100%", height: "100%" }}
+        role="img"
+        aria-label="Swarm graph"
+      />
+    </section>
+  );
 }
-

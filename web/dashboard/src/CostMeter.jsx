@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 
+import { useArchonStream } from "./archonStream";
+
 function bandColor(percent) {
   if (percent > 80) {
     return "#dc2626";
@@ -11,16 +13,46 @@ function bandColor(percent) {
   return "#16a34a";
 }
 
-export default function CostMeter({ spent = 0, budget = 1, history = [] }) {
-  const percent = Math.max(0, Math.min(100, (spent / Math.max(0.000001, budget)) * 100));
+export default function CostMeter({
+  spent,
+  budget,
+  history,
+  stream,
+  sessionId = "",
+  token = "",
+  apiBase = "",
+  wsBase = "",
+  transport = "webchat",
+}) {
+  const liveStream =
+    stream ||
+    useArchonStream({
+      sessionId,
+      token,
+      apiBase,
+      wsBase,
+      transport,
+    });
+  const numericSpent =
+    typeof spent === "number" ? spent : Number(liveStream.costState.spent || 0);
+  const numericBudget =
+    typeof budget === "number" ? budget : Number(liveStream.costState.budget || 0);
+  const effectiveHistory = Array.isArray(history) ? history : liveStream.costState.history;
+  const percent = Math.max(
+    0,
+    Math.min(100, (numericSpent / Math.max(0.000001, numericBudget || 1)) * 100),
+  );
   const color = bandColor(percent);
   const radius = 52;
   const stroke = 10;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percent / 100) * circumference;
   const sparklineData = useMemo(
-    () => history.slice(-20).map((item, idx) => ({ idx, spent: Number(item.spent || 0) })),
-    [history],
+    () =>
+      effectiveHistory
+        .slice(-20)
+        .map((item, idx) => ({ idx, spent: Number(item.spent || 0) })),
+    [effectiveHistory],
   );
 
   return (
@@ -44,7 +76,7 @@ export default function CostMeter({ spent = 0, budget = 1, history = [] }) {
         </text>
       </svg>
       <p>
-        spent ${spent.toFixed(2)} of ${budget.toFixed(2)} budget
+        spent ${numericSpent.toFixed(2)} of ${numericBudget.toFixed(2)} budget
       </p>
       <div style={{ width: "220px", height: "60px" }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -56,4 +88,3 @@ export default function CostMeter({ spent = 0, budget = 1, history = [] }) {
     </section>
   );
 }
-

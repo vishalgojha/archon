@@ -68,8 +68,14 @@ def test_debate_engine_emits_round_events() -> None:
 
     asyncio.run(_run())
 
-    assert len(events) == 6
-    assert [event["round"] for event in events] == [1, 2, 3, 4, 5, 6]
-    assert events[0]["agent"] == "ResearcherAgent"
-    assert events[-1]["agent"] == "SynthesizerAgent"
-    assert events[-1]["output_preview"] == "Final answer ready."
+    starts = [event for event in events if event["type"] == "agent_start"]
+    ends = [event for event in events if event["type"] == "agent_end"]
+    rounds = [event for event in events if event["type"] == "debate_round_completed"]
+
+    assert len(starts) == 6
+    assert len(ends) == 6
+    assert len(rounds) == 6
+    assert [event["round"] for event in rounds] == [1, 2, 3, 4, 5, 6]
+    assert starts[0]["agent"] == "ResearcherAgent"
+    assert ends[-1]["agent"] == "SynthesizerAgent"
+    assert rounds[-1]["output_preview"] == "Final answer ready."

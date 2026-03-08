@@ -7,3 +7,8 @@ scrape_configs:
       - targets: ["host.docker.internal:8000"]
     metrics_path: /metrics
     scrape_interval: 15s
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+    metrics_path: /metrics
+    scrape_interval: 15s

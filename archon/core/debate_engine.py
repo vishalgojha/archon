@@ -42,74 +42,109 @@ class DebateEngine:
         rounds: list[AgentResult] = []
         total_rounds = 6
 
+        async def emit(event: dict[str, Any]) -> None:
+            if event_sink is not None:
+                await event_sink(event)
+
         async def record(result: AgentResult, round_number: int) -> None:
             rounds.append(result)
-            if event_sink is not None:
-                await event_sink(
-                    {
-                        "type": "debate_round_completed",
-                        "task_id": task_id,
-                        "mode": "debate",
-                        "round": round_number,
-                        "total_rounds": total_rounds,
-                        "agent": result.agent,
-                        "role": result.role,
-                        "confidence": result.confidence,
-                        "output_preview": " ".join(result.output.split())[:88],
-                    }
-                )
+            await emit(
+                {
+                    "type": "agent_end",
+                    "task_id": task_id,
+                    "mode": "debate",
+                    "round": round_number,
+                    "total_rounds": total_rounds,
+                    "agent": result.agent,
+                    "role": result.role,
+                    "status": "done",
+                    "confidence": result.confidence,
+                    "output_preview": " ".join(result.output.split())[:88],
+                }
+            )
+            await emit(
+                {
+                    "type": "debate_round_completed",
+                    "task_id": task_id,
+                    "mode": "debate",
+                    "round": round_number,
+                    "total_rounds": total_rounds,
+                    "agent": result.agent,
+                    "role": result.role,
+                    "confidence": result.confidence,
+                    "output_preview": " ".join(result.output.split())[:88],
+                }
+            )
+
+        async def run_round(
+            *,
+            round_number: int,
+            runner,
+            context: dict[str, Any],
+        ) -> AgentResult:
+            await emit(
+                {
+                    "type": "agent_start",
+                    "task_id": task_id,
+                    "mode": "debate",
+                    "round": round_number,
+                    "total_rounds": total_rounds,
+                    "agent": getattr(
+                        runner,
+                        "name",
+                        getattr(runner, "agent", runner.__class__.__name__),
+                    ),
+                }
+            )
+            result = await runner.run(goal, context=context, task_id=task_id)
+            await record(result, round_number)
+            return result
 
         # Round 1: Researcher
-        research_1 = await swarm.researcher.run(goal, context={}, task_id=task_id)
-        await record(research_1, 1)
+        research_1 = await run_round(round_number=1, runner=swarm.researcher, context={})
 
         # Round 2: Critic attacks
-        critic = await swarm.critic.run(
-            goal,
+        critic = await run_round(
+            round_number=2,
+            runner=swarm.critic,
             context={"research_answer": research_1.output},
-            task_id=task_id,
         )
-        await record(critic, 2)
 
         # Round 3: Researcher defends/concedes
-        research_2 = await swarm.researcher.run(
-            goal,
+        research_2 = await run_round(
+            round_number=3,
+            runner=swarm.researcher,
             context={
                 "previous_round": research_1.output,
                 "critic_feedback": critic.output,
             },
-            task_id=task_id,
         )
-        await record(research_2, 3)
 
         # Round 4: Devil's Advocate stress-test
-        devils = await swarm.devils_advocate.run(
-            goal,
+        devils = await run_round(
+            round_number=4,
+            runner=swarm.devils_advocate,
             context={"current_best": research_2.output},
-            task_id=task_id,
         )
-        await record(devils, 4)
 
         # Round 5: Fact-checker validation
-        fact_check = await swarm.fact_checker.run(
-            goal,
+        fact_check = await run_round(
+            round_number=5,
+            runner=swarm.fact_checker,
             context={"candidate_answer": research_2.output},
-            task_id=task_id,
         )
-        await record(fact_check, 5)
 
         # Round 6: Synthesizer
-        synth = await swarm.synthesizer.run(
-            goal,
+        synth = await run_round(
+            round_number=6,
+            runner=swarm.synthesizer,
             context={
                 "research": research_2.output,
                 "critic": critic.output,
                 "devils_advocate": devils.output,
                 "fact_checker": fact_check.output,
             },
-            task_id=task_id,
         )
-        await record(synth, 6)
 
         dissent = [critic.output, devils.output]
         return DebateOutcome(

@@ -17,6 +17,7 @@ _COUNTER_DEFS = {
     "archon_approvals_total": ("Approval outcomes.", ("action", "outcome")),
     "archon_agents_recruited_total": ("Agent recruitment count.", ("agent_name",)),
     "archon_emails_sent_total": ("Outbound email attempts.", ("backend", "status")),
+    "archon_worker_tasks_total": ("Background worker task outcomes.", ("mode", "status")),
 }
 
 _GAUGE_DEFS = {
@@ -40,6 +41,11 @@ _HISTOGRAM_DEFS = {
         "Approval wait duration.",
         ("action",),
         (0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
+    ),
+    "archon_worker_task_duration_seconds": (
+        "Background worker task duration.",
+        ("mode",),
+        (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
     ),
 }
 
@@ -166,6 +172,27 @@ class Metrics:
             "archon_emails_sent_total",
             {"backend": backend or "unknown", "status": status or "unknown"},
             amount=1.0,
+        )
+
+    def record_worker_task(self, *, mode: str, status: str, duration_seconds: float) -> None:
+        """Record one background worker task outcome.
+
+        Example:
+            >>> metrics = Metrics.get_instance()
+            >>> metrics.record_worker_task(mode="debate", status="completed", duration_seconds=0.1)
+        """
+
+        normalized_mode = mode or "unknown"
+        normalized_status = status or "unknown"
+        self._inc_counter(
+            "archon_worker_tasks_total",
+            {"mode": normalized_mode, "status": normalized_status},
+            amount=1.0,
+        )
+        self._observe_histogram(
+            "archon_worker_task_duration_seconds",
+            {"mode": normalized_mode},
+            float(duration_seconds),
         )
 
     def set_active_sessions(self, value: int | float) -> None:

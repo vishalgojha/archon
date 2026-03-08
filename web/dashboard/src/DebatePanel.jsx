@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 
+import { useArchonStream } from "./archonStream";
+
 const ROLE_COLORS = {
   proposer: "#2563eb",
   critic: "#dc2626",
@@ -12,11 +14,35 @@ function roleColor(role) {
   return ROLE_COLORS[normalized] || "#334155";
 }
 
-export default function DebatePanel({ rounds = [], confidence = 0 }) {
+export default function DebatePanel({
+  rounds,
+  confidence,
+  stream,
+  sessionId = "",
+  token = "",
+  apiBase = "",
+  wsBase = "",
+  transport = "webchat",
+}) {
+  const liveStream =
+    stream ||
+    useArchonStream({
+      sessionId,
+      token,
+      apiBase,
+      wsBase,
+      transport,
+    });
+  const effectiveRounds = Array.isArray(rounds) ? rounds : liveStream.rounds;
+  const displayedConfidence =
+    typeof confidence === "number" ? confidence : Number(liveStream.confidence || 0);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [showHistory, setShowHistory] = useState(true);
 
-  const displayedRounds = useMemo(() => (showHistory ? rounds : rounds.slice(-1)), [rounds, showHistory]);
+  const displayedRounds = useMemo(
+    () => (showHistory ? effectiveRounds : effectiveRounds.slice(-1)),
+    [effectiveRounds, showHistory],
+  );
 
   const toggleRound = (roundId) => {
     setExpandedIds((prev) => {
@@ -41,11 +67,15 @@ export default function DebatePanel({ rounds = [], confidence = 0 }) {
       <div className="confidence-meter">
         <span>Confidence</span>
         <div className="confidence-track">
-          <div className="confidence-fill" style={{ width: `${Math.max(0, Math.min(100, confidence))}%` }} />
+          <div
+            className="confidence-fill"
+            style={{ width: `${Math.max(0, Math.min(100, displayedConfidence))}%` }}
+          />
         </div>
-        <strong>{Math.round(confidence)}%</strong>
+        <strong>{Math.round(displayedConfidence)}%</strong>
       </div>
       <div className="debate-rounds">
+        {!displayedRounds.length ? <div className="empty-state">No debate rounds yet</div> : null}
         {displayedRounds.map((round, idx) => {
           const roundId = round.round_id || `${idx}-${round.agent || "agent"}`;
           const expanded = expandedIds.has(roundId);
@@ -71,4 +101,3 @@ export default function DebatePanel({ rounds = [], confidence = 0 }) {
     </section>
   );
 }
-

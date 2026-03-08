@@ -395,6 +395,43 @@ def test_webchat_flow_anonymous_ws_stream_done_and_session_restore() -> None:
             assert len(history) >= 2
 
 
+def test_webchat_flow_streams_dashboard_events_for_live_panels() -> None:
+    """WebChat smoke: dashboard-facing agent/debate/cost events arrive before completion."""
+
+    with TestClient(app) as client:
+        token_response = client.post("/webchat/token", json={})
+        assert token_response.status_code == 200
+        token_payload = token_response.json()
+        session_id = token_payload["session"]["session_id"]
+        token = token_payload["token"]
+        ws_path = f"/webchat/ws/{session_id}?token={token}"
+
+        with client.websocket_connect(ws_path) as websocket:
+            restored = websocket.receive_json()
+            assert restored["type"] == "session_restored"
+            websocket.send_json(
+                {
+                    "type": "message",
+                    "content": "Explain the CAP theorem simply for a dashboard event smoke test.",
+                }
+            )
+
+            seen_types: set[str] = set()
+            for _ in range(600):
+                frame = websocket.receive_json()
+                frame_type = str(frame.get("type") or "")
+                seen_types.add(frame_type)
+                if frame_type == "done":
+                    break
+
+    assert "task_started" in seen_types
+    assert "agent_start" in seen_types
+    assert "agent_end" in seen_types
+    assert "debate_round_completed" in seen_types
+    assert "cost_update" in seen_types
+    assert "done" in seen_types
+
+
 def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
     """Email smoke: auto-approve gate + real local SMTP transport + footer/personalization check."""
 

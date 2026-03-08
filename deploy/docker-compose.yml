@@ -13,13 +13,14 @@ services:
       ARCHON_HOST: "0.0.0.0"
       ARCHON_PORT: "8000"
       ARCHON_CONFIG: "/app/config.archon.yaml"
+      ARCHON_RUNTIME_DIR: "/var/lib/archon"
       ARCHON_DATABASE_BACKEND: "${ARCHON_DATABASE_BACKEND:-sqlite}"
       ARCHON_DATABASE_URL: "${ARCHON_DATABASE_URL:-postgresql://archon:archon@postgres:5432/archon}"
       ARCHON_ANALYTICS_DB: "/var/lib/archon/archon_analytics.sqlite3"
       ARCHON_BILLING_DB: "/var/lib/archon/archon_billing.sqlite3"
       ARCHON_STRIPE_SECRET_KEY: "${ARCHON_STRIPE_SECRET_KEY:-}"
       ARCHON_STRIPE_WEBHOOK_SECRET: "${ARCHON_STRIPE_WEBHOOK_SECRET:-}"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318/v1/traces"
     volumes:
       - archon-data:/var/lib/archon
       - ../config.archon.yaml:/app/config.archon.yaml:ro
@@ -36,11 +37,12 @@ services:
     restart: unless-stopped
     environment:
       ARCHON_CONFIG: "/app/config.archon.yaml"
+      ARCHON_RUNTIME_DIR: "/var/lib/archon"
       ARCHON_DATABASE_BACKEND: "${ARCHON_DATABASE_BACKEND:-sqlite}"
       ARCHON_DATABASE_URL: "${ARCHON_DATABASE_URL:-postgresql://archon:archon@postgres:5432/archon}"
       ARCHON_ANALYTICS_DB: "/var/lib/archon/archon_analytics.sqlite3"
       ARCHON_BILLING_DB: "/var/lib/archon/archon_billing.sqlite3"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318/v1/traces"
     volumes:
       - archon-data:/var/lib/archon
       - ../config.archon.yaml:/app/config.archon.yaml:ro

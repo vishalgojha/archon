@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+import { useArchonStream } from "./archonStream";
+import { resolveApiBase } from "./streamModel";
+
 function shortText(text) {
   const raw = String(text || "");
   if (raw.length <= 80) {
@@ -8,15 +11,37 @@ function shortText(text) {
   return `${raw.slice(0, 80)}...`;
 }
 
-export default function MemoryTimeline({ sessionId, apiBase = "" }) {
+export default function MemoryTimeline({
+  sessionId = "",
+  apiBase = "",
+  stream,
+  token = "",
+  wsBase = "",
+  transport = "webchat",
+}) {
+  const liveStream =
+    stream ||
+    useArchonStream({
+      sessionId,
+      token,
+      apiBase,
+      wsBase,
+      transport,
+    });
+  const effectiveSessionId = String(sessionId || liveStream.sessionId || "").trim();
+  const resolvedApiBase = resolveApiBase(apiBase || liveStream.apiBase || "");
   const [entries, setEntries] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
+    if (!effectiveSessionId) {
+      setEntries([]);
+      setExpandedId(null);
+      return undefined;
+    }
     let cancelled = false;
-    const urlBase = apiBase || window.location.origin;
-    const url = `${urlBase.replace(/\/$/, "")}/memory/timeline?session_id=${encodeURIComponent(
-      sessionId,
+    const url = `${resolvedApiBase.replace(/\/$/, "")}/memory/timeline?session_id=${encodeURIComponent(
+      effectiveSessionId,
     )}&limit=50`;
     fetch(url)
       .then((response) => response.json())
@@ -35,12 +60,16 @@ export default function MemoryTimeline({ sessionId, apiBase = "" }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, apiBase]);
+  }, [effectiveSessionId, liveStream.memoryRefreshVersion, resolvedApiBase]);
 
-  const selected = useMemo(() => entries.find((entry) => entry.memory_id === expandedId), [entries, expandedId]);
+  const selected = useMemo(
+    () => entries.find((entry) => entry.memory_id === expandedId),
+    [entries, expandedId],
+  );
 
   return (
     <section className="memory-timeline">
+      {!effectiveSessionId ? <div className="empty-state">No active session yet</div> : null}
       <div className="timeline-scroll" style={{ display: "flex", overflowX: "auto", gap: "12px" }}>
         {entries.map((entry) => (
           <button
@@ -77,4 +106,3 @@ export default function MemoryTimeline({ sessionId, apiBase = "" }) {
     </section>
   );
 }
-

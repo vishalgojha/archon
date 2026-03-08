@@ -737,8 +737,7 @@ async def _assistant_reply(
                     "session_id": session_id,
                 },
             )
-        if event_type in {"approval_required", "approval_resolved", "growth_agent_completed"}:
-            await websocket.send_json(event)
+        await websocket.send_json(event)
 
     result = await runtime.orchestrator.execute(
         goal=prompt,

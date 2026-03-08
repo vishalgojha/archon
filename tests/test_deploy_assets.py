@@ -19,6 +19,8 @@ def test_deploy_assets_validate_and_render() -> None:
 
     assert report["ok"] is True
     assert "archon-api" in report["compose"]["services"]
+    assert "otel-collector" in report["observability"]["services"]
+    assert "traces" in report["otel"]["pipelines"]
     assert "deployment.yaml" in report["helm"]["rendered_templates"]
     assert "secret.yaml" in report["helm"]["rendered_templates"]
 
@@ -29,4 +31,6 @@ def test_deploy_validate_cli_command_succeeds() -> None:
 
     assert result.exit_code == 0
     assert "compose ok: True" in result.output
+    assert "observability ok: True" in result.output
+    assert "otel ok: True" in result.output
     assert "helm ok: True" in result.output

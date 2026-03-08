@@ -119,6 +119,16 @@ class Orchestrator:
                     "budget": budget_snapshot,
                 },
             )
+            await self._emit(
+                event_sink,
+                {
+                    "type": "cost_update",
+                    "task_id": effective_task_id,
+                    "mode": mode,
+                    "spent": float(budget_snapshot.get("spent_usd", 0.0) or 0.0),
+                    "budget": float(budget_snapshot.get("limit_usd", 0.0) or 0.0),
+                },
+            )
 
             await self.memory_store.add_entry(
                 task=goal,
@@ -162,6 +172,16 @@ class Orchestrator:
                     "mode": mode,
                     "confidence": growth_output["confidence"],
                     "budget": budget_snapshot,
+                },
+            )
+            await self._emit(
+                event_sink,
+                {
+                    "type": "cost_update",
+                    "task_id": effective_task_id,
+                    "mode": mode,
+                    "spent": float(budget_snapshot.get("spent_usd", 0.0) or 0.0),
+                    "budget": float(budget_snapshot.get("limit_usd", 0.0) or 0.0),
                 },
             )
 
@@ -258,9 +278,35 @@ class Orchestrator:
         reports = []
         actions: list[dict[str, Any]] = []
         for agent in sequence:
+            await self._emit(
+                event_sink,
+                {
+                    "type": "agent_start",
+                    "task_id": task_id,
+                    "mode": "growth",
+                    "agent": getattr(
+                        agent,
+                        "name",
+                        getattr(agent, "agent", agent.__class__.__name__),
+                    ),
+                },
+            )
             result = await agent.run(goal=goal, context=context, task_id=task_id)
             reports.append(result)
             actions.extend(result.metadata.get("actions", []))
+            await self._emit(
+                event_sink,
+                {
+                    "type": "agent_end",
+                    "task_id": task_id,
+                    "mode": "growth",
+                    "agent": result.agent,
+                    "role": result.role,
+                    "status": "done",
+                    "confidence": result.confidence,
+                    "output_preview": " ".join(str(result.output).split())[:88],
+                },
+            )
             await self._emit(
                 event_sink,
                 {
