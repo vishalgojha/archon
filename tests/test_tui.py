@@ -27,7 +27,9 @@ class _FakeApprovalGate:
         self.approved: list[str] = []
         self.denied: list[str] = []
 
-    def approve(self, request_id: str, *, approver: str | None = None, notes: str | None = None) -> bool:
+    def approve(
+        self, request_id: str, *, approver: str | None = None, notes: str | None = None
+    ) -> bool:
         del approver, notes
         self.approved.append(request_id)
         return True
@@ -170,7 +172,9 @@ def test_run_agentic_tui_renders_debate_events_and_history(
 ) -> None:
     _FakeOrchestrator.calls = []
     _FakeOrchestrator.emitted_approval = False
-    monkeypatch.setattr(tui, "_read_session_line", _line_reader(["Explain CAP theorem", "/history", "/quit"]))
+    monkeypatch.setattr(
+        tui, "_read_session_line", _line_reader(["Explain CAP theorem", "/history", "/quit"])
+    )
     monkeypatch.setattr(tui, "Orchestrator", _FakeOrchestrator)
 
     asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="auto"))
@@ -241,7 +245,9 @@ def test_run_agentic_tui_routes_approval_events_back_into_gate(
             ]
         ),
     )
-    monkeypatch.setattr(tui, "_prompt_approval_decision", lambda event: asyncio.sleep(0, result=True))
+    monkeypatch.setattr(
+        tui, "_prompt_approval_decision", lambda event: asyncio.sleep(0, result=True)
+    )
     monkeypatch.setattr(tui, "Orchestrator", _ApprovalOrchestrator)
 
     asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="growth"))

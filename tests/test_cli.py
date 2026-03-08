@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tomllib
 from pathlib import Path
@@ -515,6 +516,7 @@ def test_onboard_pro_stack_saves_anthropic_key(monkeypatch: pytest.MonkeyPatch) 
     config = yaml.safe_load((runtime_dir / "config.archon.yaml").read_text(encoding="utf-8"))
     assert config["byok"]["primary"] == "anthropic"
     assert "ANTHROPIC_API_KEY=sk-ant-test" in (runtime_dir / ".env").read_text(encoding="utf-8")
+    assert os.getenv("ANTHROPIC_API_KEY") is None
 
 
 def test_onboard_budget_default_saves_five_dollars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -586,6 +588,7 @@ def test_onboard_generates_jwt_secret_when_missing(monkeypatch: pytest.MonkeyPat
     jwt_lines = [line for line in env_text.splitlines() if line.startswith("ARCHON_JWT_SECRET=")]
     assert len(jwt_lines) == 1
     assert len(jwt_lines[0].split("=", 1)[1]) == 64
+    assert os.getenv("ARCHON_JWT_SECRET") is None
 
 
 def test_onboard_preserves_existing_jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -649,11 +652,13 @@ def test_serve_auto_triggers_onboard_when_config_missing(monkeypatch: pytest.Mon
         captured["config_path"] = config_path
         captured["yes"] = yes
         (runtime_dir / config_path).write_text("byok:\n  primary: anthropic\n", encoding="utf-8")
+        (runtime_dir / ".env").write_text("ARCHON_JWT_SECRET=generated-secret\n", encoding="utf-8")
         return True
 
     def fake_run_api_server_with_env(*, host: str, port: int) -> None:
         captured["host"] = host
         captured["port"] = port
+        captured["jwt_secret"] = os.getenv("ARCHON_JWT_SECRET")
 
     monkeypatch.setattr("archon.archon_cli._run_onboarding_wizard", fake_onboarding)
     monkeypatch.setattr(
@@ -667,4 +672,5 @@ def test_serve_auto_triggers_onboard_when_config_missing(monkeypatch: pytest.Mon
     assert captured["onboard"] is True
     assert captured["config_path"] == "config.archon.yaml"
     assert captured["yes"] is False
+    assert captured["jwt_secret"] == "generated-secret"
     assert result.output.startswith("No config found. Running onboarding wizard...")

@@ -559,7 +559,9 @@ def uninstall(*, install_root: Path, skip_path: bool, dry_run: bool) -> int:
         print("ARCHON uninstall scheduled.")
         print(f"  Runtime:      {install_root}")
         print(f"  Cleanup:      {script_path}")
-        print("  PATH:         " + ("updated for the current user" if path_updated else "unchanged"))
+        print(
+            "  PATH:         " + ("updated for the current user" if path_updated else "unchanged")
+        )
         print("")
         print("Open a new shell after this command exits.")
         return 0

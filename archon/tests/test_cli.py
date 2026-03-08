@@ -120,7 +120,9 @@ def test_version_command_prints_version_string(monkeypatch: pytest.MonkeyPatch) 
     assert "ARCHON 9.9.9 (git abc1234)" in result.output
 
 
-def test_install_command_invokes_runtime_installer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_install_command_invokes_runtime_installer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls: list[dict[str, object]] = []
 
     def fake_install(**kwargs):  # type: ignore[no-untyped-def]

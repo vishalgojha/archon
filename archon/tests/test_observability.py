@@ -100,7 +100,9 @@ def test_metrics_endpoint_returns_plaintext() -> None:
     assert response.headers["content-type"].startswith("text/plain")
 
 
-def test_configure_observability_announces_ascii_status_lines(capsys: pytest.CaptureFixture[str]) -> None:
+def test_configure_observability_announces_ascii_status_lines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     Metrics.reset_for_tests(force_noop=True)
     TracingSetup.reset_for_tests(force_noop=True)
     test_app = FastAPI()

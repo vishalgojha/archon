@@ -11,7 +11,7 @@ import secrets
 import tempfile
 import time
 import uuid
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -101,16 +101,28 @@ def _load_config(path: str = DEFAULT_CONFIG_PATH):
     return load_archon_config(path)
 
 
-def _load_env_file(env_path: str | Path = ".env") -> None:
+@contextmanager
+def _load_env_file(env_path: str | Path = ".env"):
     path = Path(env_path)
     if not path.exists():
+        yield
         return
+    loaded_keys: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        normalized_key = key.strip()
+        if normalized_key in os.environ:
+            continue
+        os.environ[normalized_key] = value.strip()
+        loaded_keys.append(normalized_key)
+    try:
+        yield
+    finally:
+        for key in loaded_keys:
+            os.environ.pop(key, None)
 
 
 def write_env(key: str, value: str, env_path: str | Path = ".env") -> None:
@@ -334,7 +346,6 @@ def _configure_free_stack(
         else:
             click.echo("⚠ Key did not validate — saved anyway")
         write_env("OPENROUTER_API_KEY", openrouter_key, env_path=env_path)
-        os.environ["OPENROUTER_API_KEY"] = openrouter_key
 
     byok.update(
         {
@@ -367,7 +378,6 @@ def _configure_pro_stack(
         else:
             click.echo("⚠ Could not validate — saved anyway")
         write_env("ANTHROPIC_API_KEY", anthropic_key, env_path=env_path)
-        os.environ["ANTHROPIC_API_KEY"] = anthropic_key
 
     openai_key = "" if yes else _read_line("OpenAI API key (sk-...) or Enter to skip:").strip()
     if openai_key:
@@ -376,7 +386,6 @@ def _configure_pro_stack(
         else:
             click.echo("⚠ Could not validate — saved anyway")
         write_env("OPENAI_API_KEY", openai_key, env_path=env_path)
-        os.environ["OPENAI_API_KEY"] = openai_key
 
     if not anthropic_key and not openai_key:
         click.echo("⚠ No keys provided. Falling back to free stack.")
@@ -484,6 +493,7 @@ def _print_validation_statuses(
     config_data: dict[str, Any],
     *,
     ollama_probe: dict[str, Any] | None = None,
+    env_path: str | Path = ".env",
 ) -> None:
     byok = dict(config_data.get("byok") or {})
     ordered_providers: list[str] = []
@@ -510,7 +520,12 @@ def _print_validation_statuses(
             status = reachable
             detail = "reachable" if reachable else "not reachable"
         elif provider in provider_env_keys:
-            configured = bool(str(os.getenv(provider_env_keys[provider], "")).strip())
+            configured = bool(
+                str(
+                    _read_env_value(provider_env_keys[provider], env_path)
+                    or os.getenv(provider_env_keys[provider], "")
+                ).strip()
+            )
             status = configured
             detail = "key configured" if configured else "no key (skipped)"
         symbol = "✔" if status else "✗"
@@ -676,7 +691,6 @@ def _run_onboarding_wizard(
     else:
         generated_secret = secrets.token_hex(32)
         write_env("ARCHON_JWT_SECRET", generated_secret, env_path=env_path)
-        os.environ["ARCHON_JWT_SECRET"] = generated_secret
         click.echo("✔ JWT secret generated and saved to .env")
 
     config_data = {
@@ -694,7 +708,7 @@ def _run_onboarding_wizard(
 
     click.echo("")
     click.echo("Running validation...")
-    _print_validation_statuses(config_data, ollama_probe=ollama_probe)
+    _print_validation_statuses(config_data, ollama_probe=ollama_probe, env_path=env_path)
     validation_exit_code = _run_validation_dry_run(config_data, config_path)
     if validation_exit_code != 0:
         click.echo("⚠ Validation reported issues. Review config.archon.yaml before going live.")
@@ -1099,7 +1113,6 @@ def validate_command(config_path: str, dry_run: bool) -> None:
 def onboard_command(config_path: str, yes: bool) -> bool:
     """Run the first-run onboarding wizard."""
 
-    _load_env_file()
     return _run_onboarding_wizard(config_path=config_path, yes=yes)
 
 
@@ -1180,17 +1193,17 @@ def unistall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> N
 def serve_command(ctx: click.Context, host: str, port: int, config_path: str) -> None:
     """Start the ARCHON API server."""
 
-    _load_env_file()
     if not Path(config_path).exists():
         click.echo("No config found. Running onboarding wizard...")
         configured = ctx.invoke(onboard_command, config_path=config_path, yes=False)
         if configured is False:
             return
-    _load_config(config_path)
-    try:
-        _run_api_server_with_env(host=host, port=port)
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
+    with _load_env_file():
+        _load_config(config_path)
+        try:
+            _run_api_server_with_env(host=host, port=port)
+        except RuntimeError as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 @cli.command("health")
@@ -1466,7 +1479,11 @@ def tui_command(
 ) -> None:
     """Launch the interactive ARCHON agentic terminal UI."""
 
-    config = _load_config(config_path) if Path(config_path).exists() else load_archon_config("__wizard_defaults__.yaml")
+    config = (
+        _load_config(config_path)
+        if Path(config_path).exists()
+        else load_archon_config("__wizard_defaults__.yaml")
+    )
     if budget is not None:
         config.byok.budget_per_task_usd = float(budget)
     effective_live_providers = live_providers or _should_default_tui_to_live(config)

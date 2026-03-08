@@ -47,12 +47,13 @@ def _read_key_windows() -> KeyName:
     first = msvcrt.getwch()
     if first in {"\x00", "\xe0"}:
         second = msvcrt.getwch()
-        return {
+        arrow_keys: dict[str, KeyName] = {
             "H": "up",
             "P": "down",
             "K": "left",
             "M": "right",
-        }.get(second, "other")
+        }
+        return arrow_keys.get(second, "other")
     if first == "\r":
         return "enter"
     if first == "\x1b":
@@ -77,12 +78,13 @@ def _read_key_posix() -> KeyName:
             if second != "[":
                 return "escape"
             third = stream.read(1)
-            return {
+            arrow_keys: dict[str, KeyName] = {
                 "A": "up",
                 "B": "down",
                 "C": "right",
                 "D": "left",
-            }.get(third, "other")
+            }
+            return arrow_keys.get(third, "other")
         if first in {"\r", "\n"}:
             return "enter"
         if first == " ":

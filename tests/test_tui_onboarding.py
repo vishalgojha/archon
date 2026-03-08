@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -94,4 +95,5 @@ def test_run_setup_wizard_saves_real_config_shape(monkeypatch: pytest.MonkeyPatc
     assert saved["config_data"]["default_tier"] == "pro"
     assert saved["config_data"]["supervised_mode"] is True
     assert env_writes[0][0] == "ARCHON_JWT_SECRET"
+    assert os.getenv("ARCHON_JWT_SECRET") is None
     assert "Provider: ollama (local models)" in summary

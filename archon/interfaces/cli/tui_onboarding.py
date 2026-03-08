@@ -121,7 +121,11 @@ async def run_launcher(
                 ],
             )
             notes.append(
-                {"title": "Launcher", "body": f"Default mode set to {current_mode}.", "tone": "system"}
+                {
+                    "title": "Launcher",
+                    "body": f"Default mode set to {current_mode}.",
+                    "tone": "system",
+                }
             )
             continue
         if choice == "live":
@@ -236,7 +240,6 @@ async def run_setup_wizard(
     ).strip():
         generated_secret = secrets.token_hex(32)
         onboarding.write_env("ARCHON_JWT_SECRET", generated_secret, env_path)
-        os.environ["ARCHON_JWT_SECRET"] = generated_secret
 
     config_data = {
         "byok": byok,
@@ -281,7 +284,10 @@ async def choose_menu_option(
         return await _choose_menu_option_fallback(title=title, body=body, options=options)
     index = 0
     while True:
-        click.echo(render_menu_screen(title=title, body=body, options=options, selected_index=index), nl=False)
+        click.echo(
+            render_menu_screen(title=title, body=body, options=options, selected_index=index),
+            nl=False,
+        )
         key = await read_key()
         if key == "up":
             index = (index - 1) % len(options)
@@ -326,7 +332,9 @@ async def _choose_menu_option_fallback(
     body: list[str],
     options: list[MenuOption],
 ) -> str:
-    click.echo(render_menu_screen(title=title, body=body, options=options, selected_index=0), nl=False)
+    click.echo(
+        render_menu_screen(title=title, body=body, options=options, selected_index=0), nl=False
+    )
     while True:
         value = (await asyncio.to_thread(click.prompt, "Select option number", default="1")).strip()
         if value.isdigit():
@@ -436,4 +444,7 @@ async def _configure_stack(
             "free_tier_first": True,
         }
     )
-    return "ollama fallback", f"No cloud keys provided; Ollama {'reachable' if probe.get('reachable') else 'unreachable'}"
+    return (
+        "ollama fallback",
+        f"No cloud keys provided; Ollama {'reachable' if probe.get('reachable') else 'unreachable'}",
+    )
