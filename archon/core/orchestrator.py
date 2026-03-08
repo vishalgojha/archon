@@ -101,7 +101,10 @@ class Orchestrator:
 
             swarm = self.swarm_router.build_debate_swarm()
             outcome = await self.debate_engine.run(
-                goal=goal, swarm=swarm, task_id=effective_task_id
+                goal=goal,
+                swarm=swarm,
+                task_id=effective_task_id,
+                event_sink=event_sink,
             )
             debate_payload = self.debate_engine.to_event_payload(outcome)
             budget_snapshot = self.cost_governor.snapshot(effective_task_id)

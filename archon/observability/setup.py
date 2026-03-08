@@ -8,6 +8,12 @@ from typing import Any
 from archon.observability.metrics import Metrics
 from archon.observability.tracing import TracingSetup
 
+_OBSERVABILITY_ANNOUNCEMENTS = (
+    "Metrics  -> http://127.0.0.1:8000/metrics",
+    "Traces   -> http://127.0.0.1:8000/observability/traces",
+    "Grafana  -> docker compose -f docker-compose.observability.yml up",
+)
+
 
 def configure_observability(app: Any) -> None:
     """Configure tracing, metrics, and instrumentation for a FastAPI app."""
@@ -28,7 +34,6 @@ def configure_observability(app: Any) -> None:
     app.state.metrics = metrics
     app.state.tracing = tracer
     if not bool(getattr(app.state, "_archon_observability_announced", False)):
-        print("✔ Metrics  → http://127.0.0.1:8000/metrics")
-        print("✔ Traces   → http://127.0.0.1:8000/observability/traces")
-        print("✔ Grafana  → docker compose -f docker-compose.observability.yml up")
+        for line in _OBSERVABILITY_ANNOUNCEMENTS:
+            print(line)
         app.state._archon_observability_announced = True

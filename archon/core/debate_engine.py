@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from archon.agents import AgentResult
 from archon.core.swarm_router import DebateSwarm
+
+EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -28,14 +30,38 @@ class DebateEngine:
         True
     """
 
-    async def run(self, goal: str, swarm: DebateSwarm, task_id: str) -> DebateOutcome:
+    async def run(
+        self,
+        goal: str,
+        swarm: DebateSwarm,
+        task_id: str,
+        event_sink: EventSink | None = None,
+    ) -> DebateOutcome:
         """Execute the adversarial rounds and return a synthesized result."""
 
         rounds: list[AgentResult] = []
+        total_rounds = 6
+
+        async def record(result: AgentResult, round_number: int) -> None:
+            rounds.append(result)
+            if event_sink is not None:
+                await event_sink(
+                    {
+                        "type": "debate_round_completed",
+                        "task_id": task_id,
+                        "mode": "debate",
+                        "round": round_number,
+                        "total_rounds": total_rounds,
+                        "agent": result.agent,
+                        "role": result.role,
+                        "confidence": result.confidence,
+                        "output_preview": " ".join(result.output.split())[:88],
+                    }
+                )
 
         # Round 1: Researcher
         research_1 = await swarm.researcher.run(goal, context={}, task_id=task_id)
-        rounds.append(research_1)
+        await record(research_1, 1)
 
         # Round 2: Critic attacks
         critic = await swarm.critic.run(
@@ -43,7 +69,7 @@ class DebateEngine:
             context={"research_answer": research_1.output},
             task_id=task_id,
         )
-        rounds.append(critic)
+        await record(critic, 2)
 
         # Round 3: Researcher defends/concedes
         research_2 = await swarm.researcher.run(
@@ -54,7 +80,7 @@ class DebateEngine:
             },
             task_id=task_id,
         )
-        rounds.append(research_2)
+        await record(research_2, 3)
 
         # Round 4: Devil's Advocate stress-test
         devils = await swarm.devils_advocate.run(
@@ -62,7 +88,7 @@ class DebateEngine:
             context={"current_best": research_2.output},
             task_id=task_id,
         )
-        rounds.append(devils)
+        await record(devils, 4)
 
         # Round 5: Fact-checker validation
         fact_check = await swarm.fact_checker.run(
@@ -70,7 +96,7 @@ class DebateEngine:
             context={"candidate_answer": research_2.output},
             task_id=task_id,
         )
-        rounds.append(fact_check)
+        await record(fact_check, 5)
 
         # Round 6: Synthesizer
         synth = await swarm.synthesizer.run(
@@ -83,7 +109,7 @@ class DebateEngine:
             },
             task_id=task_id,
         )
-        rounds.append(synth)
+        await record(synth, 6)
 
         dissent = [critic.output, devils.output]
         return DebateOutcome(

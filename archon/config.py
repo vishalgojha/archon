@@ -51,6 +51,9 @@ class ByokConfig(BaseModel):
     free_tier_first: bool = False
 
     ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_primary_model: str = "llama3.3:70b"
+    ollama_coding_model: str = "qwen2.5-coder:32b"
+    ollama_fast_model: str = "llama3.2:3b"
     ollama_embedding_model: str = "nomic-embed-text"
     ollama_vision_model: str = "llava:34b"
 

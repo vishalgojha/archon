@@ -405,6 +405,11 @@ class ProviderRouter:
                 return byok.ollama_embedding_model
             if role == "vision":
                 return byok.ollama_vision_model
+            if role == "coding":
+                return byok.ollama_coding_model
+            if role == "fast":
+                return byok.ollama_fast_model
+            return byok.ollama_primary_model
 
         if provider == "openrouter" and byok.openrouter_fallback_chain:
             return byok.openrouter_fallback_chain[0]

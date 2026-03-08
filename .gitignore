@@ -13,3 +13,6 @@ build/
 *.sqlite
 *.sqlite3
 archon/tests/_tmp_*
+ai-terminal/node_modules/
+ai-terminal/.env
+ai-terminal/.ai-terminal-state.json

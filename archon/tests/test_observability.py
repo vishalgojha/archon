@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from click.testing import CliRunner
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from archon.archon_cli import cli
 from archon.interfaces.api.server import app
 from archon.observability.metrics import Metrics
+from archon.observability.setup import configure_observability
 from archon.observability.tracing import TracingSetup
 
 
@@ -95,6 +98,21 @@ def test_metrics_endpoint_returns_plaintext() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
+
+
+def test_configure_observability_announces_ascii_status_lines(capsys: pytest.CaptureFixture[str]) -> None:
+    Metrics.reset_for_tests(force_noop=True)
+    TracingSetup.reset_for_tests(force_noop=True)
+    test_app = FastAPI()
+
+    configure_observability(test_app)
+
+    output = capsys.readouterr().out
+    assert "Metrics  -> http://127.0.0.1:8000/metrics" in output
+    assert "Traces   -> http://127.0.0.1:8000/observability/traces" in output
+    assert "Grafana  -> docker compose -f docker-compose.observability.yml up" in output
+    assert "✔" not in output
+    assert "→" not in output
 
 
 def test_metrics_middleware_increments_request_counter_on_each_request() -> None:
@@ -198,3 +216,18 @@ archon_agents_recruited_total{agent_name="ResearcherAgent"} 4
 
     assert result.exit_code == 0
     assert "Monitor stopped." in result.output
+
+
+def test_cli_monitor_reports_unreachable_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise_connect_error(method: str, url: str, **kwargs: object) -> object:
+        request = httpx.Request(method, url)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    monkeypatch.setattr("archon.archon_cli._request_json", _raise_connect_error)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["monitor", "--interval", "0.1"])
+
+    assert result.exit_code != 0
+    assert "ARCHON server is not reachable" in result.output
+    assert "archon serve" in result.output

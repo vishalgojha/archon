@@ -8,7 +8,6 @@ import json
 import os
 import re
 import secrets
-import subprocess
 import tempfile
 import time
 import uuid
@@ -23,11 +22,13 @@ import yaml
 
 from archon import runtime_installer
 from archon.api.auth import create_tenant_token
-from archon.config import load_archon_config
+from archon.config import ArchonConfig, load_archon_config
 from archon.core.approval_gate import ApprovalGate
 from archon.core.orchestrator import Orchestrator
 from archon.deploy.cli import deploy_group
 from archon.federation.peer_discovery import Peer, PeerRegistry
+from archon.interfaces.cli.tui import run_agentic_tui
+from archon.interfaces.cli.tui_onboarding import OnboardingCallbacks
 from archon.marketplace.payout_orchestrator import PayoutOrchestrator
 from archon.marketplace.revenue_share import PayoutQueue, RevenueShareLedger
 from archon.memory.store import MemoryStore
@@ -217,6 +218,18 @@ def _prompt_alert_threshold(default: int = 80, *, yes: bool = False) -> int:
 
 def _default_byok_config() -> dict[str, Any]:
     return load_archon_config("__wizard_defaults__.yaml").byok.model_dump()
+
+
+def _should_default_tui_to_live(config: Any) -> bool:
+    byok = getattr(config, "byok", None)
+    if not isinstance(config, ArchonConfig) or byok is None:
+        return False
+    return (
+        byok.primary == "ollama"
+        and byok.coding == "ollama"
+        and byok.fast == "ollama"
+        and byok.fallback == "ollama"
+    )
 
 
 def _probe_ollama(timeout_s: float = 2.0) -> dict[str, Any]:
@@ -1277,13 +1290,24 @@ def monitor_command(base_url: str, timeout_s: float, interval: float) -> None:
     previous_ts: float | None = None
     try:
         while True:
-            health = _request_json("GET", f"{normalized_base}/health", timeout_s=timeout_s)
-            metrics_text = _request_text("GET", f"{normalized_base}/metrics", timeout_s=timeout_s)
-            spans = _request_json(
-                "GET",
-                f"{normalized_base}/observability/traces",
-                timeout_s=timeout_s,
-            )
+            try:
+                health = _request_json("GET", f"{normalized_base}/health", timeout_s=timeout_s)
+                metrics_text = _request_text(
+                    "GET",
+                    f"{normalized_base}/metrics",
+                    timeout_s=timeout_s,
+                )
+                spans = _request_json(
+                    "GET",
+                    f"{normalized_base}/observability/traces",
+                    timeout_s=timeout_s,
+                )
+            except (httpx.HTTPError, ValueError) as exc:
+                raise click.ClickException(
+                    "ARCHON server is not reachable at "
+                    f"{normalized_base}. Start it with 'archon serve' or pass --base-url "
+                    "to a running server, then retry 'archon monitor'."
+                ) from exc
             summary = _summarize_metrics(metrics_text)
             now = time.monotonic()
             req_per_s = 0.0
@@ -1419,6 +1443,57 @@ def debate_command(
             await orchestrator.aclose()
 
     asyncio.run(_run())
+
+
+@cli.command("tui")
+@click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+@click.option("--budget", type=float, default=None)
+@click.option("--live-providers", is_flag=True, default=False)
+@click.option("--context", "context_text", default="", show_default=False)
+@click.option(
+    "--context-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+)
+@click.option("--config", "config_path", default=DEFAULT_CONFIG_PATH, show_default=True)
+def tui_command(
+    mode: str,
+    budget: float | None,
+    live_providers: bool,
+    context_text: str,
+    context_file: Path | None,
+    config_path: str,
+) -> None:
+    """Launch the interactive ARCHON agentic terminal UI."""
+
+    config = _load_config(config_path) if Path(config_path).exists() else load_archon_config("__wizard_defaults__.yaml")
+    if budget is not None:
+        config.byok.budget_per_task_usd = float(budget)
+    effective_live_providers = live_providers or _should_default_tui_to_live(config)
+    context = _parse_context(context_text or None, context_file)
+    onboarding = OnboardingCallbacks(
+        default_byok_config=_default_byok_config,
+        probe_ollama=_probe_ollama,
+        validate_openrouter_key=_validate_openrouter_key,
+        validate_openai_key=_validate_openai_key,
+        validate_anthropic_key=_validate_anthropic_key,
+        save_config=_save_onboarding_config,
+        run_validation=_run_validation_dry_run,
+        read_env_value=_read_env_value,
+        write_env=write_env,
+        load_config=_load_config,
+    )
+    asyncio.run(
+        run_agentic_tui(
+            config=config,
+            initial_mode=mode,
+            live_provider_calls=effective_live_providers,
+            initial_context=context,
+            config_path=config_path,
+            onboarding=onboarding,
+            show_launcher=True,
+        )
+    )
 
 
 @cli.command("run")

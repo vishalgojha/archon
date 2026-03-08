@@ -46,6 +46,29 @@ def test_resolve_provider_raises_when_no_provider_keys(monkeypatch: pytest.Monke
         router.resolve_provider(role="primary")
 
 
+def test_resolve_provider_uses_configured_ollama_models() -> None:
+    config = ArchonConfig.model_validate(
+        {
+            "byok": {
+                "primary": "ollama",
+                "coding": "ollama",
+                "vision": "ollama",
+                "fast": "ollama",
+                "embedding": "ollama",
+                "fallback": "ollama",
+                "ollama_primary_model": "llama3.1:latest",
+                "ollama_coding_model": "llama3.1:latest",
+                "ollama_fast_model": "llama3.1:latest",
+            }
+        }
+    )
+    router = ProviderRouter(config=config)
+
+    assert router.resolve_provider(role="primary").model == "llama3.1:latest"
+    assert router.resolve_provider(role="coding").model == "llama3.1:latest"
+    assert router.resolve_provider(role="fast").model == "llama3.1:latest"
+
+
 def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     governor = CostGovernor(default_budget_usd=1.0)

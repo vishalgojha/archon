@@ -12,6 +12,7 @@ import yaml
 from click.testing import CliRunner
 
 from archon.archon_cli import _plain_onboarding_banner, cli, write_env
+from archon.config import ArchonConfig
 
 
 def _repo_root() -> Path:
@@ -275,6 +276,102 @@ def test_task_command_posts_to_api_and_prints_result(monkeypatch: pytest.MonkeyP
     assert "Run targeted outreach." in result.output
     assert "Confidence: 84%" in result.output
     assert "Budget spent: $0.4200" in result.output
+
+
+def test_tui_command_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run_agentic_tui(
+        *,
+        config: object,
+        initial_mode: str,
+        live_provider_calls: bool,
+        initial_context: dict[str, object],
+        config_path: str,
+        onboarding: object,
+        show_launcher: bool,
+    ) -> None:
+        captured["config"] = config
+        captured["initial_mode"] = initial_mode
+        captured["live_provider_calls"] = live_provider_calls
+        captured["initial_context"] = initial_context
+        captured["config_path"] = config_path
+        captured["show_launcher"] = show_launcher
+        captured["onboarding"] = onboarding
+
+    config = object()
+    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": config)
+    monkeypatch.setattr("archon.archon_cli.run_agentic_tui", fake_run_agentic_tui)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "tui",
+            "--mode",
+            "growth",
+            "--live-providers",
+            "--context",
+            '{"market":"India"}',
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["onboarding"] is not None
+    assert captured == {
+        "config": config,
+        "initial_mode": "growth",
+        "live_provider_calls": True,
+        "initial_context": {"market": "India"},
+        "config_path": "config.archon.yaml",
+        "show_launcher": True,
+        "onboarding": captured["onboarding"],
+    }
+
+
+def test_tui_command_defaults_to_live_for_all_ollama_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run_agentic_tui(
+        *,
+        config: object,
+        initial_mode: str,
+        live_provider_calls: bool,
+        initial_context: dict[str, object],
+        config_path: str,
+        onboarding: object,
+        show_launcher: bool,
+    ) -> None:
+        captured["config"] = config
+        captured["initial_mode"] = initial_mode
+        captured["live_provider_calls"] = live_provider_calls
+        captured["initial_context"] = initial_context
+        captured["config_path"] = config_path
+        captured["show_launcher"] = show_launcher
+        captured["onboarding"] = onboarding
+
+    config = ArchonConfig.model_validate(
+        {
+            "byok": {
+                "primary": "ollama",
+                "coding": "ollama",
+                "vision": "ollama",
+                "fast": "ollama",
+                "embedding": "ollama",
+                "fallback": "ollama",
+            }
+        }
+    )
+    monkeypatch.setattr("archon.archon_cli._load_config", lambda path="config.archon.yaml": config)
+    monkeypatch.setattr("archon.archon_cli.run_agentic_tui", fake_run_agentic_tui)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["tui"])
+
+    assert result.exit_code == 0
+    assert captured["live_provider_calls"] is True
 
 
 def test_dashboard_and_studio_commands_launch_browser(monkeypatch: pytest.MonkeyPatch) -> None:
