@@ -1,6 +1,6 @@
 ## Working Agreements
 
-- Run `pytest tests/` before every commit.
+- Run bare `pytest tests/` from the repo root before every commit.
 - Run integration smoke suite `pytest tests archon/tests/test_integration.py` for cross-stack changes.
 - All agent classes inherit `BaseAgent`.
 - BYOK keys ONLY from `os.environ` (never hardcoded, never logged).
