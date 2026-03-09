@@ -132,6 +132,15 @@ def test_default_install_root_uses_user_local_programs_on_windows(monkeypatch) -
     assert path == Path(r"C:\Users\visha\AppData\Local\Programs\Archon")
 
 
+def test_default_install_root_falls_back_to_userprofile_on_windows(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\visha")
+
+    path = _installer_module().default_install_root("win32")
+
+    assert path == Path(r"C:\Users\visha\AppData\Local\Programs\Archon")
+
+
 def test_uninstall_removes_runtime_tree_on_non_windows(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     from archon import runtime_installer
 

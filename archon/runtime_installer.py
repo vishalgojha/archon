@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import ntpath
 import os
 import shutil
 import subprocess
@@ -12,10 +13,46 @@ import sys
 import tempfile
 import tomllib
 import venv
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _is_windows_platform(platform_name: str) -> bool:
+    return str(platform_name).lower().startswith("win")
+
+
+def _path_module_for_platform(platform_name: str):
+    return ntpath if _is_windows_platform(platform_name) else os.path
+
+
+def _normalize_path_for_platform(value: str, *, platform_name: str) -> str:
+    path_module = _path_module_for_platform(platform_name)
+    normalized = path_module.normpath(path_module.expandvars(str(value).strip()))
+    if _is_windows_platform(platform_name):
+        normalized = path_module.normcase(normalized)
+    return normalized
+
+
+def _default_windows_home() -> PureWindowsPath:
+    user_profile = os.environ.get("USERPROFILE", "").strip()
+    if user_profile:
+        return PureWindowsPath(user_profile)
+
+    home_drive = os.environ.get("HOMEDRIVE", "").strip()
+    home_path = os.environ.get("HOMEPATH", "").strip()
+    if home_drive and home_path:
+        return PureWindowsPath(f"{home_drive}{home_path}")
+
+    home_value = str(Path.home()).strip()
+    if home_value:
+        home_path_value = PureWindowsPath(home_value)
+        if home_path_value.drive or home_value.startswith("\\\\"):
+            return home_path_value
+
+    username = os.environ.get("USERNAME", "").strip() or Path.home().name or "User"
+    return PureWindowsPath("C:/Users") / username
 
 
 def default_install_root(platform_name: str | None = None) -> Path:
@@ -27,11 +64,11 @@ def default_install_root(platform_name: str | None = None) -> Path:
     """
 
     platform_name = (platform_name or sys.platform).lower()
-    if platform_name.startswith("win"):
+    if _is_windows_platform(platform_name):
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         if local_appdata:
-            return Path(local_appdata) / "Programs" / "Archon"
-        return Path.home() / "AppData" / "Local" / "Programs" / "Archon"
+            return Path(str(PureWindowsPath(local_appdata) / "Programs" / "Archon"))
+        return Path(str(_default_windows_home() / "AppData" / "Local" / "Programs" / "Archon"))
     if platform_name == "darwin":
         return Path.home() / "Library" / "Application Support" / "Archon"
     return Path.home() / ".local" / "share" / "archon"
@@ -78,20 +115,21 @@ def merge_path_value(
     """
 
     platform_name = (platform_name or sys.platform).lower()
-    separator = ";" if platform_name.startswith("win") else os.pathsep
+    separator = ";" if _is_windows_platform(platform_name) else os.pathsep
     current = [item for item in str(existing or "").split(separator) if item.strip()]
     candidate = str(new_entry)
 
-    def normalize(value: str) -> str:
-        normalized = os.path.normpath(os.path.expandvars(str(value).strip()))
-        if platform_name.startswith("win"):
-            normalized = os.path.normcase(normalized)
-        return normalized
-
-    candidate_norm = normalize(candidate)
-    if not prioritize and any(normalize(item) == candidate_norm for item in current):
+    candidate_norm = _normalize_path_for_platform(candidate, platform_name=platform_name)
+    if not prioritize and any(
+        _normalize_path_for_platform(item, platform_name=platform_name) == candidate_norm
+        for item in current
+    ):
         return separator.join(current)
-    filtered = [item for item in current if normalize(item) != candidate_norm]
+    filtered = [
+        item
+        for item in current
+        if _normalize_path_for_platform(item, platform_name=platform_name) != candidate_norm
+    ]
     if prioritize:
         current = [candidate, *filtered]
     else:
@@ -113,18 +151,16 @@ def remove_path_value(
     """
 
     platform_name = (platform_name or sys.platform).lower()
-    separator = ";" if platform_name.startswith("win") else os.pathsep
+    separator = ";" if _is_windows_platform(platform_name) else os.pathsep
     current = [item for item in str(existing or "").split(separator) if item.strip()]
     candidate = str(entry)
 
-    def normalize(value: str) -> str:
-        normalized = os.path.normpath(os.path.expandvars(str(value).strip()))
-        if platform_name.startswith("win"):
-            normalized = os.path.normcase(normalized)
-        return normalized
-
-    candidate_norm = normalize(candidate)
-    filtered = [item for item in current if normalize(item) != candidate_norm]
+    candidate_norm = _normalize_path_for_platform(candidate, platform_name=platform_name)
+    filtered = [
+        item
+        for item in current
+        if _normalize_path_for_platform(item, platform_name=platform_name) != candidate_norm
+    ]
     return separator.join(filtered)
 
 
