@@ -423,7 +423,7 @@ def test_studio_command_reports_missing_server_cleanly(monkeypatch: pytest.Monke
 
     monkeypatch.setattr("archon.archon_cli._request_json", fake_request_json)
 
-    result = CliRunner().invoke(cli, ["studio"])
+    result = CliRunner().invoke(cli, ["studio", "open"])
 
     assert result.exit_code != 0
     assert "archon serve" in result.output
