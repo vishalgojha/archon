@@ -21,7 +21,7 @@ def _event_sink(live, gate):  # type: ignore[no-untyped-def]
 class _Run(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    async def run(  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,

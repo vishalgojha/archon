@@ -226,7 +226,11 @@ def approval_prompt(
         renderer.emit(
             renderer.detail_panel(
                 "approval",
-                [renderer.flow_message("approval_gate", "timed_out", {"action": event.get("action_type", "action")})],
+                [
+                    renderer.flow_message(
+                        "approval_gate", "timed_out", {"action": event.get("action_type", "action")}
+                    )
+                ],
             )
         )
         return False
@@ -235,7 +239,11 @@ def approval_prompt(
         renderer.emit(
             renderer.detail_panel(
                 "approval",
-                [renderer.flow_message("approval_gate", "approved", {"action": event.get("action_type", "action")})],
+                [
+                    renderer.flow_message(
+                        "approval_gate", "approved", {"action": event.get("action_type", "action")}
+                    )
+                ],
             )
         )
         return True
@@ -243,7 +251,11 @@ def approval_prompt(
     renderer.emit(
         renderer.detail_panel(
             "approval",
-            [renderer.flow_message("approval_gate", "denied", {"action": event.get("action_type", "action")})],
+            [
+                renderer.flow_message(
+                    "approval_gate", "denied", {"action": event.get("action_type", "action")}
+                )
+            ],
         )
     )
     return False

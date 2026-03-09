@@ -56,20 +56,15 @@ def validate_observability_compose(
     missing = sorted(required - set(services))
     findings: list[str] = []
     if missing:
-        findings.append(
-            f"Observability compose is missing required services: {', '.join(missing)}"
-        )
+        findings.append(f"Observability compose is missing required services: {', '.join(missing)}")
     prometheus = services.get("prometheus", {}) if isinstance(services, dict) else {}
     extra_hosts = prometheus.get("extra_hosts", []) if isinstance(prometheus, dict) else []
     if "host.docker.internal:host-gateway" not in list(extra_hosts):
-        findings.append(
-            "Prometheus service is missing host.docker.internal host-gateway mapping."
-        )
+        findings.append("Prometheus service is missing host.docker.internal host-gateway mapping.")
     collector = services.get("otel-collector", {}) if isinstance(services, dict) else {}
     collector_volumes = collector.get("volumes", []) if isinstance(collector, dict) else []
-    if (
-        "./deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro"
-        not in list(collector_volumes)
+    if "./deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro" not in list(
+        collector_volumes
     ):
         findings.append(
             "otel-collector service must mount ./deploy/otel-collector-config.yaml read-only."

@@ -60,7 +60,7 @@ def test_bare_archon_prints_all_drawers() -> None:
     result = CliRunner().invoke(cli, [])
     assert result.exit_code == 0
     for drawer in DRAWER_COPY.values():
-        assert drawer["title"] in result.output
+        assert str(drawer["title"]) in result.output
 
 
 def test_init_flow_completes(monkeypatch: pytest.MonkeyPatch) -> None:

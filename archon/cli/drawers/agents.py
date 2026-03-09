@@ -40,7 +40,7 @@ def _build_onboarding(bindings):  # type: ignore[no-untyped-def]
 class _Task(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(  # type: ignore[no-untyped-def]
+    def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,
@@ -55,7 +55,9 @@ class _Task(ArchonCommand):
         timeout_s: float,
     ):
         effective_mode = session.run_step(0, self.bindings._resolve_mode, mode, goal)
-        context = session.run_step(1, self.bindings._parse_context, context_text or None, context_file)
+        context = session.run_step(
+            1, self.bindings._parse_context, context_text or None, context_file
+        )
         headers = self.bindings._create_api_headers(
             token=token or None,
             tenant_id=tenant_id,
@@ -91,7 +93,7 @@ class _Task(ArchonCommand):
 class _Debate(ArchonCommand):
     command_id = COMMAND_IDS[1]
 
-    async def run(  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,
@@ -137,7 +139,7 @@ class _Debate(ArchonCommand):
 class _Tui(ArchonCommand):
     command_id = COMMAND_IDS[2]
 
-    async def run(  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,
@@ -156,7 +158,9 @@ class _Tui(ArchonCommand):
         if budget is not None:
             config.byok.budget_per_task_usd = float(budget)
         effective_live = live_providers or self.bindings._should_default_tui_to_live(config)
-        context = session.run_step(1, self.bindings._parse_context, context_text or None, context_file)
+        context = session.run_step(
+            1, self.bindings._parse_context, context_text or None, context_file
+        )
         onboarding = _build_onboarding(self.bindings)
         session.update_step(2, "running")
         await self.bindings.run_agentic_tui(

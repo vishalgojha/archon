@@ -14,7 +14,7 @@ COMMAND_IDS = ("studio.open", "studio.run")
 class _Open(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(self, session, *, base_url: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, base_url: str):  # type: ignore[no-untyped-def,override]
         session.run_step(
             0,
             self.bindings._open_web_shell,
@@ -29,7 +29,7 @@ class _Open(ArchonCommand):
 class _Run(ArchonCommand):
     command_id = COMMAND_IDS[1]
 
-    async def run(  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,
@@ -44,7 +44,9 @@ class _Run(ArchonCommand):
         if not isinstance(payload, dict):
             raise click.ClickException("workflow file")
         if dry_run:
-            step_count = len(payload.get("steps", [])) if isinstance(payload.get("steps"), list) else 0
+            step_count = (
+                len(payload.get("steps", [])) if isinstance(payload.get("steps"), list) else 0
+            )
             session.run_step(1, lambda: None)
             return {
                 "result_key": "dry_run",

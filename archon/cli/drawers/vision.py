@@ -33,4 +33,3 @@ def build_group(bindings):
         _Act(bindings).invoke()
 
     return group
-

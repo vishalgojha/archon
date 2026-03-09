@@ -10,7 +10,7 @@ def _assert_drawer(drawer_id: str) -> None:
     result = CliRunner().invoke(cli, [drawer_id])
     assert result.exit_code == 0
     drawer = DRAWER_COPY[drawer_id]
-    assert drawer["title"] in result.output
+    assert str(drawer["title"]) in result.output
     for command_id in drawer["commands"]:
         assert command_id.split(".", 1)[1] in result.output
 

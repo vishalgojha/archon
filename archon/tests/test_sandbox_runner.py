@@ -1,10 +1,14 @@
 """Unit tests for sandbox runner error normalization."""
 
+import asyncio
 import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from archon.marketplace import runner
+from archon.marketplace.sandbox import AgentListing, SandboxConfig, SandboxedAgent
 
 
 def test_runner_memory_error_returns_memory_limit_error(monkeypatch) -> None:
@@ -74,3 +78,70 @@ def test_apply_runtime_guards_sets_cpu_rlimit_when_opted_in(monkeypatch) -> None
 
     assert (fake_resource.RLIMIT_AS, (32 * 1024 * 1024, 32 * 1024 * 1024)) in calls
     assert (fake_resource.RLIMIT_CPU, (5, 6)) in calls
+
+
+@pytest.mark.asyncio
+async def test_sandboxed_agent_overrides_cpu_rlimit_env_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_env: dict[str, str] = {}
+
+    class _FakeProcess:
+        pid = 321
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b'{"ok": true}\n', b""
+
+    async def fake_create_subprocess_exec(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_env.update(kwargs["env"])
+        return _FakeProcess()
+
+    monkeypatch.setenv("ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT", "1")
+    monkeypatch.setenv("COV_CORE_SOURCE", "archon")
+    monkeypatch.setenv("COVERAGE_PROCESS_START", "/tmp/.coveragerc")
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "archon/tests/test_sandbox_runner.py::test")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    sandbox = SandboxedAgent()
+    result = await sandbox.run(
+        AgentListing(listing_id="listing-1", entry_point="fake.module:Agent"),
+        {"message": "hello"},
+        SandboxConfig(),
+    )
+
+    assert result.exit_code == 0
+    assert result.output == {"ok": True}
+    assert captured_env["ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT"] == "0"
+    assert "COV_CORE_SOURCE" not in captured_env
+    assert "COVERAGE_PROCESS_START" not in captured_env
+    assert "PYTEST_CURRENT_TEST" not in captured_env
+
+
+@pytest.mark.asyncio
+async def test_sandboxed_agent_enables_cpu_rlimit_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_env: dict[str, str] = {}
+
+    class _FakeProcess:
+        pid = 654
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b'{"ok": true}\n', b""
+
+    async def fake_create_subprocess_exec(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_env.update(kwargs["env"])
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    sandbox = SandboxedAgent()
+    await sandbox.run(
+        AgentListing(listing_id="listing-1", entry_point="fake.module:Agent"),
+        {"message": "hello"},
+        SandboxConfig(enforce_cpu_rlimit=True),
+    )
+
+    assert captured_env["ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT"] == "1"

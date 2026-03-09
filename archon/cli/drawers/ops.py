@@ -25,11 +25,7 @@ def _counts(path: Path) -> dict[str, int]:
     if not path.exists():
         return {"pending": 0, "running": 0, "completed": 0, "failed": 0}
     with sqlite3.connect(path) as conn:
-        rows = conn.execute(
-            "SELECT status, COUNT(*) "
-            "FROM worker_tasks "
-            "GROUP BY status"
-        ).fetchall()
+        rows = conn.execute("SELECT status, COUNT(*) FROM worker_tasks GROUP BY status").fetchall()
     counts = {"pending": 0, "running": 0, "completed": 0, "failed": 0}
     for status, value in rows:
         counts[str(status)] = int(value)
@@ -45,7 +41,7 @@ def _worker_paths():
 class _Serve(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(self, session, *, host: str, port: int, config_path: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, host: str, port: int, config_path: str):  # type: ignore[no-untyped-def,override]
         path = Path(config_path)
         if not path.exists():
             from archon.cli.drawers.core import _Init
@@ -64,7 +60,7 @@ class _Serve(ArchonCommand):
 class _Health(ArchonCommand):
     command_id = COMMAND_IDS[1]
 
-    def run(self, session, *, base_url: str, timeout_s: float):  # type: ignore[no-untyped-def]
+    def run(self, session, *, base_url: str, timeout_s: float):  # type: ignore[no-untyped-def,override]
         payload = session.run_step(
             0,
             self.bindings._request_json,
@@ -93,7 +89,7 @@ class _Health(ArchonCommand):
 class _Monitor(ArchonCommand):
     command_id = COMMAND_IDS[2]
 
-    def run(self, session, *, base_url: str, timeout_s: float, interval: float):  # type: ignore[no-untyped-def]
+    def run(self, session, *, base_url: str, timeout_s: float, interval: float):  # type: ignore[no-untyped-def,override]
         normalized = self.bindings._normalize_base_url(base_url)
         iterations = 0
         session.update_step(0, "running")
@@ -136,7 +132,7 @@ class _Monitor(ArchonCommand):
 class _Worker(ArchonCommand):
     command_id = COMMAND_IDS[3]
 
-    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         runtime_dir, worker_db_path = _worker_paths()
         runtime = session.run_step(0, runtime_dir)
         session.run_step(1, worker_db_path)

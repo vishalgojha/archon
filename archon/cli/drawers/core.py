@@ -30,11 +30,7 @@ def _counts(path: Path) -> dict[str, int]:
     if not path.exists():
         return {"pending": 0, "running": 0, "completed": 0, "failed": 0}
     with sqlite3.connect(path) as conn:
-        rows = conn.execute(
-            "SELECT status, COUNT(*) "
-            "FROM worker_tasks "
-            "GROUP BY status"
-        ).fetchall()
+        rows = conn.execute("SELECT status, COUNT(*) FROM worker_tasks GROUP BY status").fetchall()
     counts = {"pending": 0, "running": 0, "completed": 0, "failed": 0}
     for status, value in rows:
         counts[str(status)] = int(value)
@@ -93,19 +89,23 @@ def _build_onboarding_callbacks(bindings):
 class _Init(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         byok = session.run_step(0, self.bindings._default_byok_config)
         primary = _choice("primary_provider")
         key = ""
         if primary != "ollama":
-            key = click.prompt(_key_prompt("primary_key"), hide_input=True, default="", show_default=False)
+            key = click.prompt(
+                _key_prompt("primary_key"), hide_input=True, default="", show_default=False
+            )
             if key and not _check_key(self.bindings, primary, key):
                 raise click.ClickException(primary)
             if key:
                 self.bindings.write_env(_ENV_KEYS[primary], key)
         fast = session.run_step(1, _choice, "fast_provider")
         if fast not in {"ollama", primary}:
-            fast_key = click.prompt(_key_prompt("primary_key"), hide_input=True, default="", show_default=False)
+            fast_key = click.prompt(
+                _key_prompt("primary_key"), hide_input=True, default="", show_default=False
+            )
             if fast_key and not _check_key(self.bindings, fast, fast_key):
                 raise click.ClickException(fast)
             if fast_key:
@@ -163,7 +163,7 @@ class _Init(ArchonCommand):
 class _Validate(ArchonCommand):
     command_id = COMMAND_IDS[1]
 
-    def run(self, session, *, config_path: str, timeout_s: float):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str, timeout_s: float):  # type: ignore[no-untyped-def,override]
         session.run_step(0, lambda: Path(config_path))
         report = session.run_step(1, validate_config, config_path, timeout_s)
         lines = [f"schema {'PASS' if report.schema_valid else 'FAIL'}"]
@@ -183,7 +183,7 @@ class _Validate(ArchonCommand):
 class _Status(ArchonCommand):
     command_id = COMMAND_IDS[2]
 
-    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         runtime_dir, worker_db_path = _worker_paths()
         config = session.run_step(0, self.bindings._load_config, config_path)
         runtime = session.run_step(1, runtime_dir)
@@ -210,7 +210,7 @@ class _Status(ArchonCommand):
 class _Chat(ArchonCommand):
     command_id = COMMAND_IDS[3]
 
-    async def run(self, session, *, mode: str, config_path: str):  # type: ignore[no-untyped-def]
+    async def run(self, session, *, mode: str, config_path: str):  # type: ignore[no-untyped-def,override]
         config = (
             session.run_step(0, self.bindings._load_config, config_path)
             if Path(config_path).exists()

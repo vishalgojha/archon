@@ -33,4 +33,3 @@ def build_group(bindings):
         _Sync(bindings).invoke()
 
     return group
-

@@ -92,7 +92,7 @@ def drawer_panel(drawer_id: str) -> Any:
 
 
 def what_panel(command_id: str) -> Any:
-    return _as_panel(command_id, [COMMAND_COPY[command_id]["what"]])
+    return _as_panel(command_id, [str(COMMAND_COPY[command_id]["what"])])
 
 
 def step_row(label: str, state: str) -> Any:

@@ -12,7 +12,7 @@ COMMAND_IDS = ("memory.search", "memory.export")
 class _Search(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(  # type: ignore[no-untyped-def]
+    def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,

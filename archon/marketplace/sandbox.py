@@ -30,6 +30,7 @@ class AgentListing:
 class SandboxConfig:
     memory_mb: int = 256
     cpu_percent: int = 25
+    enforce_cpu_rlimit: bool = False
     timeout_s: float = 30.0
     network: bool = False
     allowed_imports: list[str] | None = None
@@ -112,7 +113,7 @@ class SandboxedAgent:
         input_data: dict[str, Any],
         config: SandboxConfig,
     ) -> SandboxResult:
-        env = os.environ.copy()
+        env = _sandbox_env(os.environ)
         env["ARCHON_SANDBOX_LISTING_JSON"] = json.dumps(
             {
                 "listing_id": listing.listing_id,
@@ -123,6 +124,7 @@ class SandboxedAgent:
         )
         env["ARCHON_SANDBOX_MEMORY_MB"] = str(max(1, int(config.memory_mb)))
         env["ARCHON_SANDBOX_CPU_PERCENT"] = str(max(1, int(config.cpu_percent)))
+        env["ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT"] = "1" if bool(config.enforce_cpu_rlimit) else "0"
         env["ARCHON_SANDBOX_TIMEOUT_S"] = str(float(config.timeout_s))
         env["ARCHON_SANDBOX_NETWORK"] = "1" if config.network else "0"
         env["ARCHON_SANDBOX_ALLOWED_IMPORTS"] = json.dumps(
@@ -220,3 +222,18 @@ def _parse_stdout_json(stdout_text: str) -> dict[str, Any]:
         return {"result": parsed}
 
     return {"raw": payload}
+
+
+def _sandbox_env(source: dict[str, str]) -> dict[str, str]:
+    """Drop test harness env that can leak into sandboxed subprocesses."""
+
+    blocked_keys = {
+        "COVERAGE_PROCESS_CONFIG",
+        "COVERAGE_PROCESS_START",
+        "PYTEST_CURRENT_TEST",
+    }
+    return {
+        key: value
+        for key, value in source.items()
+        if key not in blocked_keys and not key.startswith("COV_CORE_")
+    }

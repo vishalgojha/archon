@@ -111,9 +111,7 @@ def test_read_key_posix_normalizes_sequences_and_restores_terminal(
     fake_termios = SimpleNamespace(
         TCSADRAIN=99,
         tcgetattr=tcgetattr,
-        tcsetattr=lambda fd, when, value: calls.update(
-            {"tcsetattr": (fd, when, value)}
-        ),
+        tcsetattr=lambda fd, when, value: calls.update({"tcsetattr": (fd, when, value)}),
     )
 
     def setraw(fd: int) -> None:

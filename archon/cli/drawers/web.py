@@ -33,4 +33,3 @@ def build_group(bindings):
         _Optimize(bindings).invoke()
 
     return group
-

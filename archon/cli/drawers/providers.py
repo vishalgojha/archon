@@ -36,7 +36,7 @@ def _run_validation(config_path: str, timeout_seconds: float, *, provider: str):
 class _List(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         provider_env_key = _provider_env_keys()
         config = session.run_step(0, self.bindings._load_config, config_path)
         rows = session.run_step(1, _roles, config)
@@ -62,7 +62,7 @@ class _List(ArchonCommand):
 class _Test(ArchonCommand):
     command_id = COMMAND_IDS[1]
 
-    def run(self, session, *, config_path: str, timeout_s: float):  # type: ignore[no-untyped-def]
+    def run(self, session, *, config_path: str, timeout_s: float):  # type: ignore[no-untyped-def,override]
         config = session.run_step(0, self.bindings._load_config, config_path)
         providers = sorted({provider for _, provider in _roles(config)})
         results = []

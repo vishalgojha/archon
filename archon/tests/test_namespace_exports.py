@@ -57,9 +57,7 @@ def test_evolution_namespace_re_exports_public_surface() -> None:
     assert evolution.ABTester is ABTester
     assert evolution.SelfEvolutionEngine is SelfEvolutionEngine
     assert evolution.WorkflowDefinition is WorkflowDefinition
-    assert {"ABTester", "SelfEvolutionEngine", "WorkflowDefinition"}.issubset(
-        evolution.__all__
-    )
+    assert {"ABTester", "SelfEvolutionEngine", "WorkflowDefinition"}.issubset(evolution.__all__)
 
 
 def test_federation_namespace_re_exports_public_surface() -> None:

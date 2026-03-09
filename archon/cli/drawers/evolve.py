@@ -33,4 +33,3 @@ def build_group(bindings):
         _Apply(bindings).invoke()
 
     return group
-
