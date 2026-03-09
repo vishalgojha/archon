@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import subprocess
-import time
 from pathlib import Path
 
 import click
 
-from archon.cli.base_command import ArchonCommand
 from archon.cli import renderer
+from archon.cli.base_command import ArchonCommand
 from archon.cli.copy import FLOW_COPY
-from archon.deploy.worker import _runtime_dir, _worker_db_path
-from archon.interfaces.cli.tui_onboarding import OnboardingCallbacks
-from archon.validate_config import validate_config
 
 DRAWER_ID = "core"
 COMMAND_IDS = ("core.init", "core.validate", "core.status", "core.chat")
@@ -66,6 +61,35 @@ def _check_key(bindings, provider: str, key: str) -> bool:  # type: ignore[no-un
     return bool(validator(key, timeout_s=5.0))
 
 
+def validate_config(config_path: str, timeout_seconds: float, *, provider: str | None = None):
+    from archon.validate_config import validate_config as _validate_config
+
+    return _validate_config(config_path, provider=provider, timeout_seconds=timeout_seconds)
+
+
+def _worker_paths():
+    from archon.deploy.worker import _runtime_dir, _worker_db_path
+
+    return _runtime_dir, _worker_db_path
+
+
+def _build_onboarding_callbacks(bindings):
+    from archon.interfaces.cli.tui_onboarding import OnboardingCallbacks
+
+    return OnboardingCallbacks(
+        default_byok_config=bindings._default_byok_config,
+        probe_ollama=bindings._probe_ollama,
+        validate_openrouter_key=bindings._validate_openrouter_key,
+        validate_openai_key=bindings._validate_openai_key,
+        validate_anthropic_key=bindings._validate_anthropic_key,
+        save_config=bindings._save_onboarding_config,
+        run_validation=bindings._run_validation_dry_run,
+        read_env_value=bindings._read_env_value,
+        write_env=bindings.write_env,
+        load_config=bindings._load_config,
+    )
+
+
 class _Init(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
@@ -112,7 +136,7 @@ class _Init(ArchonCommand):
             "default_tier": "pro",
         }
         session.run_step(3, self.bindings._save_onboarding_config, config_data, config_path)
-        report = session.run_step(4, validate_config, config_path, timeout_seconds=6.0)
+        report = session.run_step(4, validate_config, config_path, 6.0)
         renderer.emit(
             renderer.detail_panel(
                 self.command_id,
@@ -141,7 +165,7 @@ class _Validate(ArchonCommand):
 
     def run(self, session, *, config_path: str, timeout_s: float):  # type: ignore[no-untyped-def]
         session.run_step(0, lambda: Path(config_path))
-        report = session.run_step(1, validate_config, config_path, timeout_seconds=timeout_s)
+        report = session.run_step(1, validate_config, config_path, timeout_s)
         lines = [f"schema {'PASS' if report.schema_valid else 'FAIL'}"]
         for row in report.provider_health:
             lines.append(f"{row.provider} {row.status} {row.detail}".strip())
@@ -160,9 +184,10 @@ class _Status(ArchonCommand):
     command_id = COMMAND_IDS[2]
 
     def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+        runtime_dir, worker_db_path = _worker_paths()
         config = session.run_step(0, self.bindings._load_config, config_path)
-        runtime = session.run_step(1, _runtime_dir)
-        counts = session.run_step(2, _counts, _worker_db_path())
+        runtime = session.run_step(1, runtime_dir)
+        counts = session.run_step(2, _counts, worker_db_path())
         version = self.bindings._resolve_version()
         roles = []
         for role in ("primary", "coding", "vision", "fast", "embedding", "fallback"):
@@ -191,18 +216,7 @@ class _Chat(ArchonCommand):
             if Path(config_path).exists()
             else self.bindings.load_archon_config("__wizard_defaults__.yaml")
         )
-        onboarding = OnboardingCallbacks(
-            default_byok_config=self.bindings._default_byok_config,
-            probe_ollama=self.bindings._probe_ollama,
-            validate_openrouter_key=self.bindings._validate_openrouter_key,
-            validate_openai_key=self.bindings._validate_openai_key,
-            validate_anthropic_key=self.bindings._validate_anthropic_key,
-            save_config=self.bindings._save_onboarding_config,
-            run_validation=self.bindings._run_validation_dry_run,
-            read_env_value=self.bindings._read_env_value,
-            write_env=self.bindings.write_env,
-            load_config=self.bindings._load_config,
-        )
+        onboarding = _build_onboarding_callbacks(self.bindings)
         session.run_step(1, lambda: None)
         session.update_step(2, "running")
         await self.bindings.run_agentic_tui(

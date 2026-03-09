@@ -8,9 +8,8 @@ from pathlib import Path
 
 import click
 
-from archon.cli.base_command import ArchonCommand
 from archon.cli import renderer
-from archon.deploy.worker import _runtime_dir, _worker_db_path
+from archon.cli.base_command import ArchonCommand
 
 DRAWER_ID = "ops"
 COMMAND_IDS = (
@@ -35,6 +34,12 @@ def _counts(path: Path) -> dict[str, int]:
     for status, value in rows:
         counts[str(status)] = int(value)
     return counts
+
+
+def _worker_paths():
+    from archon.deploy.worker import _runtime_dir, _worker_db_path
+
+    return _runtime_dir, _worker_db_path
 
 
 class _Serve(ArchonCommand):
@@ -132,8 +137,9 @@ class _Worker(ArchonCommand):
     command_id = COMMAND_IDS[3]
 
     def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
-        runtime = session.run_step(0, _runtime_dir)
-        session.run_step(1, _worker_db_path)
+        runtime_dir, worker_db_path = _worker_paths()
+        runtime = session.run_step(0, runtime_dir)
+        session.run_step(1, worker_db_path)
         session.update_step(2, "running")
         env = dict(self.bindings.os.environ)
         env["ARCHON_CONFIG"] = config_path
@@ -160,8 +166,9 @@ class _WorkerStatus(ArchonCommand):
     command_id = COMMAND_IDS[4]
 
     def run(self, session):  # type: ignore[no-untyped-def]
-        session.run_step(0, _runtime_dir)
-        counts = session.run_step(1, _counts, _worker_db_path())
+        runtime_dir, worker_db_path = _worker_paths()
+        session.run_step(0, runtime_dir)
+        counts = session.run_step(1, _counts, worker_db_path())
         lines = [f"{key} {value}" for key, value in counts.items()]
         session.run_step(2, lambda: None)
         session.print(renderer.detail_panel(self.command_id, lines))

@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import click
 
-from archon.cli.base_command import ArchonCommand
 from archon.cli import renderer
-from archon.providers.router import PROVIDER_ENV_KEY
-from archon.validate_config import validate_config
+from archon.cli.base_command import ArchonCommand
 
 DRAWER_ID = "providers"
 COMMAND_IDS = ("providers.list", "providers.test")
@@ -24,16 +21,29 @@ def _roles(config) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
     return rows
 
 
+def _provider_env_keys() -> dict[str, str]:
+    from archon.providers.router import PROVIDER_ENV_KEY
+
+    return PROVIDER_ENV_KEY
+
+
+def _run_validation(config_path: str, timeout_seconds: float, *, provider: str):
+    from archon.validate_config import validate_config
+
+    return validate_config(config_path, provider=provider, timeout_seconds=timeout_seconds)
+
+
 class _List(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
     def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def]
+        provider_env_key = _provider_env_keys()
         config = session.run_step(0, self.bindings._load_config, config_path)
         rows = session.run_step(1, _roles, config)
         lines = []
         count = 0
         for role, provider in rows:
-            env_name = PROVIDER_ENV_KEY.get(provider, "")
+            env_name = provider_env_key.get(provider, "")
             present = bool(
                 str(
                     self.bindings.os.getenv(env_name)
@@ -61,10 +71,10 @@ class _Test(ArchonCommand):
             started = time.perf_counter()
             report = session.run_step(
                 1,
-                validate_config,
+                _run_validation,
                 config_path,
+                timeout_s,
                 provider=provider,
-                timeout_seconds=timeout_s,
             )
             latency_ms = (time.perf_counter() - started) * 1000.0
             health = next(
