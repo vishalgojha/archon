@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from click.testing import CliRunner
+
+from archon.archon_cli import cli
+from archon.cli.copy import DRAWER_COPY
+
+
+def _assert_drawer(drawer_id: str) -> None:
+    result = CliRunner().invoke(cli, [drawer_id])
+    assert result.exit_code == 0
+    drawer = DRAWER_COPY[drawer_id]
+    assert drawer["title"] in result.output
+    for command_id in drawer["commands"]:
+        assert command_id.split(".", 1)[1] in result.output
+
+
+def test_core_drawer() -> None:
+    _assert_drawer("core")
+
+
+def test_agents_drawer() -> None:
+    _assert_drawer("agents")
+
+
+def test_growth_drawer() -> None:
+    _assert_drawer("growth")
+
+
+def test_vision_drawer() -> None:
+    _assert_drawer("vision")
+
+
+def test_web_drawer() -> None:
+    _assert_drawer("web")
+
+
+def test_memory_drawer() -> None:
+    _assert_drawer("memory")
+
+
+def test_evolve_drawer() -> None:
+    _assert_drawer("evolve")
+
+
+def test_federation_drawer() -> None:
+    _assert_drawer("federation")
+
+
+def test_providers_drawer() -> None:
+    _assert_drawer("providers")
+
+
+def test_marketplace_drawer() -> None:
+    _assert_drawer("marketplace")
+
+
+def test_studio_drawer() -> None:
+    _assert_drawer("studio")
+
+
+def test_ops_drawer() -> None:
+    _assert_drawer("ops")

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import tempfile
 import time
 import uuid
@@ -1086,14 +1087,14 @@ def _cli_auto_approval_sink(gate: ApprovalGate):  # type: ignore[no-untyped-def]
 
 
 @click.group()
-def cli() -> None:
+def legacy_cli() -> None:
     """ARCHON CLI."""
 
 
-cli.add_command(deploy_group)
+legacy_cli.add_command(deploy_group)
 
 
-@cli.command("validate")
+@legacy_cli.command("validate")
 @click.option("--config", "config_path", default=DEFAULT_CONFIG_PATH, show_default=True)
 @click.option("--dry-run", is_flag=True, default=False)
 def validate_command(config_path: str, dry_run: bool) -> None:
@@ -1107,7 +1108,7 @@ def validate_command(config_path: str, dry_run: bool) -> None:
     raise click.exceptions.Exit(exit_code)
 
 
-@cli.command("onboard")
+@legacy_cli.command("onboard")
 @click.option("--config", "config_path", default=DEFAULT_CONFIG_PATH, show_default=True)
 @click.option("--yes", is_flag=True, default=False)
 def onboard_command(config_path: str, yes: bool) -> bool:
@@ -1116,7 +1117,7 @@ def onboard_command(config_path: str, yes: bool) -> bool:
     return _run_onboarding_wizard(config_path=config_path, yes=yes)
 
 
-@cli.command("install")
+@legacy_cli.command("install")
 @click.option(
     "--home",
     default=DEFAULT_INSTALL_ROOT,
@@ -1153,7 +1154,7 @@ def install_command(
     )
 
 
-@cli.command("uninstall")
+@legacy_cli.command("uninstall")
 @click.option(
     "--home",
     default=DEFAULT_INSTALL_ROOT,
@@ -1169,7 +1170,7 @@ def uninstall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> 
     _uninstall_command_impl(home=home, yes=yes, skip_path=skip_path, dry_run=dry_run)
 
 
-@cli.command("unistall", hidden=True)
+@legacy_cli.command("unistall", hidden=True)
 @click.option(
     "--home",
     default=DEFAULT_INSTALL_ROOT,
@@ -1185,7 +1186,7 @@ def unistall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> N
     _uninstall_command_impl(home=home, yes=yes, skip_path=skip_path, dry_run=dry_run)
 
 
-@cli.command("serve")
+@legacy_cli.command("serve")
 @click.pass_context
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8000, show_default=True, type=int)
@@ -1206,7 +1207,7 @@ def serve_command(ctx: click.Context, host: str, port: int, config_path: str) ->
             raise click.ClickException(str(exc)) from exc
 
 
-@cli.command("health")
+@legacy_cli.command("health")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 @click.option("--timeout", "timeout_s", default=5.0, show_default=True, type=float)
 def health_command(base_url: str, timeout_s: float) -> None:
@@ -1232,7 +1233,7 @@ def health_command(base_url: str, timeout_s: float) -> None:
     printer.print(f"Uptime: {uptime_s:.2f}s")
 
 
-@cli.command("metrics")
+@legacy_cli.command("metrics")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 @click.option("--timeout", "timeout_s", default=5.0, show_default=True, type=float)
 @click.option("--raw", is_flag=True, default=False)
@@ -1262,7 +1263,7 @@ def metrics_command(base_url: str, timeout_s: float, raw: bool) -> None:
     )
 
 
-@cli.command("traces")
+@legacy_cli.command("traces")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 @click.option("--timeout", "timeout_s", default=5.0, show_default=True, type=float)
 @click.option("--limit", default=10, show_default=True, type=int)
@@ -1290,7 +1291,7 @@ def traces_command(base_url: str, timeout_s: float, limit: int, failed: bool) ->
         click.echo(line)
 
 
-@cli.command("monitor")
+@legacy_cli.command("monitor")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 @click.option("--timeout", "timeout_s", default=5.0, show_default=True, type=float)
 @click.option("--interval", default=5.0, show_default=True, type=float)
@@ -1350,7 +1351,7 @@ def monitor_command(base_url: str, timeout_s: float, interval: float) -> None:
         printer.print("Monitor stopped.")
 
 
-@cli.command("task")
+@legacy_cli.command("task")
 @click.argument("goal")
 @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
@@ -1407,7 +1408,7 @@ def task_command(
     printer.print(f"Budget spent: ${float(budget.get('spent_usd', 0.0) or 0.0):.4f}")
 
 
-@cli.command("dashboard")
+@legacy_cli.command("dashboard")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 def dashboard_command(base_url: str) -> None:
     """Open the Mission Control dashboard in the default browser."""
@@ -1415,7 +1416,7 @@ def dashboard_command(base_url: str) -> None:
     _open_web_shell(base_url, route="dashboard", command_name="dashboard")
 
 
-@cli.command("studio")
+@legacy_cli.command("studio")
 @click.option("--base-url", default=DEFAULT_SERVER_URL, show_default=True)
 def studio_command(base_url: str) -> None:
     """Open ARCHON Studio in the default browser."""
@@ -1423,7 +1424,7 @@ def studio_command(base_url: str) -> None:
     _open_web_shell(base_url, route="studio", command_name="studio")
 
 
-@cli.command("debate")
+@legacy_cli.command("debate")
 @click.argument("question")
 @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
 @click.option("--budget", type=float, default=None)
@@ -1458,7 +1459,7 @@ def debate_command(
     asyncio.run(_run())
 
 
-@cli.command("tui")
+@legacy_cli.command("tui")
 @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
 @click.option("--budget", type=float, default=None)
 @click.option("--live-providers", is_flag=True, default=False)
@@ -1513,7 +1514,7 @@ def tui_command(
     )
 
 
-@cli.command("run")
+@legacy_cli.command("run")
 @click.argument("workflow_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--live-providers", is_flag=True, default=False)
@@ -1551,7 +1552,7 @@ def run_command(workflow_file: Path, dry_run: bool, live_providers: bool, config
     asyncio.run(_run())
 
 
-@cli.group("memory")
+@legacy_cli.group("memory")
 def memory_group() -> None:
     """Memory operations."""
 
@@ -1588,7 +1589,7 @@ def memory_search_command(query: str, tenant_id: str, top_k: int, config_path: s
     printer.table(["memory_id", "similarity", "role", "content"], rows)
 
 
-@cli.group("peers")
+@legacy_cli.group("peers")
 def peers_group() -> None:
     """Federation peer operations."""
 
@@ -1648,7 +1649,7 @@ def peers_add_command(address: str, capabilities: tuple[str, ...], config_path: 
     printer.print(f"Peer added: {registered.peer_id} @ {registered.address}")
 
 
-@cli.group("redteam")
+@legacy_cli.group("redteam")
 def redteam_group() -> None:
     """Automated red-team regression operations."""
 
@@ -1705,7 +1706,7 @@ def redteam_regression_command(
         raise click.ClickException("Red-team regression failed.")
 
 
-@cli.group("payouts")
+@legacy_cli.group("payouts")
 def payouts_group() -> None:
     """Marketplace payout operations."""
 
@@ -1787,7 +1788,7 @@ def payouts_status_command(payout_id: str) -> None:
         printer.print(f"Transfer ID: {payout.transfer_id}")
 
 
-@cli.command("earnings")
+@legacy_cli.command("earnings")
 @click.argument("partner_id")
 @click.option("--period", "period_text", required=True)
 def earnings_command(partner_id: str, period_text: str) -> None:
@@ -1808,7 +1809,7 @@ def earnings_command(partner_id: str, period_text: str) -> None:
     printer.print(f"ARCHON share: ${earnings.archon_usd:.2f}")
 
 
-@cli.group("token")
+@legacy_cli.group("token")
 def token_group() -> None:
     """Tenant token operations."""
 
@@ -1826,7 +1827,7 @@ def token_create_command(tenant_id: str, tier: str, expires_in: int, config_path
     click.echo(token)
 
 
-@cli.command("version")
+@legacy_cli.command("version")
 def version_command() -> None:
     """Print ARCHON version + git sha."""
 
@@ -1850,6 +1851,12 @@ async def _run_redteam_regression(
         )
     finally:
         await orchestrator.aclose()
+
+
+from archon.cli.main import build_cli
+
+
+cli = build_cli(sys.modules[__name__])
 
 
 def main() -> None:

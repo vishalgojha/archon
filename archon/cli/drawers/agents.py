@@ -1,0 +1,264 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import click
+
+from archon.cli.base_command import ArchonCommand, TaskLiveDisplay, approval_prompt
+from archon.cli import renderer
+from archon.interfaces.cli.tui_onboarding import OnboardingCallbacks
+
+DRAWER_ID = "agents"
+COMMAND_IDS = ("agents.task", "agents.debate", "agents.tui")
+
+
+def _event_sink(live, gate):  # type: ignore[no-untyped-def]
+    async def sink(event):
+        live.update(event)
+        if str(event.get("type", "")).strip().lower() == "approval_required":
+            approval_prompt(gate=gate, event=event)
+
+    return sink
+
+
+class _Task(ArchonCommand):
+    command_id = COMMAND_IDS[0]
+
+    def run(  # type: ignore[no-untyped-def]
+        self,
+        session,
+        *,
+        goal: str,
+        mode: str,
+        base_url: str,
+        tenant_id: str,
+        tier: str,
+        token: str,
+        context_text: str,
+        context_file: Path | None,
+        timeout_s: float,
+    ):
+        effective_mode = session.run_step(0, self.bindings._resolve_mode, mode, goal)
+        context = session.run_step(1, self.bindings._parse_context, context_text or None, context_file)
+        headers = self.bindings._create_api_headers(
+            token=token or None,
+            tenant_id=tenant_id,
+            tier=tier,
+        )
+        payload = session.run_step(
+            2,
+            self.bindings._request_json,
+            "POST",
+            f"{self.bindings._normalize_base_url(base_url)}/v1/tasks",
+            headers=headers,
+            json_body={"goal": goal, "mode": effective_mode, "context": context},
+            timeout_s=timeout_s,
+        )
+        session.run_step(3, lambda: None)
+        session.print(
+            renderer.detail_panel(
+                self.command_id,
+                [
+                    str(payload.get("final_answer", "")),
+                    f"confidence {int(payload.get('confidence', 0) or 0)}%",
+                ],
+            )
+        )
+        spent = float((payload.get("budget") or {}).get("spent_usd", 0.0) or 0.0)
+        return {
+            "mode": str(payload.get("mode", effective_mode)),
+            "confidence": int(payload.get("confidence", 0) or 0),
+            "spent_usd": f"${spent:.4f}",
+        }
+
+
+class _Debate(ArchonCommand):
+    command_id = COMMAND_IDS[1]
+
+    async def run(  # type: ignore[no-untyped-def]
+        self,
+        session,
+        *,
+        question: str,
+        mode: str,
+        budget: float | None,
+        live_providers: bool,
+        config_path: str,
+    ):
+        config = session.run_step(0, self.bindings._load_config, config_path)
+        if budget is not None:
+            config.byok.budget_per_task_usd = float(budget)
+        effective_mode = self.bindings._resolve_mode(mode, question)
+        orchestrator = session.run_step(
+            1,
+            self.bindings.Orchestrator,
+            config=config,
+            live_provider_calls=live_providers,
+        )
+        live = TaskLiveDisplay()
+        live.start()
+        session.update_step(2, "running")
+        try:
+            result = await orchestrator.execute(
+                goal=question,
+                mode=effective_mode,
+                event_sink=_event_sink(live, orchestrator.approval_gate),
+            )
+        finally:
+            live.stop()
+            await orchestrator.aclose()
+        session.update_step(2, "success")
+        session.run_step(3, lambda: None)
+        session.print(renderer.detail_panel(self.command_id, [result.final_answer]))
+        spent = float(result.budget.get("spent_usd", 0.0) or 0.0)
+        return {
+            "mode": result.mode,
+            "confidence": result.confidence,
+            "spent_usd": f"${spent:.4f}",
+        }
+
+
+class _Tui(ArchonCommand):
+    command_id = COMMAND_IDS[2]
+
+    async def run(  # type: ignore[no-untyped-def]
+        self,
+        session,
+        *,
+        mode: str,
+        budget: float | None,
+        live_providers: bool,
+        context_text: str,
+        context_file: Path | None,
+        config_path: str,
+    ):
+        config = (
+            session.run_step(0, self.bindings._load_config, config_path)
+            if Path(config_path).exists()
+            else self.bindings.load_archon_config("__wizard_defaults__.yaml")
+        )
+        if budget is not None:
+            config.byok.budget_per_task_usd = float(budget)
+        effective_live = live_providers or self.bindings._should_default_tui_to_live(config)
+        context = session.run_step(1, self.bindings._parse_context, context_text or None, context_file)
+        onboarding = OnboardingCallbacks(
+            default_byok_config=self.bindings._default_byok_config,
+            probe_ollama=self.bindings._probe_ollama,
+            validate_openrouter_key=self.bindings._validate_openrouter_key,
+            validate_openai_key=self.bindings._validate_openai_key,
+            validate_anthropic_key=self.bindings._validate_anthropic_key,
+            save_config=self.bindings._save_onboarding_config,
+            run_validation=self.bindings._run_validation_dry_run,
+            read_env_value=self.bindings._read_env_value,
+            write_env=self.bindings.write_env,
+            load_config=self.bindings._load_config,
+        )
+        session.update_step(2, "running")
+        await self.bindings.run_agentic_tui(
+            config=config,
+            initial_mode=mode,
+            live_provider_calls=effective_live,
+            initial_context=context,
+            config_path=config_path,
+            onboarding=onboarding,
+            show_launcher=True,
+        )
+        session.update_step(2, "success")
+        session.run_step(3, lambda: None)
+        return {"mode": mode}
+
+
+def build_group(bindings):
+    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.pass_context
+    def group(ctx: click.Context) -> None:
+        if ctx.invoked_subcommand is None:
+            renderer.emit(renderer.drawer_panel(DRAWER_ID))
+
+    @group.command("task")
+    @click.argument("goal")
+    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--base-url", default="http://127.0.0.1:8000")
+    @click.option("--tenant-id", default="default")
+    @click.option("--tier", type=click.Choice(["free", "pro", "enterprise"]), default="pro")
+    @click.option("--token", default="")
+    @click.option("--context", "context_text", default="")
+    @click.option(
+        "--context-file",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        default=None,
+    )
+    @click.option("--timeout", "timeout_s", default=60.0, type=float)
+    def task_command(
+        goal: str,
+        mode: str,
+        base_url: str,
+        tenant_id: str,
+        tier: str,
+        token: str,
+        context_text: str,
+        context_file: Path | None,
+        timeout_s: float,
+    ) -> None:
+        _Task(bindings).invoke(
+            goal=goal,
+            mode=mode,
+            base_url=base_url,
+            tenant_id=tenant_id,
+            tier=tier,
+            token=token,
+            context_text=context_text,
+            context_file=context_file,
+            timeout_s=timeout_s,
+        )
+
+    @group.command("debate")
+    @click.argument("question")
+    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--budget", type=float, default=None)
+    @click.option("--live-providers", is_flag=True, default=False)
+    @click.option("--config", "config_path", default="config.archon.yaml")
+    def debate_command(
+        question: str,
+        mode: str,
+        budget: float | None,
+        live_providers: bool,
+        config_path: str,
+    ) -> None:
+        _Debate(bindings).invoke(
+            question=question,
+            mode=mode,
+            budget=budget,
+            live_providers=live_providers,
+            config_path=config_path,
+        )
+
+    @group.command("tui")
+    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--budget", type=float, default=None)
+    @click.option("--live-providers", is_flag=True, default=False)
+    @click.option("--context", "context_text", default="")
+    @click.option(
+        "--context-file",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        default=None,
+    )
+    @click.option("--config", "config_path", default="config.archon.yaml")
+    def tui_command(
+        mode: str,
+        budget: float | None,
+        live_providers: bool,
+        context_text: str,
+        context_file: Path | None,
+        config_path: str,
+    ) -> None:
+        _Tui(bindings).invoke(
+            mode=mode,
+            budget=budget,
+            live_providers=live_providers,
+            context_text=context_text,
+            context_file=context_file,
+            config_path=config_path,
+        )
+
+    return group
