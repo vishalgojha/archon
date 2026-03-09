@@ -8,10 +8,12 @@ import click
 
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
-from archon.cli.copy import FLOW_COPY
+from archon.cli.copy import DRAWER_COPY, FLOW_COPY
 
 DRAWER_ID = "core"
 COMMAND_IDS = ("core.init", "core.validate", "core.status", "core.chat")
+DRAWER_META = DRAWER_COPY[DRAWER_ID]
+COMMAND_HELP = DRAWER_META["commands"]
 _PROVIDERS = ("anthropic", "openai", "openrouter", "ollama")
 _ENV_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -233,29 +235,33 @@ class _Chat(ArchonCommand):
 
 
 def build_group(bindings):
-    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.group(
+        name=DRAWER_ID,
+        invoke_without_command=True,
+        help=str(DRAWER_META["tagline"]),
+    )
     @click.pass_context
     def group(ctx: click.Context) -> None:
         if ctx.invoked_subcommand is None:
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
-    @group.command("init")
+    @group.command("init", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.option("--config", "config_path", default="config.archon.yaml")
     def init_command(config_path: str) -> None:
         _Init(bindings).invoke(config_path=config_path)
 
-    @group.command("validate")
+    @group.command("validate", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.option("--config", "config_path", default="config.archon.yaml")
     @click.option("--timeout", "timeout_s", default=6.0, type=float)
     def validate_command(config_path: str, timeout_s: float) -> None:
         _Validate(bindings).invoke(config_path=config_path, timeout_s=timeout_s)
 
-    @group.command("status")
+    @group.command("status", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
     @click.option("--config", "config_path", default="config.archon.yaml")
     def status_command(config_path: str) -> None:
         _Status(bindings).invoke(config_path=config_path)
 
-    @group.command("chat")
+    @group.command("chat", help=str(COMMAND_HELP[COMMAND_IDS[3]]))
     @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
     @click.option("--config", "config_path", default="config.archon.yaml")
     def chat_command(mode: str, config_path: str) -> None:

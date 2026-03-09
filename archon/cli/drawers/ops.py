@@ -10,6 +10,7 @@ import click
 
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
+from archon.cli.copy import DRAWER_COPY
 
 DRAWER_ID = "ops"
 COMMAND_IDS = (
@@ -19,6 +20,8 @@ COMMAND_IDS = (
     "ops.worker",
     "ops.worker-status",
 )
+DRAWER_META = DRAWER_COPY[DRAWER_ID]
+COMMAND_HELP = DRAWER_META["commands"]
 
 
 def _counts(path: Path) -> dict[str, int]:
@@ -172,40 +175,48 @@ class _WorkerStatus(ArchonCommand):
 
 
 def build_group(bindings):
-    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.group(
+        name=DRAWER_ID,
+        invoke_without_command=True,
+        help=str(DRAWER_META["tagline"]),
+    )
     @click.pass_context
     def group(ctx: click.Context) -> None:
         if ctx.invoked_subcommand is None:
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
-    @group.command("serve")
+    @group.command("serve", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.option("--host", default="127.0.0.1")
     @click.option("--port", default=8000, type=int)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def serve_command(host: str, port: int, config_path: str) -> None:
         _Serve(bindings).invoke(host=host, port=port, config_path=config_path)
 
-    @group.command("health")
+    @group.command("health", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.option("--base-url", default="http://127.0.0.1:8000")
     @click.option("--timeout", "timeout_s", default=5.0, type=float)
     def health_command(base_url: str, timeout_s: float) -> None:
         _Health(bindings).invoke(base_url=base_url, timeout_s=timeout_s)
 
-    @group.command("monitor")
+    @group.command("monitor", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
     @click.option("--base-url", default="http://127.0.0.1:8000")
     @click.option("--timeout", "timeout_s", default=5.0, type=float)
     @click.option("--interval", default=5.0, type=float)
     def monitor_command(base_url: str, timeout_s: float, interval: float) -> None:
         _Monitor(bindings).invoke(base_url=base_url, timeout_s=timeout_s, interval=interval)
 
-    @group.group("worker", invoke_without_command=True)
+    @group.group(
+        "worker",
+        invoke_without_command=True,
+        help=str(COMMAND_HELP[COMMAND_IDS[3]]),
+    )
     @click.option("--config", "config_path", default="config.archon.yaml")
     @click.pass_context
     def worker_command(ctx: click.Context, config_path: str) -> None:
         if ctx.invoked_subcommand is None:
             _Worker(bindings).invoke(config_path=config_path)
 
-    @worker_command.command("status")
+    @worker_command.command("status", help=str(COMMAND_HELP[COMMAND_IDS[4]]))
     def worker_status_command() -> None:
         _WorkerStatus(bindings).invoke()
 

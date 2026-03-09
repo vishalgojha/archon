@@ -6,9 +6,12 @@ import click
 
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
+from archon.cli.copy import DRAWER_COPY
 
 DRAWER_ID = "providers"
 COMMAND_IDS = ("providers.list", "providers.test")
+DRAWER_META = DRAWER_COPY[DRAWER_ID]
+COMMAND_HELP = DRAWER_META["commands"]
 
 
 def _roles(config) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -93,18 +96,22 @@ class _Test(ArchonCommand):
 
 
 def build_group(bindings):
-    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.group(
+        name=DRAWER_ID,
+        invoke_without_command=True,
+        help=str(DRAWER_META["tagline"]),
+    )
     @click.pass_context
     def group(ctx: click.Context) -> None:
         if ctx.invoked_subcommand is None:
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
-    @group.command("list")
+    @group.command("list", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.option("--config", "config_path", default="config.archon.yaml")
     def list_command(config_path: str) -> None:
         _List(bindings).invoke(config_path=config_path)
 
-    @group.command("test")
+    @group.command("test", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.option("--config", "config_path", default="config.archon.yaml")
     @click.option("--timeout", "timeout_s", default=6.0, type=float)
     def test_command(config_path: str, timeout_s: float) -> None:

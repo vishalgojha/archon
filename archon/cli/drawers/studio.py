@@ -6,9 +6,12 @@ import click
 
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
+from archon.cli.copy import DRAWER_COPY
 
 DRAWER_ID = "studio"
 COMMAND_IDS = ("studio.open", "studio.run")
+DRAWER_META = DRAWER_COPY[DRAWER_ID]
+COMMAND_HELP = DRAWER_META["commands"]
 
 
 class _Open(ArchonCommand):
@@ -77,7 +80,11 @@ class _Run(ArchonCommand):
 
 
 def build_group(bindings):
-    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.group(
+        name=DRAWER_ID,
+        invoke_without_command=True,
+        help=str(DRAWER_META["tagline"]),
+    )
     @click.option("--base-url", default="")
     @click.pass_context
     def group(ctx: click.Context, base_url: str) -> None:
@@ -87,12 +94,12 @@ def build_group(bindings):
                 return
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
-    @group.command("open")
+    @group.command("open", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.option("--base-url", default="http://127.0.0.1:8000")
     def open_command(base_url: str) -> None:
         _Open(bindings).invoke(base_url=base_url)
 
-    @group.command("run")
+    @group.command("run", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.argument(
         "workflow_file",
         type=click.Path(exists=True, dir_okay=False, path_type=Path),

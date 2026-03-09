@@ -9,21 +9,37 @@ import pytest
 from click.testing import CliRunner
 
 from archon.archon_cli import cli
+from archon.cli import drawers as drawer_package
 from archon.cli.copy import COMMAND_COPY, DRAWER_COPY, FLOW_COPY
-from archon.cli.main import DRAWER_MODULES, REGISTERED_COMMANDS, REGISTERED_DRAWERS
+from archon.cli.registry import get_drawers
 
 
 def _drawer_paths() -> list[Path]:
-    return [Path(module.__file__).resolve() for module in DRAWER_MODULES]
+    return [Path(drawer.__file__).resolve() for drawer in get_drawers()]
 
 
 def test_every_drawer_has_copy() -> None:
-    assert set(REGISTERED_DRAWERS) == set(DRAWER_COPY)
+    assert {drawer.drawer_id for drawer in get_drawers()} == set(DRAWER_COPY)
 
 
 def test_every_command_has_copy() -> None:
-    missing = [command_id for command_id in REGISTERED_COMMANDS if command_id not in COMMAND_COPY]
+    missing = [
+        command_id
+        for drawer in get_drawers()
+        for command_id in drawer.command_ids
+        if command_id not in COMMAND_COPY
+    ]
     assert missing == []
+
+
+def test_registry_discovers_every_drawer_file() -> None:
+    drawer_dir = Path(drawer_package.__file__).resolve().parent
+    expected = {
+        f"archon.cli.drawers.{path.stem}"
+        for path in drawer_dir.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert {drawer.module_path for drawer in get_drawers()} == expected
 
 
 def test_no_inline_prose_in_drawers() -> None:

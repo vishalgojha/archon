@@ -6,9 +6,12 @@ import click
 
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand, TaskLiveDisplay, approval_prompt
+from archon.cli.copy import DRAWER_COPY
 
 DRAWER_ID = "agents"
 COMMAND_IDS = ("agents.task", "agents.debate", "agents.tui")
+DRAWER_META = DRAWER_COPY[DRAWER_ID]
+COMMAND_HELP = DRAWER_META["commands"]
 
 
 def _event_sink(live, gate):  # type: ignore[no-untyped-def]
@@ -178,13 +181,17 @@ class _Tui(ArchonCommand):
 
 
 def build_group(bindings):
-    @click.group(name=DRAWER_ID, invoke_without_command=True)
+    @click.group(
+        name=DRAWER_ID,
+        invoke_without_command=True,
+        help=str(DRAWER_META["tagline"]),
+    )
     @click.pass_context
     def group(ctx: click.Context) -> None:
         if ctx.invoked_subcommand is None:
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
-    @group.command("task")
+    @group.command("task", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.argument("goal")
     @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
     @click.option("--base-url", default="http://127.0.0.1:8000")
@@ -221,7 +228,7 @@ def build_group(bindings):
             timeout_s=timeout_s,
         )
 
-    @group.command("debate")
+    @group.command("debate", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.argument("question")
     @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
     @click.option("--budget", type=float, default=None)
@@ -242,7 +249,7 @@ def build_group(bindings):
             config_path=config_path,
         )
 
-    @group.command("tui")
+    @group.command("tui", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
     @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
     @click.option("--budget", type=float, default=None)
     @click.option("--live-providers", is_flag=True, default=False)
