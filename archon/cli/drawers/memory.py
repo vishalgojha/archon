@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import click
 
-from archon.cli.base_command import ArchonCommand, PlaceholderCommand
 from archon.cli import renderer
+from archon.cli.base_command import ArchonCommand, PlaceholderCommand
 
 DRAWER_ID = "memory"
 COMMAND_IDS = ("memory.search", "memory.export")

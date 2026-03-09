@@ -7,9 +7,9 @@ from archon.agents.community.community_agent import (
     DetectionResult,
     DraftResponse,
     HNCollector,
-    RSSCollector,
     RedditCollector,
     ResponseComposer,
+    RSSCollector,
     SignalDetector,
 )
 from archon.agents.content.content_agent import (

@@ -1,7 +1,7 @@
 """Self-improvement and policy evolution logic."""
 
 from archon.evolution.ab_tester import ABTester, SyntheticTask, TaskTrialResult, TrialResult
-from archon.evolution.audit_trail import AuditEntry, ImmutableAuditTrail, VALID_EVENT_TYPES
+from archon.evolution.audit_trail import VALID_EVENT_TYPES, AuditEntry, ImmutableAuditTrail
 from archon.evolution.engine import (
     DEFAULT_KNOWN_AGENTS,
     OptimizationResult,

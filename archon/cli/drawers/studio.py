@@ -4,8 +4,8 @@ from pathlib import Path
 
 import click
 
-from archon.cli.base_command import ArchonCommand
 from archon.cli import renderer
+from archon.cli.base_command import ArchonCommand
 
 DRAWER_ID = "studio"
 COMMAND_IDS = ("studio.open", "studio.run")

@@ -6,8 +6,7 @@ from typing import Any
 from archon.cli.copy import COMMAND_COPY, DRAWER_COPY, FLOW_COPY
 
 try:  # pragma: no cover - optional dependency
-    from rich.console import Group
-    from rich.console import Console
+    from rich.console import Console, Group
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text

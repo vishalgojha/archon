@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import ast
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
-import uuid
 
 import pytest
 from click.testing import CliRunner

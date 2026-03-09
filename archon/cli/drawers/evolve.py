@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import click
 
-from archon.cli.base_command import PlaceholderCommand
 from archon.cli import renderer
+from archon.cli.base_command import PlaceholderCommand
 
 DRAWER_ID = "evolve"
 COMMAND_IDS = ("evolve.plan", "evolve.apply")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import click
 
-from archon.cli.base_command import ArchonCommand, TaskLiveDisplay, approval_prompt
 from archon.cli import renderer
+from archon.cli.base_command import ArchonCommand, TaskLiveDisplay, approval_prompt
 
 DRAWER_ID = "growth"
 COMMAND_IDS = ("growth.run",)

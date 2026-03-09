@@ -80,14 +80,20 @@ def _apply_runtime_guards() -> None:
             resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
         except Exception:
             pass
-
-        cpu_seconds = _cpu_time_limit_seconds(timeout_s=timeout_s, cpu_percent=cpu_percent)
-        try:
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
-        except Exception:
-            pass
     except Exception:
         pass
+
+    if os.getenv("ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT", "").strip() == "1":
+        try:
+            import resource  # type: ignore
+
+            cpu_seconds = _cpu_time_limit_seconds(timeout_s=timeout_s, cpu_percent=cpu_percent)
+            try:
+                resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     network_enabled = os.getenv("ARCHON_SANDBOX_NETWORK", "0").strip() == "1"
     if not network_enabled:

@@ -7,7 +7,13 @@ from archon.deploy.validator import (
     validate_observability_compose,
     validate_otel_collector_config,
 )
-from archon.deploy.worker import DeploymentWorker, QueuedTask, WorkerQueue, run_worker, run_worker_async
+from archon.deploy.worker import (
+    DeploymentWorker,
+    QueuedTask,
+    WorkerQueue,
+    run_worker,
+    run_worker_async,
+)
 
 __all__ = [
     "DeploymentWorker",

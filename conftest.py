@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import sys
 import shutil
+import sys
 import uuid
 from collections.abc import Iterator
 from pathlib import Path

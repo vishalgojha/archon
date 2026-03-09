@@ -1853,10 +1853,13 @@ async def _run_redteam_regression(
         await orchestrator.aclose()
 
 
-from archon.cli.main import build_cli
+def _build_root_cli() -> click.Group:
+    from archon.cli.main import build_cli
+
+    return build_cli(sys.modules[__name__])
 
 
-cli = build_cli(sys.modules[__name__])
+cli = _build_root_cli()
 
 
 def main() -> None:
