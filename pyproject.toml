@@ -43,7 +43,8 @@ where = ["."]
 include = ["archon*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+testpaths = ["tests", "archon/tests"]
 asyncio_mode = "auto"
 norecursedirs = ["archon/tests/_tmp_*", "tests/_tmp_*"]
 

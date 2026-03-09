@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import shutil
 import uuid
 from collections.abc import Iterator
@@ -7,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
+_REPO_ROOT = Path(__file__).resolve().parent
 _TMP_ROOT = Path(__file__).resolve().parent / "archon" / "tests" / "_tmp_fixture"
+
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 
 @pytest.fixture
