@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from archon.analytics.aggregator import AnalyticsAggregator
 from archon.analytics.collector import AnalyticsCollector
+from archon.config import load_archon_config
 from archon.core.orchestrator import Orchestrator
 from archon.interfaces.webchat.auth import (
     WebChatTokenError,
@@ -42,6 +43,7 @@ from archon.multimodal import (
 )
 from archon.notifications.device_registry import DeviceRegistry
 from archon.notifications.push import PushNotifier
+from archon.providers.router import PROVIDER_ENV_KEY
 from archon.vernacular.streaming import StreamingTranslator
 from archon.versioning import resolve_version
 
@@ -104,7 +106,7 @@ def create_webchat_app(
     app = FastAPI(title="ARCHON WebChat", version=resolve_version())
     app.state.runtime = WebChatRuntime(
         session_store=session_store or _build_default_store(),
-        orchestrator=orchestrator,
+        orchestrator=orchestrator or _build_default_orchestrator(),
     )
     static_dir = Path(__file__).with_name("static")
     if static_dir.exists():
@@ -521,6 +523,39 @@ def _build_default_store() -> AbstractSessionStore:
     backend = os.getenv("ARCHON_WEBCHAT_SESSION_BACKEND", "memory")
     sqlite_path = os.getenv("ARCHON_WEBCHAT_SQLITE_PATH", DEFAULT_SQLITE_PATH)
     return create_session_store(backend=backend, sqlite_path=sqlite_path)
+
+
+def _build_default_orchestrator() -> Orchestrator:
+    config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
+    config = load_archon_config(config_path)
+    if not _has_provider_keys(config):
+        config.byok.primary = "ollama"
+        config.byok.coding = "ollama"
+        config.byok.vision = "ollama"
+        config.byok.fast = "ollama"
+        config.byok.embedding = "ollama"
+        config.byok.fallback = "ollama"
+    return Orchestrator(config)
+
+
+def _has_provider_keys(config) -> bool:  # type: ignore[no-untyped-def]
+    byok = getattr(config, "byok", None)
+    if byok is None:
+        return False
+    providers = {
+        str(getattr(byok, "primary", "")),
+        str(getattr(byok, "coding", "")),
+        str(getattr(byok, "vision", "")),
+        str(getattr(byok, "fast", "")),
+        str(getattr(byok, "fallback", "")),
+    }
+    if "ollama" in providers:
+        return True
+    for provider in providers:
+        env_name = PROVIDER_ENV_KEY.get(provider)
+        if env_name and os.getenv(env_name):
+            return True
+    return False
 
 
 async def _handle_approval_action(

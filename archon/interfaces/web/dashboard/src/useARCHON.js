@@ -1,6 +1,8 @@
 (() => {
-  const { useCallback, useRef, useState } = React;
+  const { useCallback, useEffect, useRef, useState } = React;
   const EMPTY_SESSION = { sessionId: "", token: "" };
+  const SESSION_ID_KEY = "archon.dashboard.session_id";
+  const TOKEN_KEY = "archon.dashboard.token";
 
   function nowSeconds() {
     return Date.now() / 1000;
@@ -12,6 +14,30 @@
     } catch (_error) {
       return "";
     }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_error) {
+      return;
+    }
+  }
+
+  function readStoredSession() {
+    return {
+      sessionId: String(safeStorageGet(SESSION_ID_KEY) || "").trim(),
+      token: String(safeStorageGet(TOKEN_KEY) || "").trim(),
+    };
+  }
+
+  function writeStoredSession(sessionId, token) {
+    safeStorageSet(SESSION_ID_KEY, String(sessionId || "").trim());
+    safeStorageSet(TOKEN_KEY, String(token || "").trim());
+  }
+
+  function clearStoredSession() {
+    writeStoredSession("", "");
   }
 
   function normalizeEvent(raw) {
@@ -51,6 +77,28 @@
     }
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${protocol}//${base.replace(/^(https?:\/\/|wss?:\/\/)/, "")}`;
+  }
+
+  function bootstrapAnonymousSession() {
+    return fetch(`${resolveApiBase()}/webchat/token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Token bootstrap failed (${response.status})`);
+      }
+      const payload = await response.json();
+      const sessionId = String(
+        payload?.session?.session_id || payload?.identity?.session_id || "",
+      ).trim();
+      const token = String(payload?.token || "").trim();
+      if (!sessionId || !token) {
+        throw new Error("Token bootstrap response was missing session credentials.");
+      }
+      writeStoredSession(sessionId, token);
+      return { sessionId, token };
+    });
   }
 
   function toApprovalEvent(event) {
@@ -129,14 +177,17 @@
   function useARCHON() {
     const wsRef = useRef(null);
     const queueRef = useRef([]);
-    const connectRef = useRef({ ...EMPTY_SESSION });
+    const connectRef = useRef(readStoredSession());
     const reconnectTimerRef = useRef(null);
     const reconnectAttemptRef = useRef(0);
     const reconnectEnabledRef = useRef(false);
     const [status, setStatus] = useState("disconnected");
     const [lastCloseCode, setLastCloseCode] = useState(0);
     const [isInitializing, setIsInitializing] = useState(true);
-    const [session, setSession] = useState({ ...EMPTY_SESSION });
+    const [session, setSession] = useState(() => {
+      const stored = readStoredSession();
+      return stored.sessionId && stored.token ? stored : { ...EMPTY_SESSION };
+    });
     const [lastEvent, setLastEvent] = useState(null);
     const [history, setHistory] = useState([]);
     const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -157,6 +208,7 @@
       };
       connectRef.current = next;
       setSession(next);
+      writeStoredSession(next.sessionId, next.token);
       return next;
     }, []);
 
@@ -231,6 +283,7 @@
             reconnectEnabledRef.current = false;
             connectRef.current = { ...EMPTY_SESSION };
             setSession({ ...EMPTY_SESSION });
+            clearStoredSession();
             return;
           }
           if (!reconnectEnabledRef.current || !connectRef.current.sessionId || !connectRef.current.token) {
@@ -286,6 +339,43 @@
       },
       [clearReconnectTimer, flushQueue, setSessionCredentials],
     );
+
+    useEffect(() => {
+      let cancelled = false;
+      const stored = readStoredSession();
+
+      if (stored.sessionId && stored.token) {
+        setSessionCredentials(stored.sessionId, stored.token);
+        connect(stored.sessionId, stored.token);
+        setIsInitializing(false);
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      bootstrapAnonymousSession()
+        .then((creds) => {
+          if (cancelled) {
+            return;
+          }
+          setSessionCredentials(creds.sessionId, creds.token);
+          connect(creds.sessionId, creds.token);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setStatus("disconnected");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsInitializing(false);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [connect, setSessionCredentials]);
 
     const send = useCallback(
       (message) => {

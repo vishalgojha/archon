@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -53,6 +54,7 @@ class _Serve(ArchonCommand):
         config_path: str,
         kill_port: bool,
     ):  # type: ignore[no-untyped-def,override]
+        previous_kill = os.environ.get("ARCHON_KILL_PORT")
         path = Path(config_path)
         if not path.exists():
             from archon.cli.drawers.core import _Init
@@ -62,8 +64,14 @@ class _Serve(ArchonCommand):
         session.run_step(1, self.bindings._load_config, config_path)
         session.update_step(2, "running")
         try:
-            self.bindings._run_api_server_with_env(host=host, port=port, kill_port=kill_port)
+            if kill_port:
+                os.environ["ARCHON_KILL_PORT"] = "1"
+            self.bindings._run_api_server_with_env(host=host, port=port)
         finally:
+            if previous_kill is None:
+                os.environ.pop("ARCHON_KILL_PORT", None)
+            else:
+                os.environ["ARCHON_KILL_PORT"] = previous_kill
             session.update_step(2, "success")
         return {"host": host, "port": port}
 

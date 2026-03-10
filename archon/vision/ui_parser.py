@@ -9,8 +9,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from archon.providers import ProviderRouter
 from archon.multimodal.image_input import ImageProcessor
+from archon.providers import ProviderRouter
 from archon.vision.screen_capture import ScreenFrame
 
 UIElementType = Literal[

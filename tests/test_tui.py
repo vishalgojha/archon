@@ -257,3 +257,26 @@ def test_run_agentic_tui_routes_approval_events_back_into_gate(
     assert "outbound_email requested (HIGH)" in output
     assert "approved approval-1" in output
     assert captured_gates[0].approved == ["approval-1"]
+
+
+def test_run_agentic_tui_intercepts_shell_style_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _FakeOrchestrator.calls = []
+    _FakeOrchestrator.emitted_approval = False
+    monkeypatch.setattr(
+        tui,
+        "_read_session_line",
+        _line_reader(["archon tui", "archon studio", "archon dashboard", "/quit"]),
+    )
+    monkeypatch.setattr(tui, "Orchestrator", _FakeOrchestrator)
+
+    asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="auto"))
+
+    output = capsys.readouterr().out
+    assert "Already in TUI" in output
+    assert "archon studio open" in output
+    assert "archon dashboard" in output
+    assert "from your terminal" in output
+    assert _FakeOrchestrator.calls == []

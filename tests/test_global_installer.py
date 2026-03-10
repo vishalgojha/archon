@@ -102,6 +102,14 @@ def test_render_windows_shims_target_repo_runtime() -> None:
     assert '"$PSScriptRoot\\..\\venv\\Scripts\\python.exe" -m archon.archon_cli @args' in ps1
 
 
+def test_render_posix_shim_targets_repo_runtime() -> None:
+    module = _installer_module()
+    shim = module.render_posix_shim("-m", "archon.archon_cli", "serve")
+
+    assert '#!/usr/bin/env sh' in shim
+    assert '"$SCRIPT_DIR/../venv/bin/python" -m archon.archon_cli serve "$@"' in shim
+
+
 def test_resolve_command_path_returns_none_when_unavailable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from archon import runtime_installer
 
@@ -139,6 +147,51 @@ def test_default_install_root_falls_back_to_userprofile_on_windows(monkeypatch) 
     path = _installer_module().default_install_root("win32")
 
     assert path == Path(r"C:\Users\visha\AppData\Local\Programs\Archon")
+
+
+def test_default_install_root_uses_user_local_share_on_linux() -> None:
+    path = _installer_module().default_install_root("linux")
+
+    assert path == Path.home() / ".local" / "share" / "archon"
+
+
+def test_default_install_root_uses_application_support_on_macos() -> None:
+    path = _installer_module().default_install_root("darwin")
+
+    assert path == Path.home() / "Library" / "Application Support" / "Archon"
+
+
+def test_ensure_user_path_updates_bash_profile_on_linux(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from archon import runtime_installer
+
+    bin_dir = tmp_path / "archon" / "bin"
+    monkeypatch.setattr(runtime_installer.sys, "platform", "linux")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/bash")
+
+    updated = runtime_installer._ensure_user_path(bin_dir, dry_run=False)
+
+    profile = (tmp_path / ".bashrc").read_text(encoding="utf-8")
+    assert updated is True
+    assert "ARCHON PATH" in profile
+    assert str(bin_dir) in profile
+    assert str(bin_dir) in str(runtime_installer.os.environ["PATH"])
+
+
+def test_remove_user_path_cleans_shell_profiles_on_linux(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from archon import runtime_installer
+
+    bin_dir = tmp_path / "archon" / "bin"
+    profile = tmp_path / ".bashrc"
+    profile.write_text(runtime_installer._render_posix_path_block(bin_dir), encoding="utf-8")
+    monkeypatch.setattr(runtime_installer.sys, "platform", "linux")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/bash")
+
+    updated = runtime_installer._remove_user_path(bin_dir, dry_run=False)
+
+    assert updated is True
+    assert profile.read_text(encoding="utf-8") == ""
 
 
 def test_uninstall_removes_runtime_tree_on_non_windows(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

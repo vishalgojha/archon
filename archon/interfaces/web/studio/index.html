@@ -74,7 +74,7 @@
       .studio-shell {
         height: 100%;
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr) 220px;
+        grid-template-rows: auto minmax(0, 1fr) 300px;
         gap: 16px;
         padding: 16px;
       }
@@ -296,6 +296,28 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 12px;
       }
+      .studio-template-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+      }
+      .studio-template-card {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 253, 248, 0.88);
+        border: 1px solid rgba(19, 36, 43, 0.08);
+      }
+      .studio-template-card strong {
+        font-size: 16px;
+      }
+      .studio-template-card p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--studio-muted);
+        line-height: 1.55;
+      }
       .studio-empty-card {
         padding: 14px;
         border-radius: 18px;
@@ -394,6 +416,9 @@
         color: var(--studio-muted);
         line-height: 1.5;
       }
+      .studio-advanced-toggle {
+        width: fit-content;
+      }
       .studio-error-text {
         color: #b65442;
       }
@@ -418,6 +443,74 @@
         display: grid;
         gap: 10px;
         padding-right: 4px;
+      }
+      .studio-run-status-row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+      }
+      .studio-status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(220, 247, 239, 0.84);
+        color: var(--studio-ink);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .studio-run-summary-grid {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+      .studio-run-card {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        padding: 16px;
+        border-radius: 18px;
+        border: 1px solid rgba(19, 36, 43, 0.08);
+        background: rgba(255, 253, 248, 0.82);
+      }
+      .studio-run-card h3 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .studio-run-highlight {
+        margin: 0;
+        color: var(--studio-ink);
+        line-height: 1.65;
+      }
+      .studio-clean-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      .studio-clean-list li {
+        display: grid;
+        gap: 4px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(237, 245, 241, 0.9);
+        border: 1px solid rgba(19, 36, 43, 0.06);
+      }
+      .studio-clean-list strong {
+        font-size: 13px;
+      }
+      .studio-clean-list span {
+        color: var(--studio-muted);
+        line-height: 1.5;
+      }
+      .studio-summary-empty {
+        color: var(--studio-muted);
+        font-size: 13px;
+        line-height: 1.55;
       }
       .studio-run-empty {
         min-height: 120px;
@@ -534,7 +627,7 @@
       }
       @media (max-width: 920px) {
         .studio-shell {
-          grid-template-rows: auto minmax(420px, 1fr) 220px;
+          grid-template-rows: auto minmax(420px, 1fr) 320px;
         }
         .studio-toolbar,
         .studio-workspace {
@@ -544,6 +637,9 @@
           justify-content: flex-start;
         }
         .studio-empty-grid {
+          grid-template-columns: 1fr;
+        }
+        .studio-run-summary-grid {
           grid-template-columns: 1fr;
         }
       }

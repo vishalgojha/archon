@@ -230,17 +230,32 @@ def _to_response(result: OrchestrationResult) -> TaskResponse:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    test_tmp_dir = None
+    test_db_root: Path | None = None
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        test_tmp_dir = tempfile.TemporaryDirectory(prefix="archon-test-")
+        test_db_root = Path(test_tmp_dir.name)
+        app.state._test_tmp_dir = test_tmp_dir
+
+    def _db_path(env_var: str, default_name: str) -> str:
+        env_value = os.getenv(env_var)
+        if env_value:
+            return env_value
+        if test_db_root is not None:
+            return str(test_db_root / default_name)
+        return default_name
+
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
     app.state.orchestrator = Orchestrator(load_archon_config(config_path))
     app.state.auth_settings = AuthSettings.from_env()
     app.state.analytics_collector = AnalyticsCollector(
-        path=os.getenv("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
+        path=_db_path("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
     )
     app.state.mobile_sync_store = MobileSyncStore(
-        path=os.getenv("ARCHON_MOBILE_SYNC_DB", "archon_mobile_sync.sqlite3")
+        path=_db_path("ARCHON_MOBILE_SYNC_DB", "archon_mobile_sync.sqlite3")
     )
     app.state.mobile_device_registry = DeviceRegistry(
-        path=os.getenv("ARCHON_DEVICE_TOKENS_DB", "archon_device_tokens.sqlite3")
+        path=_db_path("ARCHON_DEVICE_TOKENS_DB", "archon_device_tokens.sqlite3")
     )
     stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "") or os.getenv("STRIPE_SECRET_KEY", "")
     webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv(
@@ -252,7 +267,7 @@ async def lifespan(app: FastAPI):
         webhook_secret=webhook_secret,
     )
     app.state.billing_service = BillingService(
-        store=BillingStore(path=os.getenv("ARCHON_BILLING_DB", "archon_billing.sqlite3")),
+        store=BillingStore(path=_db_path("ARCHON_BILLING_DB", "archon_billing.sqlite3")),
         approval_gate=app.state.orchestrator.approval_gate,
         collector=app.state.analytics_collector,
         gateway=StripeGateway(api_key=stripe_api_key, live_mode=stripe_live_mode),
@@ -261,7 +276,7 @@ async def lifespan(app: FastAPI):
         ),
     )
     app.state.usage_meter = UsageMeter(
-        path=os.getenv("ARCHON_USAGE_METER_DB", "archon_metering.sqlite3"),
+        path=_db_path("ARCHON_USAGE_METER_DB", "archon_metering.sqlite3"),
         stripe_client=app.state.stripe_client,
         approval_gate=app.state.orchestrator.approval_gate,
     )
@@ -275,15 +290,15 @@ async def lifespan(app: FastAPI):
         collector=app.state.analytics_collector,
     )
     app.state.studio_store = StudioWorkflowStore(
-        path=os.getenv("ARCHON_STUDIO_DB", "archon_studio.sqlite3")
+        path=_db_path("ARCHON_STUDIO_DB", "archon_studio.sqlite3")
     )
     app.state.studio_run_broker = WorkflowRunBroker()
     app.state.partner_registry = PartnerRegistry(
-        path=os.getenv("ARCHON_PARTNERS_DB", "archon_partners.sqlite3")
+        path=_db_path("ARCHON_PARTNERS_DB", "archon_partners.sqlite3")
     )
     marketplace_revenue_db = os.getenv(
         "ARCHON_MARKETPLACE_REVENUE_DB",
-        "archon_marketplace_revenue.sqlite3",
+        _db_path("ARCHON_MARKETPLACE_REVENUE_DB", "archon_marketplace_revenue.sqlite3"),
     )
     app.state.marketplace_stripe_client = StripeConnectClient(secret_key=stripe_api_key)
     app.state.marketplace_onboarding = DeveloperOnboarding(
@@ -291,7 +306,7 @@ async def lifespan(app: FastAPI):
         stripe_client=app.state.marketplace_stripe_client,
         path=os.getenv(
             "ARCHON_MARKETPLACE_CONNECT_DB",
-            "archon_marketplace_connect.sqlite3",
+            _db_path("ARCHON_MARKETPLACE_CONNECT_DB", "archon_marketplace_connect.sqlite3"),
         ),
     )
     app.state.marketplace_revenue_ledger = RevenueShareLedger(
@@ -312,7 +327,7 @@ async def lifespan(app: FastAPI):
         approval_gate=app.state.orchestrator.approval_gate,
         path=os.getenv(
             "ARCHON_MARKETPLACE_CYCLE_DB",
-            "archon_marketplace_cycles.sqlite3",
+            _db_path("ARCHON_MARKETPLACE_CYCLE_DB", "archon_marketplace_cycles.sqlite3"),
         ),
     )
     app.state.marketplace_revenue_report = PartnerRevenueReport(
@@ -354,6 +369,8 @@ async def lifespan(app: FastAPI):
         if isinstance(billing_service, BillingService) and billing_service.gateway is not None:
             await billing_service.gateway.aclose()
         await app.state.orchestrator.aclose()
+        if test_tmp_dir is not None:
+            test_tmp_dir.cleanup()
 
 
 app = FastAPI(title="ARCHON API", version=resolve_version(), lifespan=lifespan)

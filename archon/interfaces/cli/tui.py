@@ -119,6 +119,55 @@ def _format_result(result: OrchestrationResult) -> str:
     return "\n".join(lines)
 
 
+def _consume_shell_style_input(state: _SessionState, raw_value: str) -> bool:
+    normalized = " ".join(str(raw_value or "").strip().split()).lower()
+    if not normalized.startswith("archon"):
+        return False
+    if normalized == "archon tui":
+        _append_message(
+            state,
+            title="Already in TUI",
+            body=(
+                "You are already inside the ARCHON terminal session. "
+                "Use /help for in-session commands or /quit to return to the shell."
+            ),
+            tone="system",
+        )
+        return True
+    if normalized in {"archon studio", "archon studio open"}:
+        _append_message(
+            state,
+            title="Shell command detected",
+            body=(
+                "Studio is a shell command, not a TUI prompt. "
+                "Use /quit, then run `archon studio open` from your terminal."
+            ),
+            tone="system",
+        )
+        return True
+    if normalized == "archon dashboard":
+        _append_message(
+            state,
+            title="Shell command detected",
+            body=(
+                "Dashboard is a shell command, not a TUI prompt. "
+                "Use /quit, then run `archon dashboard` from your terminal."
+            ),
+            tone="system",
+        )
+        return True
+    _append_message(
+        state,
+        title="Shell command detected",
+        body=(
+            "Commands that start with `archon` must be run from your terminal, not inside the "
+            "ARCHON chat prompt. Use /help for in-session controls or /quit to leave the TUI."
+        ),
+        tone="system",
+    )
+    return True
+
+
 async def _read_session_line(prompt: str) -> str:
     return await asyncio.to_thread(_sync_read_session_line, prompt)
 
@@ -463,6 +512,8 @@ async def run_agentic_tui(
             ):
                 _render(state)
                 return
+            continue
+        if _consume_shell_style_input(state, raw_value):
             continue
 
         effective_mode = _resolve_mode(state.mode, raw_value)

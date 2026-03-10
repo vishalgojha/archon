@@ -69,11 +69,11 @@ DRAWER_COPY = {
         "title": "Web Intelligence",
         "icon": "[W]",
         "tagline": "Crawl, classify, and optimize websites from one drawer.",
-        "availability": "partial",
+        "availability": "live",
         "explanation": (
             "The web stack combines crawling, intent classification, injection "
             "generation, and optimization helpers for research and site-level execution. "
-            "Crawl is live; optimization remains staged while experiments are finalized."
+            "Crawl and optimization are live for rapid site tuning."
         ),
         "requires": ["network access", "config.archon.yaml"],
         "commands": {
@@ -101,11 +101,11 @@ DRAWER_COPY = {
         "title": "Evolution Engine",
         "icon": "[E]",
         "tagline": "Stage experiments, compare candidates, and promote winners.",
-        "availability": "staged",
+        "availability": "live",
         "explanation": (
             "The evolution stack handles A/B staging, audit trails, and controlled "
-            "workflow promotion. The CLI drawer is exposed ahead of the final operator "
-            "commands so the control plane stays consistent."
+            "workflow promotion. Use plan to stage candidates and apply to promote with "
+            "human approval."
         ),
         "requires": ["evolution policy", "audit trail storage"],
         "commands": {
@@ -380,19 +380,30 @@ COMMAND_COPY = {
         },
         "next_steps": [
             "Use --mode or --greeting to override embed defaults.",
-            "Run archon web optimize once optimization is live.",
+            "Run archon web optimize for conversion recommendations.",
         ],
     },
     "web.optimize": {
         "what": "Generate site optimization actions from the web intelligence stack.",
         "steps": [
-            "Reserve the command surface for the web optimization path.",
+            "Load config and validate the target URL.",
+            "Crawl the site and extract structured page content.",
+            "Classify site intent from the crawled pages.",
+            "Generate an embed configuration draft.",
+            "Stage a baseline/challenger experiment.",
+            "Generate an improved embed configuration.",
+            "Initialize the optimization orchestrator.",
+            "Generate conversion recommendations.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": (
+                "Optimized {page_count} page(s). Primary intent: {primary_intent}. "
+                "Experiment: {experiment_id}. Confidence: {confidence}."
+            ),
         },
         "next_steps": [
-            "Run archon web to review the planned control surface.",
+            "Use --mode or --greeting to override embed defaults.",
+            "Run archon web crawl for a lighter-weight scan.",
         ],
     },
     "memory.search": {
@@ -426,25 +437,38 @@ COMMAND_COPY = {
     "evolve.plan": {
         "what": "Stage an evolution candidate and prepare it for controlled A/B evaluation.",
         "steps": [
-            "Reserve the command surface for the evolution staging path.",
+            "Load config for evolution planning.",
+            "Open the Studio workflow store.",
+            "Load the workflow definition for the tenant.",
+            "Initialize the evolution audit trail.",
+            "Initialize the evolution engine and orchestrator.",
+            "Generate a candidate workflow proposal.",
+            "Stage the candidate for controlled evaluation.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Staged {workflow_id} candidate v{candidate_version} ({status}).",
         },
         "next_steps": [
-            "Run archon evolve to review the planned control surface.",
+            "Run archon evolve apply to promote after review.",
         ],
     },
     "evolve.apply": {
         "what": "Promote or roll back an evolved workflow after review.",
         "steps": [
-            "Reserve the command surface for the evolution apply path.",
+            "Load config for evolution promotion.",
+            "Open the Studio workflow store.",
+            "Load the current workflow definition.",
+            "Open the evolution audit trail.",
+            "Load the staged candidate workflow.",
+            "Request approval to promote the candidate.",
+            "Finalize promotion or rollback.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Promoted {workflow_id} from v{from_version} to v{to_version}.",
+            "denied": "Promotion denied. Restored {workflow_id} to v{restored_version}.",
         },
         "next_steps": [
-            "Run archon evolve to review the planned control surface.",
+            "Run archon evolve plan to stage a new candidate.",
         ],
     },
     "federation.peers": {

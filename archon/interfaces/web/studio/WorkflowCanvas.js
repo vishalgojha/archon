@@ -3,38 +3,38 @@ const { ReactFlow, MiniMap, Controls, Background, Handle, Position } = window.Re
 
 const NODE_THEME = {
   AgentNode: {
-    badge: "Agent",
-    hint: "Execute one agent with explicit config.",
+    badge: "Work Step",
+    hint: "Do one focused piece of work.",
     tone: "#44c2a4",
     surface: "rgba(220, 247, 239, 0.92)"
   },
   DebateNode: {
-    badge: "Debate",
-    hint: "Run a structured challenge or synthesis pass.",
+    badge: "Review Step",
+    hint: "Review or challenge work before it moves on.",
     tone: "#f0b85f",
     surface: "rgba(250, 236, 206, 0.96)"
   },
   ApprovalNode: {
-    badge: "Approval",
-    hint: "Insert a human review or gated release step.",
+    badge: "Ask Me",
+    hint: "Pause and wait for a human decision.",
     tone: "#e58a6c",
     surface: "rgba(255, 233, 228, 0.94)"
   },
   ConditionNode: {
-    badge: "Condition",
-    hint: "Route execution based on one branching rule.",
+    badge: "Decision",
+    hint: "Pick a path based on one rule.",
     tone: "#659ae8",
     surface: "rgba(227, 239, 255, 0.94)"
   },
   LoopNode: {
-    badge: "Loop",
-    hint: "Repeat until a stop condition is met.",
+    badge: "Retry/Repeat",
+    hint: "Repeat until the stop rule is met.",
     tone: "#8f80de",
     surface: "rgba(236, 232, 255, 0.94)"
   },
   OutputNode: {
-    badge: "Output",
-    hint: "Collect the final artifact or operator answer.",
+    badge: "Final Result",
+    hint: "Collect the answer or artifact for the operator.",
     tone: "#5e7680",
     surface: "rgba(235, 241, 242, 0.96)"
   }
@@ -135,9 +135,11 @@ window.WorkflowCanvas = function WorkflowCanvas({
   onConnect,
   onNodeClick,
   onAddNode,
-  onLoadTemplate
+  onLoadTemplate,
+  templateOptions
 }) {
   const hasNodes = Array.isArray(nodes) && nodes.length > 0;
+  const templates = Array.isArray(templateOptions) ? templateOptions : [];
 
   return React.createElement(
     "div",
@@ -147,7 +149,7 @@ window.WorkflowCanvas = function WorkflowCanvas({
       { className: "studio-canvas-status" },
       React.createElement("span", null, `${nodes.length} node${nodes.length === 1 ? "" : "s"}`),
       React.createElement("span", null, `${edges.length} connection${edges.length === 1 ? "" : "s"}`),
-      React.createElement("span", null, hasNodes ? "Drag, connect, then inspect on the right." : "Start with a template or a single node.")
+      React.createElement("span", null, hasNodes ? "Drag, connect, then edit on the right." : "Start with a use-case template or a single step.")
     ),
     React.createElement(
       ReactFlow,
@@ -194,7 +196,7 @@ window.WorkflowCanvas = function WorkflowCanvas({
               React.createElement(
                 "p",
                 null,
-                "Start from a single operator node or load a ready-made path. Studio is designed for fast graph sketching: drop steps, connect outputs, and refine the selected node in the inspector."
+                "Choose the use case that best matches the job. Studio will load a starting workflow you can tune in the inspector."
               )
             ),
             React.createElement(
@@ -205,48 +207,38 @@ window.WorkflowCanvas = function WorkflowCanvas({
                 {
                   type: "button",
                   className: "studio-button-primary",
-                  onClick: () => onAddNode && onAddNode("AgentNode")
+                  onClick: () => onLoadTemplate && onLoadTemplate("research_topic")
                 },
-                "Start with an Agent"
+                "Research a topic"
               ),
               React.createElement(
                 "button",
                 {
                   type: "button",
                   className: "studio-button-warm",
-                  onClick: () => onLoadTemplate && onLoadTemplate("approval")
+                  onClick: () => onAddNode && onAddNode("AgentNode")
                 },
-                "Load Approval Flow"
-              ),
-              React.createElement(
-                "button",
-                {
-                  type: "button",
-                  onClick: () => onLoadTemplate && onLoadTemplate("research")
-                },
-                "Load Research Flow"
+                "Start with a Work Step"
               )
             ),
             React.createElement(
               "div",
-              { className: "studio-empty-grid" },
-              React.createElement(
-                "div",
-                { className: "studio-empty-card" },
-                React.createElement("strong", null, "1. Add structure"),
-                React.createElement("p", null, "Choose a starter flow or add nodes one by one from the toolbar.")
-              ),
-              React.createElement(
-                "div",
-                { className: "studio-empty-card" },
-                React.createElement("strong", null, "2. Wire decisions"),
-                React.createElement("p", null, "Connect cards across the canvas to define dependencies and execution order.")
-              ),
-              React.createElement(
-                "div",
-                { className: "studio-empty-card" },
-                React.createElement("strong", null, "3. Run and inspect"),
-                React.createElement("p", null, "Use the bottom panel to watch websocket events and verify the workflow behavior.")
+              { className: "studio-template-grid" },
+              templates.map((template) =>
+                React.createElement(
+                  "div",
+                  { className: "studio-template-card", key: template.kind },
+                  React.createElement("strong", null, template.label),
+                  React.createElement("p", null, template.description),
+                  React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: () => onLoadTemplate && onLoadTemplate(template.kind)
+                    },
+                    "Load template"
+                  )
+                )
               )
             )
           )

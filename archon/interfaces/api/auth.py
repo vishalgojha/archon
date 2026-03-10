@@ -73,11 +73,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         token = _extract_bearer_token(request.headers.get("Authorization"))
         if not token:
+            await request.body()
             return JSONResponse(status_code=401, content={"detail": "Missing bearer token."})
 
         try:
             request.state.auth = decode_auth_token(token, self._resolve_settings(request))
         except HTTPException as exc:
+            await request.body()
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return await call_next(request)
 

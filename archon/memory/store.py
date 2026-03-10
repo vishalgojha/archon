@@ -271,6 +271,48 @@ class MemoryStore:
             conn.commit()
         self.vector_index.delete(str(memory_id))
 
+    def export_tenant(
+        self,
+        tenant_id: str,
+        output_path: str,
+        *,
+        include_forgotten: bool = False,
+        limit: int | None = None,
+    ) -> int:
+        """Export tenant memories to JSONL and return row count."""
+
+        where = "tenant_id = ?"
+        params: list[Any] = [str(tenant_id)]
+        if not include_forgotten:
+            where += " AND forgotten = 0"
+        limit_clause = ""
+        if limit is not None:
+            limit_clause = " LIMIT ?"
+            params.append(max(1, int(limit)))
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT memory_id, timestamp, content, role, session_id, tenant_id,
+                       embedding_json, metadata_json, forgotten
+                FROM episodic_memory
+                WHERE {where}
+                ORDER BY timestamp ASC
+                {limit_clause}
+                """,
+                tuple(params),
+            ).fetchall()
+
+        path = str(output_path)
+        count = 0
+        with open(path, "w", encoding="utf-8") as handle:
+            for row in rows:
+                payload = _memory_export_payload(row)
+                handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+                count += 1
+        return count
+
     def _ensure_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -364,6 +406,20 @@ def _memory_from_row(row: sqlite3.Row) -> EpisodicMemory:
         embedding=_safe_json_list(row["embedding_json"]),
         metadata=_safe_json_dict(row["metadata_json"]),
     )
+
+
+def _memory_export_payload(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "memory_id": row["memory_id"],
+        "timestamp": float(row["timestamp"]),
+        "content": row["content"],
+        "role": row["role"],
+        "session_id": row["session_id"],
+        "tenant_id": row["tenant_id"],
+        "embedding": _safe_json_list(row["embedding_json"]),
+        "metadata": _safe_json_dict(row["metadata_json"]),
+        "forgotten": bool(row["forgotten"]),
+    }
 
 
 def _chain_from_row(row: sqlite3.Row) -> CausalChain:

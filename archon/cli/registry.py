@@ -51,7 +51,9 @@ def _build_spec(module: ModuleType) -> DrawerSpec:
 
 
 def get_drawers() -> list[DrawerSpec]:
-    drawers = sorted((_build_spec(module) for module in get_drawer_modules()), key=lambda item: item.drawer_id)
+    drawers = sorted(
+        (_build_spec(module) for module in get_drawer_modules()), key=lambda item: item.drawer_id
+    )
     seen: set[str] = set()
     duplicates: list[str] = []
     for drawer in drawers:
@@ -67,8 +69,6 @@ def get_drawers() -> list[DrawerSpec]:
 
 REGISTERED_DRAWERS = tuple(drawer.drawer_id for drawer in get_drawers())
 REGISTERED_COMMANDS = tuple(
-    command_id
-    for drawer in get_drawers()
-    for command_id in drawer.command_ids
+    command_id for drawer in get_drawers() for command_id in drawer.command_ids
 )
 DRAWER_MODULES = tuple(drawer.module for drawer in get_drawers())

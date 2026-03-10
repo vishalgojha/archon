@@ -280,33 +280,63 @@
       .approval-empty {
         color: var(--muted);
         font-size: 13px;
+        padding: 10px 0;
       }
 
       .approval-queue {
         display: grid;
-        gap: 8px;
+        gap: 12px;
       }
 
       .approval-item {
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px;
-        background: rgba(51, 37, 37, 0.34);
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(15, 23, 42, 0.42);
+        display: grid;
+        gap: 12px;
       }
 
-      .approval-item h4 {
-        margin: 0 0 6px 0;
+      .approval-question {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text);
+      }
+
+      .approval-preview {
+        margin: 0;
+        color: #d7deea;
         font-size: 13px;
+        line-height: 1.55;
       }
 
-      .approval-item pre {
-        margin: 0 0 8px 0;
-        white-space: pre-wrap;
-        word-break: break-word;
+      .approval-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+      }
+
+      .approval-detail {
+        display: grid;
+        gap: 6px;
+        padding: 10px;
+        border-radius: 10px;
+        background: rgba(2, 6, 23, 0.26);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+      }
+
+      .approval-label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8bd3cb;
+      }
+
+      .approval-detail p {
+        margin: 0;
         color: var(--muted);
         font-size: 12px;
-        max-height: 96px;
-        overflow: auto;
+        line-height: 1.5;
       }
 
       .approval-footer {
@@ -314,16 +344,23 @@
         justify-content: space-between;
         gap: 8px;
         align-items: center;
+        flex-wrap: wrap;
         font-size: 12px;
         color: var(--muted);
+      }
+
+      .approval-footer-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
       }
 
       .approval-footer button {
         border: 1px solid var(--border);
         background: #1f2937;
         color: var(--text);
-        border-radius: 6px;
-        padding: 4px 8px;
+        border-radius: 999px;
+        padding: 6px 12px;
         cursor: pointer;
       }
 

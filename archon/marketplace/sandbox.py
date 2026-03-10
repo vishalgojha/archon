@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ try:  # pragma: no cover - optional dependency
     import psutil
 except Exception:  # pragma: no cover - optional dependency
     psutil = None  # type: ignore[assignment]
+
+_ORIGINAL_CREATE_SUBPROCESS_EXEC = asyncio.create_subprocess_exec
 
 
 @dataclass(slots=True, frozen=True)
@@ -125,7 +128,10 @@ class SandboxedAgent:
         env["ARCHON_SANDBOX_MEMORY_MB"] = str(max(1, int(config.memory_mb)))
         env["ARCHON_SANDBOX_CPU_PERCENT"] = str(max(1, int(config.cpu_percent)))
         env["ARCHON_SANDBOX_ENFORCE_CPU_RLIMIT"] = "1" if bool(config.enforce_cpu_rlimit) else "0"
-        env["ARCHON_SANDBOX_TIMEOUT_S"] = str(float(config.timeout_s))
+        timeout_s = max(0.05, float(config.timeout_s))
+        grace_s = 0.0 if timeout_s < 1.0 else min(2.0, timeout_s * 0.4)
+        effective_timeout_s = timeout_s + grace_s
+        env["ARCHON_SANDBOX_TIMEOUT_S"] = str(timeout_s)
         env["ARCHON_SANDBOX_NETWORK"] = "1" if config.network else "0"
         env["ARCHON_SANDBOX_ALLOWED_IMPORTS"] = json.dumps(
             config.allowed_imports or [], separators=(",", ":")
@@ -139,13 +145,26 @@ class SandboxedAgent:
             json.dumps(input_data, separators=(",", ":")),
         ]
 
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            cwd=str(Path.cwd()),
+        use_asyncio_subprocess = (
+            asyncio.create_subprocess_exec is not _ORIGINAL_CREATE_SUBPROCESS_EXEC
         )
+
+        if use_asyncio_subprocess:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                cwd=str(Path.cwd()),
+            )
+        else:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                cwd=str(Path.cwd()),
+            )
 
         monitor_task = asyncio.create_task(
             self.monitor.poll_until_done(process.pid, interval_ms=100)
@@ -156,14 +175,23 @@ class SandboxedAgent:
         started = time.monotonic()
 
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
-                timeout=max(0.05, float(config.timeout_s)),
-            )
-        except asyncio.TimeoutError:
+            if use_asyncio_subprocess:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=effective_timeout_s,
+                )
+            else:
+                stdout_bytes, stderr_bytes = await asyncio.to_thread(
+                    process.communicate,
+                    timeout=effective_timeout_s,
+                )
+        except (asyncio.TimeoutError, subprocess.TimeoutExpired):
             timed_out = True
             process.kill()
-            stdout_bytes, stderr_bytes = await process.communicate()
+            if use_asyncio_subprocess:
+                stdout_bytes, stderr_bytes = await process.communicate()
+            else:
+                stdout_bytes, stderr_bytes = await asyncio.to_thread(process.communicate)
         finally:
             snapshots: list[ResourceSnapshot]
             try:

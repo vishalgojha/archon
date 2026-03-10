@@ -102,7 +102,9 @@ class _FakeRouterMultimodal:
         self.prompts.append(text)
         self.blocks.append(content_blocks)
         return types.SimpleNamespace(
-            text=self.response_text, provider=provider_override or "fake", model=model_override or "vision"
+            text=self.response_text,
+            provider=provider_override or "fake",
+            model=model_override or "vision",
         )
 
 
@@ -161,7 +163,9 @@ async def test_ui_parser_handles_malformed_json_gracefully() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ui_parser_parse_multimodal_uses_content_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ui_parser_parse_multimodal_uses_content_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     payload = json.dumps(
         [
             {
@@ -181,7 +185,10 @@ async def test_ui_parser_parse_multimodal_uses_content_blocks(monkeypatch: pytes
             return types.SimpleNamespace(format="png", base64_data="YWJj")
 
         def to_llm_content(self, image):  # type: ignore[no-untyped-def]
-            return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "YWJj"}}
+            return {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "YWJj"},
+            }
 
     monkeypatch.setattr("archon.vision.ui_parser.ImageProcessor", lambda: _FakeProcessor())
 
@@ -193,7 +200,9 @@ async def test_ui_parser_parse_multimodal_uses_content_blocks(monkeypatch: pytes
         display_id=0,
     )
 
-    layout = await parser.parse_multimodal(frame, provider_override="ollama", model_override="llava:34b")
+    layout = await parser.parse_multimodal(
+        frame, provider_override="ollama", model_override="llava:34b"
+    )
     assert layout.elements
     assert router.calls == 1
     assert router.blocks

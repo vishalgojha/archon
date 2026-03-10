@@ -16,11 +16,11 @@ from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand, approval_prompt
 from archon.cli.copy import DRAWER_COPY
 from archon.core.approval_gate import ApprovalGate
+from archon.multimodal.image_input import ImageProcessor
 from archon.providers import ProviderRouter
 from archon.vision.action_agent import ActionAgent
 from archon.vision.screen_capture import ScreenCapture, ScreenFrame
 from archon.vision.ui_parser import UILayout, UIParser
-from archon.multimodal.image_input import ImageProcessor
 
 try:  # pragma: no cover - optional dependency
     from PIL import Image, ImageGrab  # type: ignore[import-untyped]
@@ -183,7 +183,11 @@ def _infer_action(instruction: str) -> tuple[str, dict[str, Any]]:
         return "scroll", {"clicks": clicks}
     if "type" in lowered:
         match = re.search(r"type\s+\"([^\"]+)\"|type\s+'([^']+)'", instruction, re.IGNORECASE)
-        text = (match.group(1) or match.group(2)) if match else instruction.split("type", 1)[-1].strip()
+        text = (
+            (match.group(1) or match.group(2))
+            if match
+            else instruction.split("type", 1)[-1].strip()
+        )
         return "type", {"text": text}
     return "click", {}
 
@@ -306,7 +310,9 @@ def build_group(bindings):
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
     @group.command("inspect", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
-    @click.option("--file", "file_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+    @click.option(
+        "--file", "file_path", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+    )
     @click.option("--clipboard", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def inspect_command(file_path: Path | None, clipboard: bool, config_path: str) -> None:
@@ -314,7 +320,9 @@ def build_group(bindings):
 
     @group.command("act", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.argument("instruction")
-    @click.option("--file", "file_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+    @click.option(
+        "--file", "file_path", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+    )
     @click.option("--clipboard", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def act_command(
