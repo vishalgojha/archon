@@ -82,6 +82,30 @@ class _FakeRouter:
         )
 
 
+class _FakeRouterMultimodal:
+    def __init__(self, response_text: str) -> None:
+        self.response_text = response_text
+        self.calls = 0
+        self.prompts: list[str] = []
+        self.blocks: list[list[dict[str, object]]] = []
+
+    async def invoke_multimodal(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        role: str,
+        text: str,
+        content_blocks: list[dict[str, object]],
+        provider_override=None,
+        model_override=None,
+    ):
+        self.calls += 1
+        self.prompts.append(text)
+        self.blocks.append(content_blocks)
+        return types.SimpleNamespace(
+            text=self.response_text, provider=provider_override or "fake", model=model_override or "vision"
+        )
+
+
 @pytest.mark.asyncio
 async def test_ui_parser_parses_layout_and_uses_cache() -> None:
     payload = json.dumps(
@@ -134,6 +158,45 @@ async def test_ui_parser_handles_malformed_json_gracefully() -> None:
     assert layout.elements == []
     assert layout.parse_error == "malformed_json"
     assert router.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ui_parser_parse_multimodal_uses_content_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = json.dumps(
+        [
+            {
+                "type": "text",
+                "text": "Hello",
+                "bounds": {"x": 1, "y": 2, "width": 10, "height": 12},
+                "confidence": 0.8,
+                "element_id": "label-1",
+            }
+        ]
+    )
+    router = _FakeRouterMultimodal(payload)
+    parser = UIParser(router)
+
+    class _FakeProcessor:
+        def load_from_bytes(self, data: bytes, *, source: str = "upload"):
+            return types.SimpleNamespace(format="png", base64_data="YWJj")
+
+        def to_llm_content(self, image):  # type: ignore[no-untyped-def]
+            return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "YWJj"}}
+
+    monkeypatch.setattr("archon.vision.ui_parser.ImageProcessor", lambda: _FakeProcessor())
+
+    frame = ScreenFrame(
+        image_bytes=b"fake-image",
+        width=20,
+        height=20,
+        timestamp=1.0,
+        display_id=0,
+    )
+
+    layout = await parser.parse_multimodal(frame, provider_override="ollama", model_override="llava:34b")
+    assert layout.elements
+    assert router.calls == 1
+    assert router.blocks
 
 
 class _FakeGate:

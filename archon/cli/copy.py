@@ -53,11 +53,11 @@ DRAWER_COPY = {
         "title": "Vision Runtime",
         "icon": "[V]",
         "tagline": "Screen understanding, UI parsing, and action planning.",
-        "availability": "staged",
+        "availability": "live",
         "explanation": (
             "The vision stack covers capture, UI parsing, action generation, recovery, "
-            "and audit traces for screen-driven automation. The drawer is visible now so "
-            "operators can see the control surface before those CLI commands go live."
+            "and audit traces for screen-driven automation. Use inspect to parse the "
+            "current screen and act to trigger approved UI interactions."
         ),
         "requires": ["desktop session", "vision provider routing"],
         "commands": {
@@ -335,25 +335,35 @@ COMMAND_COPY = {
     "vision.inspect": {
         "what": "Inspect the active screen and extract UI structure through the vision runtime.",
         "steps": [
-            "Reserve the command surface for the vision inspection path.",
+            "Capture a screenshot or load an image from file or clipboard.",
+            "Select the vision provider and model based on config and keys.",
+            "Parse visible UI elements into a structured layout.",
+            "Render the detected UI elements and metadata.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Vision inspection parsed {element_count} elements using {provider}/{model}.",
+            "failure": "Vision inspection failed. {error}",
         },
         "next_steps": [
-            "Run archon vision to review the planned control surface.",
+            "Run archon vision act to interact with a UI element.",
+            "Save a screenshot and use --file for repeatable inspection.",
         ],
     },
     "vision.act": {
         "what": "Plan or execute a UI action through the vision action stack.",
         "steps": [
-            "Reserve the command surface for the vision action path.",
+            "Capture a screenshot and parse the UI layout.",
+            "Identify the target element for the instruction.",
+            "Request approval before executing UI actions.",
+            "Execute the action and capture confirmation screenshots.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Vision action '{action}' executed on {element_id} at ({x},{y}).",
+            "failure": "Vision action failed. {error}",
         },
         "next_steps": [
-            "Run archon vision to review the planned control surface.",
+            "Run archon vision inspect to confirm the UI state.",
+            "Review approval history if actions were denied.",
         ],
     },
     "web.crawl": {

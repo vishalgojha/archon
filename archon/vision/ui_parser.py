@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from archon.providers import ProviderRouter
+from archon.multimodal.image_input import ImageProcessor
 from archon.vision.screen_capture import ScreenFrame
 
 UIElementType = Literal[
@@ -63,6 +64,17 @@ DEFAULT_PARSE_PROMPT = (
     "{image_b64}\n"
 )
 
+DEFAULT_MULTIMODAL_PROMPT = (
+    "You are a GUI parser. Analyze the screenshot and return ONLY JSON.\n"
+    "Output must strictly match this schema:\n"
+    "{response_schema}\n"
+    "Rules:\n"
+    "- Return a JSON array (or object with `elements` array).\n"
+    "- Each element needs type, text, bounds (x,y,width,height), confidence, element_id.\n"
+    "- Use `unknown` if type is unclear.\n"
+    "Image metadata: width={frame_width}, height={frame_height}\n"
+)
+
 
 @dataclass(slots=True, frozen=True)
 class Bounds:
@@ -107,11 +119,13 @@ class UIParser:
         *,
         role: str = "vision",
         parse_prompt: str | None = None,
+        multimodal_prompt: str | None = None,
         response_schema: dict[str, Any] | None = None,
     ) -> None:
         self.router = router
         self.role = role
         self.parse_prompt = parse_prompt or DEFAULT_PARSE_PROMPT
+        self.multimodal_prompt = multimodal_prompt or DEFAULT_MULTIMODAL_PROMPT
         self.response_schema = response_schema or dict(DEFAULT_RESPONSE_SCHEMA)
         self._cache: dict[str, UILayout] = {}
 
@@ -146,6 +160,42 @@ class UIParser:
         self._cache[image_hash] = layout
         return layout
 
+    async def parse_multimodal(
+        self,
+        frame: ScreenFrame,
+        *,
+        provider_override: str | None = None,
+        model_override: str | None = None,
+    ) -> UILayout:
+        """Parse one screenshot with a multimodal provider call."""
+
+        image_hash = hashlib.sha256(frame.image_bytes).hexdigest()
+        cached = self._cache.get(image_hash)
+        if cached is not None:
+            return cached
+
+        processor = ImageProcessor()
+        image = processor.load_from_bytes(frame.image_bytes, source="screenshot")
+        prompt = self._build_multimodal_prompt(
+            frame_width=frame.width,
+            frame_height=frame.height,
+        )
+        response = await self.router.invoke_multimodal(
+            role=self.role,
+            text=prompt,
+            content_blocks=[processor.to_llm_content(image)],
+            provider_override=provider_override,
+            model_override=model_override,
+        )
+        layout = _parse_layout_response(
+            response.text,
+            image_hash=image_hash,
+            provider=response.provider,
+            model=response.model,
+        )
+        self._cache[image_hash] = layout
+        return layout
+
     def clear_cache(self) -> None:
         """Clear parse cache."""
 
@@ -160,6 +210,15 @@ class UIParser:
             "frame_height": frame_height,
         }
         return self.parse_prompt.format_map(_SafeFormatDict(variables))
+
+    def _build_multimodal_prompt(self, *, frame_width: int, frame_height: int) -> str:
+        schema_text = json.dumps(self.response_schema, separators=(",", ":"))
+        variables: dict[str, str | int] = {
+            "response_schema": schema_text,
+            "frame_width": frame_width,
+            "frame_height": frame_height,
+        }
+        return self.multimodal_prompt.format_map(_SafeFormatDict(variables))
 
 
 def _parse_layout_response(

@@ -53,8 +53,6 @@ def test_no_inline_prose_in_drawers() -> None:
 def test_placeholder_commands_no_traceback() -> None:
     runner = CliRunner()
     cases = [
-        ["vision", "inspect"],
-        ["vision", "act"],
         ["web", "crawl"],
         ["web", "optimize"],
         ["evolve", "plan"],
@@ -73,10 +71,10 @@ def test_placeholder_commands_no_traceback() -> None:
         assert "Traceback" not in result.output
 
 
-def test_staged_drawer_explains_current_state() -> None:
+def test_live_drawer_explains_current_state() -> None:
     result = CliRunner().invoke(cli, ["vision"])
     assert result.exit_code == 0
-    assert "status: staged" in result.output.lower()
+    assert "status: live" in result.output.lower()
     assert "archon vision inspect" in result.output
 
 
