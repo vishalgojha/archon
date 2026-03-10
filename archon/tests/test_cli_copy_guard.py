@@ -69,7 +69,15 @@ def test_placeholder_commands_no_traceback() -> None:
         result = runner.invoke(cli, argv)
         assert result.exit_code == 0, argv
         assert FLOW_COPY["placeholder"]["title"] in result.output
+        assert "not implemented yet" in result.output.lower()
         assert "Traceback" not in result.output
+
+
+def test_staged_drawer_explains_current_state() -> None:
+    result = CliRunner().invoke(cli, ["vision"])
+    assert result.exit_code == 0
+    assert "status: staged" in result.output.lower()
+    assert "archon vision inspect" in result.output
 
 
 def test_bare_archon_prints_all_drawers() -> None:

@@ -3,6 +3,7 @@ DRAWER_COPY = {
         "title": "Core Control",
         "icon": "[C]",
         "tagline": "Bring ARCHON up, inspect runtime state, and enter chat.",
+        "availability": "live",
         "explanation": (
             "Core commands cover first-run setup, config validation, runtime status, "
             "and the interactive chat path that feeds the orchestrator without leaving "
@@ -20,6 +21,7 @@ DRAWER_COPY = {
         "title": "Agent Sessions",
         "icon": "[A]",
         "tagline": "Run debate, direct tasks, and terminal sessions against live agents.",
+        "availability": "live",
         "explanation": (
             "Agent session commands expose the current orchestration entry points: a "
             "single task call, a local debate or growth run, and the full interactive "
@@ -36,6 +38,7 @@ DRAWER_COPY = {
         "title": "Growth Swarm",
         "icon": "[G]",
         "tagline": "Drive the seven-agent revenue and distribution workflow.",
+        "availability": "live",
         "explanation": (
             "Growth commands route work through Prospector, ICP, Outreach, Nurture, "
             "Revenue Intel, Partner, and Churn Defense so operators can inspect "
@@ -50,6 +53,7 @@ DRAWER_COPY = {
         "title": "Vision Runtime",
         "icon": "[V]",
         "tagline": "Screen understanding, UI parsing, and action planning.",
+        "availability": "staged",
         "explanation": (
             "The vision stack covers capture, UI parsing, action generation, recovery, "
             "and audit traces for screen-driven automation. The drawer is visible now so "
@@ -65,6 +69,7 @@ DRAWER_COPY = {
         "title": "Web Intelligence",
         "icon": "[W]",
         "tagline": "Crawl, classify, and optimize websites from one drawer.",
+        "availability": "staged",
         "explanation": (
             "The web stack combines crawling, intent classification, injection "
             "generation, and optimization helpers for research and site-level execution. "
@@ -80,6 +85,7 @@ DRAWER_COPY = {
         "title": "Memory Stack",
         "icon": "[M]",
         "tagline": "Search stored context and manage memory exports.",
+        "availability": "partial",
         "explanation": (
             "Memory commands expose the tenant-safe store behind ARCHON recalls, letting "
             "operators search persisted context today and reserve an export surface for "
@@ -95,6 +101,7 @@ DRAWER_COPY = {
         "title": "Evolution Engine",
         "icon": "[E]",
         "tagline": "Stage experiments, compare candidates, and promote winners.",
+        "availability": "staged",
         "explanation": (
             "The evolution stack handles A/B staging, audit trails, and controlled "
             "workflow promotion. The CLI drawer is exposed ahead of the final operator "
@@ -110,6 +117,7 @@ DRAWER_COPY = {
         "title": "Federation",
         "icon": "[F]",
         "tagline": "Discover peers and exchange patterns across ARCHON nodes.",
+        "availability": "staged",
         "explanation": (
             "Federation links ARCHON runtimes for peer discovery, collaborative solves, "
             "and pattern sharing. This drawer exposes the future CLI surface while the "
@@ -125,6 +133,7 @@ DRAWER_COPY = {
         "title": "Providers",
         "icon": "[P]",
         "tagline": "Inspect BYOK routing and test provider health in place.",
+        "availability": "live",
         "explanation": (
             "Provider commands read the active config and environment so operators can "
             "see role assignments, confirm which providers are actually wired, and run "
@@ -140,6 +149,7 @@ DRAWER_COPY = {
         "title": "Marketplace",
         "icon": "[K]",
         "tagline": "Developer revenue, payouts, and partner operations.",
+        "availability": "staged",
         "explanation": (
             "Marketplace operations cover onboarding, revenue share, payout cycles, and "
             "partner reporting. The drawer is visible so finance and partner operators "
@@ -155,6 +165,7 @@ DRAWER_COPY = {
         "title": "Studio",
         "icon": "[S]",
         "tagline": "Open the visual workflow surface and run saved workflows.",
+        "availability": "live",
         "explanation": (
             "Studio commands connect the CLI to the saved workflow system so operators "
             "can open the browser-based editor or trigger an existing workflow run from "
@@ -170,6 +181,7 @@ DRAWER_COPY = {
         "title": "Operations",
         "icon": "[O]",
         "tagline": "Serve APIs, watch health, and manage background workers.",
+        "availability": "live",
         "explanation": (
             "Operations commands cover the API server, health surfaces, observability, "
             "and the SQLite-backed deployment worker that drains queued tasks from the "
@@ -648,8 +660,9 @@ FLOW_COPY = {
         "idle": "Waiting for orchestration events.",
     },
     "placeholder": {
-        "title": "COMING SOON",
-        "body": "{command} is reserved for the {module} control plane. The drawer is live so operators can see the surface area before the command ships.",
-        "next": "Run archon {module} to review the drawer and available entry points.",
+        "title": "NOT IMPLEMENTED YET",
+        "body": "{command} is registered, but the runtime path is not implemented yet.",
+        "detail": "Today this command only confirms the planned surface area for the {module} drawer.",
+        "next": "Run archon {module} to see status, command names, and the exact command path.",
     },
 }

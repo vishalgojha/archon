@@ -70,15 +70,27 @@ def detail_panel(title: str, lines: list[str]) -> Any:
 
 def drawer_panel(drawer_id: str) -> Any:
     drawer = DRAWER_COPY[drawer_id]
+    availability = str(drawer.get("availability", "live")).strip().lower()
+    status_lines = {
+        "live": "Status: live. Commands in this drawer execute today.",
+        "partial": "Status: partial. Some commands execute today; placeholder commands say not implemented yet.",
+        "staged": "Status: staged. Commands are visible, but they do not execute runtime work yet.",
+    }
     lines = [
         f"{drawer['icon']} {drawer['title']}",
         drawer["tagline"],
+        "",
+        status_lines.get(availability, status_lines["live"]),
         "",
         drawer["explanation"],
         "",
     ]
     for command_id, description in drawer["commands"].items():
         lines.append(f"{command_id.split('.', 1)[1]}  {description}")
+    lines.append("")
+    lines.append("Try now:")
+    for command_id in drawer["commands"]:
+        lines.append(f"- archon {command_id.replace('.', ' ', 1)}")
     if drawer["requires"]:
         lines.append("")
         for item in drawer["requires"]:
@@ -145,6 +157,9 @@ def placeholder_panel(command_id: str) -> Any:
     data = {"command": command_id, "module": module}
     lines = [
         _format_text(copy["body"], data),
+        _format_text(copy["detail"], data),
+        "",
+        "There are no flags or inputs to provide yet because execution is not wired.",
         "",
         _format_text(copy["next"], data),
     ]
