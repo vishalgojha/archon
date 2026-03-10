@@ -53,11 +53,8 @@ def test_no_inline_prose_in_drawers() -> None:
 def test_placeholder_commands_no_traceback() -> None:
     runner = CliRunner()
     cases = [
-        ["federation", "peers"],
-        ["federation", "sync"],
         ["marketplace", "payouts"],
         ["marketplace", "earnings"],
-        ["memory", "export"],
     ]
     for argv in cases:
         result = runner.invoke(cli, argv)

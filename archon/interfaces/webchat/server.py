@@ -446,6 +446,12 @@ def create_webchat_app(
                 if not content:
                     await websocket.send_json({"type": "error", "error": "content is required."})
                     continue
+                mode = str(payload.get("mode", "debate")).strip().lower() or "debate"
+                if mode not in {"debate", "growth"}:
+                    await websocket.send_json(
+                        {"type": "error", "error": f"Invalid mode '{mode}'."}
+                    )
+                    continue
                 if content == "__approval_context__":
                     await _send_approval_context(
                         websocket=websocket,
@@ -471,6 +477,7 @@ def create_webchat_app(
                         session_id=session_id,
                         tenant_id=identity.tenant_id,
                         content=content,
+                        mode=mode,
                         translation_mode=translation_mode,
                         image_inputs=turn_images,
                         audio_inputs=turn_audio,
@@ -616,6 +623,7 @@ async def _run_chat_turn(
     session_id: str,
     tenant_id: str,
     content: str,
+    mode: str = "debate",
     translation_mode: str = "off",
     image_inputs: list[ImageInput] | None = None,
     audio_inputs: list[AudioInput] | None = None,
@@ -626,7 +634,7 @@ async def _run_chat_turn(
             session_id=session_id,
             role="user",
             content=content,
-            metadata={"tenant_id": tenant_id},
+            metadata={"tenant_id": tenant_id, "mode": mode},
         ),
     )
 
@@ -639,6 +647,7 @@ async def _run_chat_turn(
             image_inputs=image_inputs,
             audio_inputs=audio_inputs,
             tenant_id=tenant_id,
+            mode=mode,
         )
         mode = (translation_mode or "off").strip().lower()
         if mode == "off":
@@ -737,6 +746,7 @@ async def _assistant_reply(
     image_inputs: list[ImageInput] | None = None,
     audio_inputs: list[AudioInput] | None = None,
     tenant_id: str = "",
+    mode: str = "debate",
 ) -> str:
     if runtime.orchestrator is None:
         if image_inputs or audio_inputs:
@@ -776,7 +786,7 @@ async def _assistant_reply(
 
     result = await runtime.orchestrator.execute(
         goal=prompt,
-        mode="debate",
+        mode=mode if mode in {"debate", "growth"} else "debate",
         context={"session_id": session_id, "tenant_id": tenant_id},
         event_sink=sink,
     )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 from dataclasses import asdict, dataclass, field
@@ -264,9 +263,7 @@ def validate_config(
             report.warnings.append(f"Provider '{provider_name}' skipped (--dry-run).")
         return report
 
-    health_rows = asyncio.run(
-        _ping_configured_providers(validated.providers, checks, timeout_seconds=timeout_seconds)
-    )
+    health_rows = _ping_configured_providers(validated.providers, checks, timeout_seconds=timeout_seconds)
     report.provider_health.extend(health_rows)
     for item in health_rows:
         if item.status in NON_FAILURE_STATUSES:
@@ -280,29 +277,28 @@ def validate_config(
     return report
 
 
-async def _ping_configured_providers(
+def _ping_configured_providers(
     providers: ProvidersSection,
     checks: set[str],
     *,
     timeout_seconds: float,
 ) -> list[ProviderHealth]:
-    async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
-        tasks = [
+    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+        return [
             _ping_one_provider(client, provider=provider_name, providers=providers)
             for provider_name in sorted(checks)
         ]
-        return await asyncio.gather(*tasks)
 
 
-async def _ping_one_provider(
-    client: httpx.AsyncClient,
+def _ping_one_provider(
+    client: httpx.Client,
     *,
     provider: str,
     providers: ProvidersSection,
 ) -> ProviderHealth:
     url, headers = _build_health_request(provider, providers)
     try:
-        response = await client.get(url, headers=headers)
+        response = client.get(url, headers=headers)
     except httpx.TimeoutException as exc:
         return ProviderHealth(
             provider=provider,

@@ -83,6 +83,112 @@ def test_memory_search_formats_results(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "assistant" in result.output
 
 
+def test_memory_export_calls_store_and_prints_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FakeStore:
+        def __init__(self):  # noqa: D107
+            self.closed = False
+            self.calls: list[dict[str, object]] = []
+
+        def export_tenant(  # type: ignore[no-untyped-def]
+            self,
+            tenant_id: str,
+            output_path: str,
+            *,
+            include_forgotten: bool = False,
+            limit: int | None = None,
+        ) -> int:
+            self.calls.append(
+                {
+                    "tenant_id": tenant_id,
+                    "output_path": output_path,
+                    "include_forgotten": include_forgotten,
+                    "limit": limit,
+                }
+            )
+            Path(output_path).write_text('{"memory_id":"mem-1"}\n', encoding="utf-8")
+            return 1
+
+        def close(self):  # noqa: D401
+            self.closed = True
+
+    monkeypatch.setattr("archon.archon_cli.MemoryStore", FakeStore)
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
+    runner = CliRunner()
+    out_path = tmp_path / "export.jsonl"
+    result = runner.invoke(
+        cli, ["memory", "export", "--tenant", "tenant-a", "--out", str(out_path)]
+    )
+    assert result.exit_code == 0
+    assert "export.jsonl" in result.output
+    assert out_path.exists()
+
+
+def test_memory_import_calls_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeStore:
+        def __init__(self):  # noqa: D107
+            self.closed = False
+
+        def import_tenant(  # type: ignore[no-untyped-def]
+            self,
+            tenant_id: str,
+            input_path: str,
+            *,
+            allow_tenant_mismatch: bool = False,
+            on_conflict: str = "skip",
+            limit: int | None = None,
+        ) -> dict[str, int]:
+            calls.append(
+                {
+                    "tenant_id": tenant_id,
+                    "input_path": input_path,
+                    "allow_tenant_mismatch": allow_tenant_mismatch,
+                    "on_conflict": on_conflict,
+                    "limit": limit,
+                }
+            )
+            return {"imported": 2, "replaced": 1, "skipped": 3}
+
+        def close(self):  # noqa: D401
+            self.closed = True
+
+    monkeypatch.setattr("archon.archon_cli.MemoryStore", FakeStore)
+    monkeypatch.setattr(
+        "archon.archon_cli._load_config", lambda path="config.archon.yaml": object()
+    )
+    runner = CliRunner()
+    input_path = tmp_path / "in.jsonl"
+    input_path.write_text('{"memory_id":"mem-1"}\n', encoding="utf-8")
+    result = runner.invoke(
+        cli,
+        [
+            "memory",
+            "import",
+            "--tenant",
+            "tenant-a",
+            "--in",
+            str(input_path),
+            "--on-conflict",
+            "overwrite",
+        ],
+    )
+    assert result.exit_code == 0
+    assert calls == [
+        {
+            "tenant_id": "tenant-a",
+            "input_path": str(input_path),
+            "allow_tenant_mismatch": False,
+            "on_conflict": "overwrite",
+            "limit": None,
+        }
+    ]
+
+
 def test_peers_list_outputs_table(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeRegistry:
         async def discover(self, capability_filter):  # type: ignore[no-untyped-def]

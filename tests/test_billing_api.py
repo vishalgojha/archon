@@ -8,9 +8,11 @@ from pathlib import Path
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
 
 from archon.interfaces.api.server import app
+from archon.testing.asgi import lifespan, request
+
+pytestmark = pytest.mark.asyncio
 
 
 def _auth_headers(*, tenant: str = "tenant-a", tier: str = "business") -> dict[str, str]:
@@ -31,12 +33,14 @@ def _tmp_db(name: str) -> Path:
     return folder / "db.sqlite3"
 
 
-def test_billing_summary_rejects_cross_tenant_access(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_billing_summary_rejects_cross_tenant_access(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ARCHON_BILLING_DB", str(_tmp_db("isolation")))
     monkeypatch.setenv("ARCHON_ANALYTICS_DB", str(_tmp_db("analytics")))
 
-    with TestClient(app) as client:
-        response = client.get(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "GET",
             "/v1/billing/summary",
             params={"tenant_id": "tenant-b"},
             headers=_auth_headers(tenant="tenant-a", tier="business"),
@@ -45,26 +49,32 @@ def test_billing_summary_rejects_cross_tenant_access(monkeypatch: pytest.MonkeyP
     assert response.status_code == 403
 
 
-def test_enterprise_admin_can_manage_other_tenant_and_generate_invoice(
+async def test_enterprise_admin_can_manage_other_tenant_and_generate_invoice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ARCHON_BILLING_DB", str(_tmp_db("enterprise")))
     monkeypatch.setenv("ARCHON_ANALYTICS_DB", str(_tmp_db("analytics")))
 
-    with TestClient(app) as client:
-        customer = client.post(
+    async with lifespan(app):
+        customer = await request(
+            app,
+            "POST",
             "/v1/billing/customer",
-            json={"tenant_id": "tenant-b", "email": "owner@example.com"},
+            json_body={"tenant_id": "tenant-b", "email": "owner@example.com"},
             headers=_auth_headers(tenant="ops-root", tier="enterprise"),
         )
-        subscription = client.post(
+        subscription = await request(
+            app,
+            "POST",
             "/v1/billing/subscription",
-            json={"tenant_id": "tenant-b", "plan_id": "growth"},
+            json_body={"tenant_id": "tenant-b", "plan_id": "growth"},
             headers=_auth_headers(tenant="ops-root", tier="enterprise"),
         )
-        usage = client.post(
+        usage = await request(
+            app,
+            "POST",
             "/v1/billing/usage",
-            json={
+            json_body={
                 "tenant_id": "tenant-b",
                 "meter_type": "model_spend",
                 "quantity": 1,
@@ -74,12 +84,16 @@ def test_enterprise_admin_can_manage_other_tenant_and_generate_invoice(
             },
             headers=_auth_headers(tenant="ops-root", tier="enterprise"),
         )
-        invoice = client.post(
+        invoice = await request(
+            app,
+            "POST",
             "/v1/billing/invoices/generate",
-            json={"tenant_id": "tenant-b"},
+            json_body={"tenant_id": "tenant-b"},
             headers=_auth_headers(tenant="ops-root", tier="enterprise"),
         )
-        summary = client.get(
+        summary = await request(
+            app,
+            "GET",
             "/v1/billing/summary",
             params={"tenant_id": "tenant-b"},
             headers=_auth_headers(tenant="ops-root", tier="enterprise"),
@@ -93,22 +107,26 @@ def test_enterprise_admin_can_manage_other_tenant_and_generate_invoice(
     assert summary.json()["usage_summary"]["model_spend_usd"] == 30.0
 
 
-def test_billing_external_sync_requires_approval_then_auto_approve_passes(
+async def test_billing_external_sync_requires_approval_then_auto_approve_passes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ARCHON_BILLING_DB", str(_tmp_db("approval")))
     monkeypatch.setenv("ARCHON_ANALYTICS_DB", str(_tmp_db("analytics")))
     monkeypatch.setenv("ARCHON_STRIPE_SECRET_KEY", "sk_test_123")
 
-    with TestClient(app) as client:
-        blocked = client.post(
+    async with lifespan(app):
+        blocked = await request(
+            app,
+            "POST",
             "/v1/billing/customer",
-            json={"email": "owner@example.com", "sync_external": True},
+            json_body={"email": "owner@example.com", "sync_external": True},
             headers=_auth_headers(),
         )
-        approved = client.post(
+        approved = await request(
+            app,
+            "POST",
             "/v1/billing/customer",
-            json={"email": "owner@example.com", "sync_external": True, "auto_approve": True},
+            json_body={"email": "owner@example.com", "sync_external": True, "auto_approve": True},
             headers=_auth_headers(),
         )
 

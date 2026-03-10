@@ -7,6 +7,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from archon.memory.embedder import Embedder
@@ -312,6 +313,182 @@ class MemoryStore:
                 handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
                 count += 1
         return count
+
+    def import_tenant(
+        self,
+        tenant_id: str,
+        input_path: str,
+        *,
+        allow_tenant_mismatch: bool = False,
+        on_conflict: str = "skip",
+        limit: int | None = None,
+    ) -> dict[str, int]:
+        """Import tenant memories from a JSONL export.
+
+        The import preserves embedding vectors when present and updates the in-memory
+        vector index for non-forgotten entries.
+        """
+
+        source_path = Path(str(input_path))
+        if not source_path.exists():
+            raise FileNotFoundError(str(source_path))
+        if on_conflict not in {"skip", "overwrite"}:
+            raise ValueError("on_conflict must be 'skip' or 'overwrite'.")
+
+        imported = 0
+        skipped = 0
+        replaced = 0
+        seen = 0
+        with source_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if limit is not None and seen >= int(limit):
+                    break
+                raw = line.strip()
+                if not raw:
+                    continue
+                seen += 1
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    skipped += 1
+                    continue
+                if not isinstance(payload, dict):
+                    skipped += 1
+                    continue
+                outcome = self.import_entries(
+                    tenant_id=tenant_id,
+                    entries=[payload],
+                    allow_tenant_mismatch=allow_tenant_mismatch,
+                    on_conflict=on_conflict,
+                )
+                imported += outcome["imported"]
+                replaced += outcome["replaced"]
+                skipped += outcome["skipped"]
+
+        return {"imported": imported, "replaced": replaced, "skipped": skipped}
+
+    def import_entries(
+        self,
+        *,
+        tenant_id: str,
+        entries: list[dict[str, Any]],
+        allow_tenant_mismatch: bool = False,
+        on_conflict: str = "skip",
+    ) -> dict[str, int]:
+        """Import a list of exported memory payloads into the tenant namespace."""
+
+        if on_conflict not in {"skip", "overwrite"}:
+            raise ValueError("on_conflict must be 'skip' or 'overwrite'.")
+        imported = 0
+        skipped = 0
+        replaced = 0
+        for payload in entries:
+            ok, outcome = self._import_one(
+                tenant_id=str(tenant_id),
+                payload=payload,
+                allow_tenant_mismatch=bool(allow_tenant_mismatch),
+                on_conflict=str(on_conflict),
+            )
+            if not ok:
+                skipped += 1
+                continue
+            imported += 1
+            if outcome == "replaced":
+                replaced += 1
+        return {"imported": imported, "replaced": replaced, "skipped": skipped}
+
+    def _import_one(
+        self,
+        *,
+        tenant_id: str,
+        payload: dict[str, Any],
+        allow_tenant_mismatch: bool,
+        on_conflict: str,
+    ) -> tuple[bool, str]:
+        memory_id = str(payload.get("memory_id") or "").strip() or f"mem-{uuid.uuid4().hex[:12]}"
+        content = str(payload.get("content") or "")
+        role = str(payload.get("role") or "assistant")
+        session_id = str(payload.get("session_id") or "session-import")
+        timestamp = float(payload.get("timestamp") or time.time())
+        source_tenant = str(payload.get("tenant_id") or "").strip()
+        forgotten = bool(payload.get("forgotten", False))
+        metadata = payload.get("metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
+
+        if source_tenant and source_tenant != tenant_id:
+            if not allow_tenant_mismatch:
+                return False, "skipped"
+            metadata = dict(metadata)
+            metadata.setdefault("source_tenant_id", source_tenant)
+
+        embedding = payload.get("embedding", [])
+        embedding = embedding if isinstance(embedding, list) else []
+        vector: list[float] = []
+        for item in embedding:
+            try:
+                vector.append(float(item))
+            except (TypeError, ValueError):
+                vector = []
+                break
+        if not vector:
+            dim = int(getattr(self.embedder, "default_dim", 768) or 768)
+            vector = [0.0 for _ in range(max(1, dim))]
+
+        replaced = False
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM episodic_memory WHERE memory_id = ?",
+                (memory_id,),
+            ).fetchone()
+            exists = row is not None
+            if exists and on_conflict == "skip":
+                return False, "skipped"
+            conn.execute(
+                """
+                INSERT INTO episodic_memory (
+                    memory_id, timestamp, content, role, session_id, tenant_id, embedding_json,
+                    metadata_json, forgotten
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    timestamp=excluded.timestamp,
+                    content=excluded.content,
+                    role=excluded.role,
+                    session_id=excluded.session_id,
+                    tenant_id=excluded.tenant_id,
+                    embedding_json=excluded.embedding_json,
+                    metadata_json=excluded.metadata_json,
+                    forgotten=excluded.forgotten
+                """,
+                (
+                    memory_id,
+                    timestamp,
+                    content,
+                    role,
+                    session_id,
+                    tenant_id,
+                    json.dumps(vector, separators=(",", ":")),
+                    json.dumps(metadata, separators=(",", ":")),
+                    1 if forgotten else 0,
+                ),
+            )
+            conn.commit()
+            replaced = bool(exists)
+
+        if forgotten:
+            self.vector_index.delete(memory_id)
+        else:
+            self.vector_index.add(
+                id=memory_id,
+                vector=vector,
+                metadata={
+                    "tenant_id": tenant_id,
+                    "session_id": session_id,
+                    "role": role,
+                    "forgotten": False,
+                },
+            )
+
+        return True, "replaced" if replaced else "imported"
 
     def _ensure_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:

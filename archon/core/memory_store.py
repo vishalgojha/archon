@@ -1,8 +1,13 @@
-"""Causal episodic memory storage (SQLite-backed)."""
+"""Causal episodic memory storage (SQLite-backed).
+
+Note: This store intentionally performs SQLite operations synchronously.
+The dev/test runtime used by this repo can hang when executing `sqlite3`
+workloads via `asyncio.to_thread()` / thread executors. These operations are
+small and bounded; keeping them synchronous preserves deterministic behavior.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sqlite3
 from pathlib import Path
@@ -26,7 +31,7 @@ class MemoryStore:
 
         if self._initialized:
             return
-        await asyncio.to_thread(self._initialize_sync)
+        self._initialize_sync()
         self._initialized = True
 
     async def add_entry(
@@ -49,8 +54,7 @@ class MemoryStore:
         """
 
         await self.initialize()
-        return await asyncio.to_thread(
-            self._insert_sync,
+        return self._insert_sync(
             task,
             json.dumps(context),
             json.dumps(actions_taken),
@@ -70,7 +74,7 @@ class MemoryStore:
         """
 
         await self.initialize()
-        return await asyncio.to_thread(self._list_recent_sync, limit)
+        return self._list_recent_sync(limit)
 
     def _initialize_sync(self) -> None:
         conn = sqlite3.connect(self.db_path)

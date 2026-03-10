@@ -95,6 +95,7 @@ DRAWER_COPY = {
         "commands": {
             "memory.search": "Query memory by tenant and ranked similarity.",
             "memory.export": "Export a tenant memory namespace for audit or transfer.",
+            "memory.import": "Import a tenant memory namespace from a prior export.",
         },
     },
     "evolve": {
@@ -425,13 +426,29 @@ COMMAND_COPY = {
     "memory.export": {
         "what": "Export a tenant memory namespace for review, transfer, or compliance workflows.",
         "steps": [
-            "Reserve the command surface for the memory export path.",
+            "Load the config and open the memory store.",
+            "Export tenant episodic memory rows to JSONL.",
+            "Render the output path and close the store.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Exported {row_count} memory row(s) for tenant {tenant_id}.",
         },
         "next_steps": [
-            "Run archon memory to review the available memory controls.",
+            "Transfer the JSONL file to another instance for import when available.",
+        ],
+    },
+    "memory.import": {
+        "what": "Import a tenant memory namespace from a JSONL export (transfer/restore).",
+        "steps": [
+            "Load the config and open the memory store.",
+            "Parse JSONL payloads from the input file.",
+            "Insert new rows and update the vector index.",
+        ],
+        "results": {
+            "success": "Imported {imported} memory row(s) for tenant {tenant_id}.",
+        },
+        "next_steps": [
+            "Run archon memory search to spot-check imported results.",
         ],
     },
     "evolve.plan": {
@@ -474,10 +491,13 @@ COMMAND_COPY = {
     "federation.peers": {
         "what": "Inspect peer state and capabilities across the federation layer.",
         "steps": [
-            "Reserve the command surface for the federation peer path.",
+            "Load the active config file.",
+            "Read configured federation peers.",
+            "Query the local federation peer registry (if available).",
+            "Render peer identity, capabilities, and last-seen metadata.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Rendered {configured_peers} configured peers and {runtime_peers} runtime peers.",
         },
         "next_steps": [
             "Run archon federation to review the planned control surface.",
@@ -486,10 +506,13 @@ COMMAND_COPY = {
     "federation.sync": {
         "what": "Sync patterns and shared state across connected ARCHON peers.",
         "steps": [
-            "Reserve the command surface for the federation sync path.",
+            "Load the active config file.",
+            "Resolve federation peer targets.",
+            "Announce local instance to configured peers.",
+            "Push any stored workflow patterns to peers.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Synced federation state to {target_count} peer targets.",
         },
         "next_steps": [
             "Run archon federation to review the planned control surface.",

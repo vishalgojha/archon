@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from archon.agents.outbound.email_agent import EmailSendResult, OutboundEmail
 from archon.agents.outbound.webchat_agent import WebChatMessage, WebChatSendResult
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
+from archon.testing.asgi import lifespan, request, websocket_session
 from archon.versioning import resolve_git_sha
 from archon.web.intent_classifier import PageIntent, SiteIntent
 from archon.web.site_crawler import CrawlResult, PageData
+
+pytestmark = pytest.mark.asyncio
 
 
 def _auth_headers(*, tenant: str = "tenant-test", tier: str = "business") -> dict[str, str]:
@@ -29,22 +31,26 @@ def _set_webchat_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
 
 
-def test_post_tasks_rejects_missing_bearer_token() -> None:
-    with TestClient(app) as client:
-        response = client.post(
+async def test_post_tasks_rejects_missing_bearer_token() -> None:
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/tasks",
-            json={"goal": "Any goal", "mode": "debate"},
+            json_body={"goal": "Any goal", "mode": "debate"},
         )
     assert response.status_code == 401
 
 
-def test_post_tasks_debate_mode_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_tasks_debate_mode_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/tasks",
-            json={
+            json_body={
                 "goal": "Draft a migration rollout plan",
                 "mode": "debate",
             },
@@ -62,13 +68,15 @@ def test_post_tasks_debate_mode_response_shape(monkeypatch: pytest.MonkeyPatch) 
     assert isinstance(payload["confidence"], int)
 
 
-def test_post_tasks_growth_mode_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_tasks_growth_mode_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/tasks",
-            json={
+            json_body={
                 "goal": "Increase qualified leads in Indian pharmacy SMBs",
                 "mode": "growth",
                 "context": {
@@ -91,7 +99,7 @@ def test_post_tasks_growth_mode_response_shape(monkeypatch: pytest.MonkeyPatch) 
     assert isinstance(payload["confidence"], int)
 
 
-def test_post_tasks_applies_tier_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_tasks_applies_tier_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
     previous_store = app.state.rate_limit_store
@@ -105,12 +113,12 @@ def test_post_tasks_applies_tier_rate_limit(monkeypatch: pytest.MonkeyPatch) -> 
     )
     set_rate_limit_store(app.state.rate_limit_store)
     try:
-        with TestClient(app) as client:
+        async with lifespan(app):
             headers = _auth_headers(tenant="tenant-free-limit", tier="free")
             body = {"goal": "Draft summary", "mode": "debate"}
-            first = client.post("/v1/tasks", json=body, headers=headers)
-            second = client.post("/v1/tasks", json=body, headers=headers)
-            third = client.post("/v1/tasks", json=body, headers=headers)
+            first = await request(app, "POST", "/v1/tasks", json_body=body, headers=headers)
+            second = await request(app, "POST", "/v1/tasks", json_body=body, headers=headers)
+            third = await request(app, "POST", "/v1/tasks", json_body=body, headers=headers)
     finally:
         app.state.rate_limit_store = previous_store
         set_rate_limit_store(previous_store)
@@ -120,13 +128,15 @@ def test_post_tasks_applies_tier_rate_limit(monkeypatch: pytest.MonkeyPatch) -> 
     assert third.status_code == 429
 
 
-def test_outbound_email_requires_approval_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_outbound_email_requires_approval_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/outbound/email",
-            json={
+            json_body={
                 "to_email": "lead@example.com",
                 "subject": "Demo follow-up",
                 "body": "Can we schedule a call?",
@@ -143,17 +153,19 @@ class _FakeEmailTransport:
         return EmailSendResult(provider="fake", message_id="fake-msg-1", accepted=True, detail="ok")
 
 
-def test_outbound_email_auto_approve_sends_with_mock_transport(
+async def test_outbound_email_auto_approve_sends_with_mock_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    with TestClient(app) as client:
+    async with lifespan(app):
         original_transport = app.state.orchestrator.email_agent.transport
         app.state.orchestrator.email_agent.transport = _FakeEmailTransport()
         try:
-            response = client.post(
+            response = await request(
+                app,
+                "POST",
                 "/v1/outbound/email",
-                json={
+                json_body={
                     "to_email": "lead@example.com",
                     "subject": "Demo follow-up",
                     "body": "Can we schedule a call?",
@@ -170,13 +182,15 @@ def test_outbound_email_auto_approve_sends_with_mock_transport(
     assert payload["result"]["metadata"]["provider"] == "fake"
 
 
-def test_outbound_webchat_requires_approval_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_outbound_webchat_requires_approval_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/outbound/webchat",
-            json={"session_id": "session-abc", "text": "Hello from ARCHON"},
+            json_body={"session_id": "session-abc", "text": "Hello from ARCHON"},
             headers=_auth_headers(tier="business"),
         )
 
@@ -194,17 +208,19 @@ class _FakeWebChatTransport:
         )
 
 
-def test_outbound_webchat_auto_approve_sends_with_mock_transport(
+async def test_outbound_webchat_auto_approve_sends_with_mock_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    with TestClient(app) as client:
+    async with lifespan(app):
         original_transport = app.state.orchestrator.webchat_agent.transport
         app.state.orchestrator.webchat_agent.transport = _FakeWebChatTransport()
         try:
-            response = client.post(
+            response = await request(
+                app,
+                "POST",
                 "/v1/outbound/webchat",
-                json={
+                json_body={
                     "session_id": "session-abc",
                     "text": "Hello from ARCHON",
                     "auto_approve": True,
@@ -220,9 +236,9 @@ def test_outbound_webchat_auto_approve_sends_with_mock_transport(
     assert payload["result"]["metadata"]["provider"] == "fake-webchat"
 
 
-def test_health_endpoint_returns_status_version_and_uptime() -> None:
-    with TestClient(app) as client:
-        response = client.get("/health")
+async def test_health_endpoint_returns_status_version_and_uptime() -> None:
+    async with lifespan(app):
+        response = await request(app, "GET", "/health")
 
     assert response.status_code == 200
     payload = response.json()
@@ -233,12 +249,12 @@ def test_health_endpoint_returns_status_version_and_uptime() -> None:
     assert payload["uptime_s"] >= 0
 
 
-def test_webchat_token_route_is_public_without_auth_header(
+async def test_webchat_token_route_is_public_without_auth_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_webchat_secret(monkeypatch)
-    with TestClient(app) as client:
-        response = client.post("/webchat/token", json={})
+    async with lifespan(app):
+        response = await request(app, "POST", "/webchat/token", json_body={})
 
     assert response.status_code == 200
     payload = response.json()
@@ -246,16 +262,21 @@ def test_webchat_token_route_is_public_without_auth_header(
     assert payload["session"]["session_id"].startswith("session-")
 
 
-def test_webchat_session_route_is_public_with_webchat_token_only(
+async def test_webchat_session_route_is_public_with_webchat_token_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_webchat_secret(monkeypatch)
-    with TestClient(app) as client:
-        token_response = client.post("/webchat/token", json={})
+    async with lifespan(app):
+        token_response = await request(app, "POST", "/webchat/token", json_body={})
         token_payload = token_response.json()
         session_id = token_payload["session"]["session_id"]
         token = token_payload["token"]
-        response = client.get(f"/webchat/session/{session_id}", params={"token": token})
+        response = await request(
+            app,
+            "GET",
+            f"/webchat/session/{session_id}",
+            params={"token": token},
+        )
 
     assert token_response.status_code == 200
     assert response.status_code == 200
@@ -264,37 +285,80 @@ def test_webchat_session_route_is_public_with_webchat_token_only(
     assert isinstance(payload["messages"], list)
 
 
-def test_protected_route_still_requires_bearer_token() -> None:
-    with TestClient(app) as client:
-        response = client.get("/studio/workflows")
+async def test_protected_route_still_requires_bearer_token() -> None:
+    async with lifespan(app):
+        response = await request(app, "GET", "/studio/workflows")
 
     assert response.status_code == 401
 
 
-def test_webchat_websocket_reaches_subapp_and_returns_webchat_close_code(
+async def test_webchat_websocket_reaches_subapp_and_returns_webchat_close_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_webchat_secret(monkeypatch)
-    with TestClient(app) as client:
-        token_response = client.post("/webchat/token", json={})
+    async with lifespan(app):
+        token_response = await request(app, "POST", "/webchat/token", json_body={})
         token_payload = token_response.json()
         token = token_payload["token"]
         wrong_session_id = "session-mismatch"
 
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(f"/webchat/ws/{wrong_session_id}?token={token}"):
+            async with websocket_session(
+                app,
+                f"/webchat/ws/{wrong_session_id}",
+                query_string=f"token={token}",
+            ):
                 pass
 
     assert token_response.status_code == 200
     assert exc_info.value.code == 4003
 
 
-def test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected() -> None:
-    with TestClient(app) as client:
-        dashboard = client.get("/dashboard")
-        dashboard_asset = client.get("/dashboard/src/useARCHON.js")
-        studio = client.get("/studio")
-        studio_api = client.get("/studio/workflows")
+async def test_webchat_can_request_growth_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_webchat_secret(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    saw_growth_started = False
+    saw_growth_agent = False
+
+    async with lifespan(app):
+        token_response = await request(app, "POST", "/webchat/token", json_body={})
+        assert token_response.status_code == 200
+        token_payload = token_response.json()
+        session_id = token_payload["session"]["session_id"]
+        token = token_payload["token"]
+
+        async with websocket_session(app, f"/webchat/ws/{session_id}", query_string=f"token={token}") as ws:
+            restored = await ws.receive_json()
+            assert restored["type"] == "session_restored"
+            await ws.send_json(
+                {
+                    "type": "message",
+                    "content": "Run the growth swarm and suggest next actions.",
+                    "mode": "growth",
+                }
+            )
+
+            for _ in range(600):
+                frame = await ws.receive_json()
+                frame_type = str(frame.get("type") or "")
+                if frame_type == "task_started" and frame.get("mode") == "growth":
+                    saw_growth_started = True
+                if frame_type == "growth_agent_completed" and frame.get("mode") == "growth":
+                    saw_growth_agent = True
+                if saw_growth_started and saw_growth_agent:
+                    break
+
+    assert saw_growth_started is True
+    assert saw_growth_agent is True
+
+
+async def test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected() -> None:
+    async with lifespan(app):
+        dashboard = await request(app, "GET", "/dashboard")
+        dashboard_asset = await request(app, "GET", "/dashboard/src/useARCHON.js")
+        studio = await request(app, "GET", "/studio")
+        studio_api = await request(app, "GET", "/studio/workflows")
 
     assert dashboard.status_code == 200
     assert "ARCHON Mission Control" in dashboard.text
@@ -305,7 +369,7 @@ def test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected()
     assert studio_api.status_code == 401
 
 
-def test_memory_timeline_endpoint_filters_by_session(
+async def test_memory_timeline_endpoint_filters_by_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
@@ -335,14 +399,18 @@ def test_memory_timeline_endpoint_filters_by_session(
         },
     ]
 
-    with TestClient(app) as client:
-
+    async with lifespan(app):
         async def fake_list_recent(*, limit: int) -> list[dict[str, object]]:
             assert limit >= 2
             return rows
 
         monkeypatch.setattr(app.state.orchestrator.memory_store, "list_recent", fake_list_recent)
-        response = client.get("/memory/timeline", params={"session_id": "session-abc", "limit": 10})
+        response = await request(
+            app,
+            "GET",
+            "/memory/timeline",
+            params={"session_id": "session-abc", "limit": 10},
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -354,11 +422,13 @@ def test_memory_timeline_endpoint_filters_by_session(
     assert entry["role"] == "assistant"
 
 
-def test_console_agents_tree_returns_directory_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_console_agents_tree_returns_directory_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.get("/console/agents", headers=_auth_headers())
+    async with lifespan(app):
+        response = await request(app, "GET", "/console/agents", headers=_auth_headers())
 
     assert response.status_code == 200
     payload = response.json()
@@ -367,14 +437,21 @@ def test_console_agents_tree_returns_directory_listing(monkeypatch: pytest.Monke
     assert any(node["type"] in {"directory", "file"} for node in payload["tree"])
 
 
-def test_console_agent_file_read_valid_and_invalid_paths(
+async def test_console_agent_file_read_valid_and_invalid_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        ok_response = client.get("/console/agents/researcher.py", headers=_auth_headers())
-        missing_response = client.get("/console/agents/not-a-real-file.py", headers=_auth_headers())
+    async with lifespan(app):
+        ok_response = await request(
+            app, "GET", "/console/agents/researcher.py", headers=_auth_headers()
+        )
+        missing_response = await request(
+            app,
+            "GET",
+            "/console/agents/not-a-real-file.py",
+            headers=_auth_headers(),
+        )
 
     assert ok_response.status_code == 200
     ok_payload = ok_response.json()
@@ -383,13 +460,17 @@ def test_console_agent_file_read_valid_and_invalid_paths(
     assert missing_response.status_code == 404
 
 
-def test_console_agent_save_rejects_python_syntax_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_console_agent_save_rejects_python_syntax_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.put(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "PUT",
             "/console/agents/researcher.py",
-            json={"content": "def broken(:\n    pass\n"},
+            json_body={"content": "def broken(:\n    pass\n"},
             headers=_auth_headers(),
         )
 
@@ -398,11 +479,15 @@ def test_console_agent_save_rejects_python_syntax_error(monkeypatch: pytest.Monk
     assert payload["detail"]["error"] == "syntax_error"
 
 
-def test_console_provider_test_endpoint_returns_health(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_console_provider_test_endpoint_returns_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
-    with TestClient(app) as client:
-        response = client.post("/console/providers/test/openrouter", headers=_auth_headers())
+    async with lifespan(app):
+        response = await request(
+            app, "POST", "/console/providers/test/openrouter", headers=_auth_headers()
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -411,7 +496,7 @@ def test_console_provider_test_endpoint_returns_health(monkeypatch: pytest.Monke
     assert payload["status"] == "healthy"
 
 
-def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
     class _FakeCrawler:
@@ -452,10 +537,12 @@ def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyP
         "archon.interfaces.api.server.IntentClassifier", lambda *args, **kwargs: _FakeClassifier()
     )
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/console/crawl",
-            json={"url": "https://example.com"},
+            json_body={"url": "https://example.com"},
             headers=_auth_headers(),
         )
 
@@ -466,13 +553,13 @@ def test_console_crawl_returns_site_intent_and_embed(monkeypatch: pytest.MonkeyP
     assert "<script" in payload["embed"]["script_tag"]
 
 
-def test_analytics_leaderboard_route_is_mounted_on_main_server(
+async def test_analytics_leaderboard_route_is_mounted_on_main_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     tenant = "tenant-analytics-mounted"
 
-    with TestClient(app) as client:
+    async with lifespan(app):
         app.state.analytics_collector.record(
             tenant_id=tenant,
             event_type="agent_recruited",
@@ -483,7 +570,9 @@ def test_analytics_leaderboard_route_is_mounted_on_main_server(
                 "cost_usd": 0.04,
             },
         )
-        response = client.get(
+        response = await request(
+            app,
+            "GET",
             "/analytics/leaderboard",
             params={"tenant_id": tenant, "scope": "tenant"},
             headers=_auth_headers(tenant=tenant, tier="business"),

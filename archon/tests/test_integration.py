@@ -15,11 +15,10 @@ import wave
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Iterator
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import archon.vernacular.detector as vernacular_detector_mod
@@ -38,6 +37,9 @@ from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rat
 from archon.interfaces.api.server import app
 from archon.marketplace.connect import CONNECT_ACCOUNT_METADATA_KEY, ConnectAccount
 from archon.multimodal import MultimodalOrchestrator, TranscriptResult
+from archon.testing.asgi import lifespan, request, websocket_session
+
+pytestmark = pytest.mark.asyncio
 from archon.onprem import DeploymentConfig, DeployValidator, DockerComposeGenerator
 from archon.partners.viral_loop import ViralLoop, visitor_fingerprint
 from archon.studio.workflow_serializer import deserialize, serialize
@@ -80,9 +82,9 @@ def _openrouter_key_fixture() -> Iterator[None]:
             os.environ["ARCHON_JWT_SECRET"] = previous_jwt
 
 
-def _receive_ws_json_or_fail(websocket) -> dict[str, Any]:
+async def _receive_ws_json_or_fail(websocket) -> dict[str, Any]:
     try:
-        frame = websocket.receive_json()
+        frame = await websocket.receive_json()
     except WebSocketDisconnect as exc:
         pytest.fail(f"WS disconnected with code {exc.code}: {exc.reason}")
     if not isinstance(frame, dict):
@@ -150,7 +152,10 @@ class _SMTPHandler(socketserver.StreamRequestHandler):
 
 @contextmanager
 def _smtp_capture_server() -> Iterator[_SMTPCaptureServer]:
-    server = _SMTPCaptureServer(("127.0.0.1", 0))
+    try:
+        server = _SMTPCaptureServer(("127.0.0.1", 0))
+    except PermissionError as exc:
+        pytest.skip(f"SMTP capture server unavailable in this environment: {exc}")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -161,7 +166,7 @@ def _smtp_capture_server() -> Iterator[_SMTPCaptureServer]:
         thread.join(timeout=2.0)
 
 
-def _collect_ws_events(
+async def _collect_ws_events(
     websocket,
     *,
     stop_on_result: bool = True,
@@ -170,7 +175,7 @@ def _collect_ws_events(
     events: list[dict[str, Any]] = []
     result: dict[str, Any] | None = None
     for _ in range(max_messages):
-        message = _receive_ws_json_or_fail(websocket)
+        message = await _receive_ws_json_or_fail(websocket)
         if message.get("type") == "event":
             payload = message.get("payload")
             if isinstance(payload, dict):
@@ -210,19 +215,19 @@ def _set_marketplace_envs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     )
 
 
-def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
+async def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
     """Debate smoke: response content/confidence and cost/budget telemetry in events."""
 
     token = _auth_token(tenant="tenant-debate", tier="business")
-    with TestClient(app) as client:
-        with client.websocket_connect(f"/v1/tasks/ws?token={token}") as websocket:
-            websocket.send_json(
+    async with lifespan(app):
+        async with websocket_session(app, "/v1/tasks/ws", query_string=f"token={token}") as websocket:
+            await websocket.send_json(
                 {
                     "goal": "Explain the CAP theorem in simple terms and give one practical tradeoff example.",
                     "mode": "debate",
                 }
             )
-            events, result = _collect_ws_events(websocket)
+            events, result = await _collect_ws_events(websocket)
 
     assert result is not None
     assert isinstance(result.get("final_answer"), str)
@@ -237,13 +242,15 @@ def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
     )
 
 
-def test_full_growth_flow_runs_prospector_and_icp() -> None:
+async def test_full_growth_flow_runs_prospector_and_icp() -> None:
     """Growth smoke: verify core growth swarm agents execute."""
 
-    with TestClient(app) as client:
-        response = client.post(
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
             "/v1/tasks",
-            json={
+            json_body={
                 "goal": "Expand outbound pipeline for B2B clinic automation software",
                 "mode": "growth",
                 "context": {
@@ -264,7 +271,7 @@ def test_full_growth_flow_runs_prospector_and_icp() -> None:
     assert "ICPAgent" in names
 
 
-def test_auth_flow_401_429_and_valid_pro_equivalent_token_200() -> None:
+async def test_auth_flow_401_429_and_valid_pro_equivalent_token_200() -> None:
     """Auth smoke: unauthenticated denied, free tier rate-limited, business tier allowed."""
 
     previous_store = app.state.rate_limit_store
@@ -279,21 +286,32 @@ def test_auth_flow_401_429_and_valid_pro_equivalent_token_200() -> None:
     set_rate_limit_store(app.state.rate_limit_store)
 
     try:
-        with TestClient(app) as client:
-            unauth = client.post("/v1/tasks", json={"goal": "Ping", "mode": "debate"})
-            free_1 = client.post(
+        async with lifespan(app):
+            unauth = await request(
+                app,
+                "POST",
                 "/v1/tasks",
-                json={"goal": "First free-tier request", "mode": "debate"},
+                json_body={"goal": "Ping", "mode": "debate"},
+            )
+            free_1 = await request(
+                app,
+                "POST",
+                "/v1/tasks",
+                json_body={"goal": "First free-tier request", "mode": "debate"},
                 headers=_auth_headers(tenant="tenant-free-auth", tier="free"),
             )
-            free_2 = client.post(
+            free_2 = await request(
+                app,
+                "POST",
                 "/v1/tasks",
-                json={"goal": "Second free-tier request", "mode": "debate"},
+                json_body={"goal": "Second free-tier request", "mode": "debate"},
                 headers=_auth_headers(tenant="tenant-free-auth", tier="free"),
             )
-            pro_equivalent = client.post(
+            pro_equivalent = await request(
+                app,
+                "POST",
                 "/v1/tasks",
-                json={"goal": "Pro/business request", "mode": "debate"},
+                json_body={"goal": "Pro/business request", "mode": "debate"},
                 headers=_auth_headers(tenant="tenant-pro-auth", tier="business"),
             )
     finally:
@@ -306,15 +324,15 @@ def test_auth_flow_401_429_and_valid_pro_equivalent_token_200() -> None:
     assert pro_equivalent.status_code == 200
 
 
-def test_approval_gate_integration_emits_event_and_completes_after_approve() -> None:
+async def test_approval_gate_integration_emits_event_and_completes_after_approve() -> None:
     """Approval smoke: emit approval_required over WS, approve via API, then complete."""
 
     token = _auth_token(tenant="tenant-approval", tier="business")
     headers = _auth_headers(tenant="tenant-approval", tier="business")
 
-    with TestClient(app) as client:
-        with client.websocket_connect(f"/v1/tasks/ws?token={token}") as websocket:
-            websocket.send_json(
+    async with lifespan(app):
+        async with websocket_session(app, "/v1/tasks/ws", query_string=f"token={token}") as websocket:
+            await websocket.send_json(
                 {
                     "goal": "Create a growth action plan and execute one guarded operation.",
                     "mode": "growth",
@@ -332,16 +350,18 @@ def test_approval_gate_integration_emits_event_and_completes_after_approve() -> 
             approval_seen = False
 
             for _ in range(300):
-                frame = _receive_ws_json_or_fail(websocket)
+                frame = await _receive_ws_json_or_fail(websocket)
                 if frame.get("type") == "event":
                     event = frame.get("payload", {})
                     if event.get("type") == "approval_required":
                         approval_seen = True
                         approval_id = str(event.get("request_id", "")).strip()
                         assert approval_id
-                        approve = client.post(
+                        approve = await request(
+                            app,
+                            "POST",
                             f"/v1/approvals/{approval_id}/approve",
-                            json={},
+                            json_body={},
                             headers=headers,
                         )
                         assert approve.status_code == 200
@@ -358,26 +378,27 @@ def test_approval_gate_integration_emits_event_and_completes_after_approve() -> 
     assert decision.get("request_id")
 
 
-def test_webchat_flow_anonymous_ws_stream_done_and_session_restore() -> None:
+async def test_webchat_flow_anonymous_ws_stream_done_and_session_restore() -> None:
     """WebChat smoke: anonymous token, token stream + done, reconnect and restore history."""
 
-    with TestClient(app) as client:
-        token_response = client.post("/webchat/token", json={})
+    async with lifespan(app):
+        token_response = await request(app, "POST", "/webchat/token", json_body={})
         assert token_response.status_code == 200
         token_payload = token_response.json()
         session_id = token_payload["session"]["session_id"]
         token = token_payload["token"]
-        ws_path = f"/webchat/ws/{session_id}?token={token}"
 
-        with client.websocket_connect(ws_path) as ws_first:
-            restored_1 = ws_first.receive_json()
+        async with websocket_session(
+            app, f"/webchat/ws/{session_id}", query_string=f"token={token}"
+        ) as ws_first:
+            restored_1 = await ws_first.receive_json()
             assert restored_1["type"] == "session_restored"
-            ws_first.send_json({"type": "message", "content": "Hello from integration smoke test"})
+            await ws_first.send_json({"type": "message", "content": "Hello from integration smoke test"})
 
             saw_token = False
             saw_done = False
             for _ in range(400):
-                frame = ws_first.receive_json()
+                frame = await ws_first.receive_json()
                 frame_type = frame.get("type")
                 if frame_type == "assistant_token":
                     saw_token = True
@@ -387,38 +408,41 @@ def test_webchat_flow_anonymous_ws_stream_done_and_session_restore() -> None:
             assert saw_token is True
             assert saw_done is True
 
-        with client.websocket_connect(ws_path) as ws_second:
-            restored_2 = ws_second.receive_json()
+        async with websocket_session(
+            app, f"/webchat/ws/{session_id}", query_string=f"token={token}"
+        ) as ws_second:
+            restored_2 = await ws_second.receive_json()
             assert restored_2["type"] == "session_restored"
             history = restored_2.get("messages", [])
             assert isinstance(history, list)
             assert len(history) >= 2
 
 
-def test_webchat_flow_streams_dashboard_events_for_live_panels() -> None:
+async def test_webchat_flow_streams_dashboard_events_for_live_panels() -> None:
     """WebChat smoke: dashboard-facing agent/debate/cost events arrive before completion."""
 
-    with TestClient(app) as client:
-        token_response = client.post("/webchat/token", json={})
+    async with lifespan(app):
+        token_response = await request(app, "POST", "/webchat/token", json_body={})
         assert token_response.status_code == 200
         token_payload = token_response.json()
         session_id = token_payload["session"]["session_id"]
         token = token_payload["token"]
-        ws_path = f"/webchat/ws/{session_id}?token={token}"
 
-        with client.websocket_connect(ws_path) as websocket:
-            restored = websocket.receive_json()
+        seen_types: set[str] = set()
+        async with websocket_session(
+            app, f"/webchat/ws/{session_id}", query_string=f"token={token}"
+        ) as websocket:
+            restored = await websocket.receive_json()
             assert restored["type"] == "session_restored"
-            websocket.send_json(
+            await websocket.send_json(
                 {
                     "type": "message",
                     "content": "Explain the CAP theorem simply for a dashboard event smoke test.",
                 }
             )
 
-            seen_types: set[str] = set()
             for _ in range(600):
-                frame = websocket.receive_json()
+                frame = await websocket.receive_json()
                 frame_type = str(frame.get("type") or "")
                 seen_types.add(frame_type)
                 if frame_type == "done":
@@ -432,7 +456,7 @@ def test_webchat_flow_streams_dashboard_events_for_live_panels() -> None:
     assert "done" in seen_types
 
 
-def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
+async def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
     """Email smoke: auto-approve gate + real local SMTP transport + footer/personalization check."""
 
     with _smtp_capture_server() as smtp_server:
@@ -447,7 +471,7 @@ def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
             )
         )
 
-        with TestClient(app) as client:
+        async with lifespan(app):
             original_transport = app.state.orchestrator.email_agent.transport
             original_auto = app.state.orchestrator.approval_gate.auto_approve_in_test
             app.state.orchestrator.email_agent.transport = smtp_transport
@@ -460,9 +484,11 @@ def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
                     "We can tailor onboarding for your use case.\n\n"
                     "To unsubscribe, reply STOP or contact support@archon.local.\n"
                 )
-                response = client.post(
+                response = await request(
+                    app,
+                    "POST",
                     "/v1/outbound/email",
-                    json={
+                    json_body={
                         "to_email": "aisha@example.com",
                         "subject": "Aisha - ARCHON onboarding follow-up",
                         "body": personalized_body,
@@ -481,14 +507,14 @@ def test_email_flow_with_auto_approve_in_test_and_smtp_capture() -> None:
 
         deadline = time.time() + 4.0
         while time.time() < deadline and not smtp_server.messages:
-            time.sleep(0.05)
+            await asyncio.sleep(0.05)
         assert smtp_server.messages, "Expected at least one SMTP DATA payload."
         combined = "\n".join(smtp_server.messages)
         assert "Hi Aisha" in combined
         assert "To unsubscribe, reply STOP" in combined
 
 
-def test_validate_config_dry_run_schema_and_budget_sanity() -> None:
+async def test_validate_config_dry_run_schema_and_budget_sanity() -> None:
     """Config validation smoke: dry-run exits cleanly with schema + budget checks passing."""
 
     report = validate_config(path="config.archon.yaml", dry_run=True)
@@ -497,6 +523,9 @@ def test_validate_config_dry_run_schema_and_budget_sanity() -> None:
     assert not any("Budget sanity failed" in item for item in report.errors)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*marked with '@pytest.mark.asyncio' but it is not an async function.*:pytest.PytestWarning"
+)
 def test_vernacular_pipeline_smoke_english_detect_and_spanish_native_reasoning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -541,7 +570,7 @@ def test_vernacular_pipeline_smoke_english_detect_and_spanish_native_reasoning(
     assert "español" in spanish.response_content.lower()
 
 
-def test_partner_viral_loop_smoke_window_attribution() -> None:
+async def test_partner_viral_loop_smoke_window_attribution() -> None:
     """Partner smoke: in-window conversion attributed; stale conversion excluded."""
 
     base = Path("archon/tests/_tmp_integration")
@@ -575,7 +604,7 @@ def test_partner_viral_loop_smoke_window_attribution() -> None:
     assert funnel.conversion_rate == 0.5
 
 
-def test_content_pipeline_smoke_brief_article_structure_and_queue() -> None:
+async def test_content_pipeline_smoke_brief_article_structure_and_queue() -> None:
     """Content smoke: brief from ICP, structured article generation, and queue placement."""
 
     class _PipelineResult:
@@ -650,6 +679,9 @@ def test_content_pipeline_smoke_brief_article_structure_and_queue() -> None:
     assert len(agent.queue.get_queue()) == 1
 
 
+@pytest.mark.filterwarnings(
+    "ignore:.*marked with '@pytest.mark.asyncio' but it is not an async function.*:pytest.PytestWarning"
+)
 def test_community_pipeline_smoke_relevant_reddit_post_composed_and_gated() -> None:
     """Community smoke: relevant manual-work post is detected, drafted, gated, and published."""
 
@@ -755,7 +787,7 @@ def test_community_pipeline_smoke_relevant_reddit_post_composed_and_gated() -> N
         ("ollama", 45),
     ],
 )
-def test_validate_config_dry_run_provider_matrix(
+async def test_validate_config_dry_run_provider_matrix(
     provider_filter: str | None,
     case_id: int,
 ) -> None:
@@ -767,7 +799,6 @@ def test_validate_config_dry_run_provider_matrix(
     assert report.ok is True
 
 
-@pytest.mark.asyncio
 async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
     """Billing integration: meter usage, flush to Stripe, and generate invoice lines."""
 
@@ -805,7 +836,7 @@ async def test_billing_meter_flush_and_invoice_generation_integration() -> None:
     assert {line.description for line in invoice.line_items} == {"Agent Runs", "Emails Sent"}
 
 
-def test_marketplace_onboarding_flow_activates_partner(
+async def test_marketplace_onboarding_flow_activates_partner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -845,7 +876,7 @@ def test_marketplace_onboarding_flow_activates_partner(
         async def get_account(self, account_id: str) -> ConnectAccount:
             return self.accounts[account_id]
 
-    with TestClient(app) as client:
+    async with lifespan(app):
         partner = app.state.partner_registry.register(
             "Integration Partner",
             "integration@example.com",
@@ -853,9 +884,11 @@ def test_marketplace_onboarding_flow_activates_partner(
         )
         stripe = _Stripe()
         app.state.marketplace_onboarding.stripe_client = stripe
-        response = client.post(
+        response = await request(
+            app,
+            "POST",
             "/marketplace/developers/onboard",
-            json={
+            json_body={
                 "partner_id": partner.partner_id,
                 "email": partner.email,
                 "country": "US",
@@ -871,7 +904,7 @@ def test_marketplace_onboarding_flow_activates_partner(
             details_submitted=True,
             created_at=time.time(),
         )
-        completed = asyncio.run(app.state.marketplace_onboarding.complete(partner.partner_id))
+        completed = await app.state.marketplace_onboarding.complete(partner.partner_id)
         refreshed = app.state.partner_registry.get(partner.partner_id)
 
     assert response.status_code == 200
@@ -881,7 +914,7 @@ def test_marketplace_onboarding_flow_activates_partner(
     assert refreshed.status == "active"
 
 
-def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
+async def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -902,8 +935,7 @@ def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
             assert metadata is not None
             return {"id": "tr_marketplace_1"}
 
-    with TestClient(app) as client:
-        del client
+    async with lifespan(app):
         registry = app.state.partner_registry
         ledger = app.state.marketplace_revenue_ledger
         queue = app.state.marketplace_payout_queue
@@ -917,8 +949,8 @@ def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
         queue.approval_gate.auto_approve_in_test = True
         queue.stripe_client = _Stripe()
         payout = queue.enqueue(partner.partner_id, 0.0, time.time() + 60.0)
-        approved = asyncio.run(queue.approve(payout.payout_id))
-        result = asyncio.run(queue.execute(payout.payout_id))
+        approved = await queue.approve(payout.payout_id)
+        result = await queue.execute(payout.payout_id)
 
     assert payout is not None
     assert approved.status == "approved"
@@ -926,7 +958,7 @@ def test_marketplace_revenue_cycle_records_enqueue_approve_and_execute(
     assert result.transfer_id == "tr_marketplace_1"
 
 
-def test_marketplace_earnings_api_isolates_partner_access(
+async def test_marketplace_earnings_api_isolates_partner_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -934,10 +966,12 @@ def test_marketplace_earnings_api_isolates_partner_access(
 
     _set_marketplace_envs(tmp_path, monkeypatch)
 
-    with TestClient(app) as client:
+    async with lifespan(app):
         partner_a = app.state.partner_registry.register("Partner A", "a@example.com", "affiliate")
         partner_b = app.state.partner_registry.register("Partner B", "b@example.com", "affiliate")
-        response = client.get(
+        response = await request(
+            app,
+            "GET",
             f"/marketplace/developers/{partner_b.partner_id}/earnings",
             headers=_auth_headers(tenant=partner_a.partner_id, tier="business"),
         )
@@ -945,7 +979,7 @@ def test_marketplace_earnings_api_isolates_partner_access(
     assert response.status_code == 401
 
 
-def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatch) -> None:
     """On-prem integration: GPU compose config and healthy deployment validation."""
 
     manifest = DockerComposeGenerator().generate(
@@ -1013,7 +1047,6 @@ def test_onprem_compose_and_validator_integration(monkeypatch: pytest.MonkeyPatc
     assert report.blocking_failures == []
 
 
-@pytest.mark.asyncio
 async def test_multimodal_integration_routes_audio_and_image_to_vision_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1045,7 +1078,7 @@ async def test_multimodal_integration_routes_audio_and_image_to_vision_provider(
     assert response.content
 
 
-def test_studio_integration_roundtrip_save_load_deserialize(
+async def test_studio_integration_roundtrip_save_load_deserialize(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Studio integration: serialize, save via API, load back, and deserialize."""
@@ -1089,10 +1122,13 @@ def test_studio_integration_roundtrip_save_load_deserialize(
         "created_at": workflow.created_at,
     }
 
-    with TestClient(app) as client:
-        saved = client.post("/studio/workflows", json=payload, headers=_auth_headers())
-        loaded = client.get(
-            f"/studio/workflows/{saved.json()['workflow_id']}", headers=_auth_headers()
+    async with lifespan(app):
+        saved = await request(app, "POST", "/studio/workflows", json_body=payload, headers=_auth_headers())
+        loaded = await request(
+            app,
+            "GET",
+            f"/studio/workflows/{saved.json()['workflow_id']}",
+            headers=_auth_headers(),
         )
 
     assert saved.status_code == 200

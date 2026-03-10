@@ -16,21 +16,21 @@ This repository bootstraps the ARCHON runtime with:
 Windows PowerShell:
 
 ```powershell
-cd C:\Users\visha\archon
+cd path\\to\\archon
 .\install.ps1
 ```
 
 Windows Command Prompt (`cmd.exe`):
 
 ```cmd
-cd C:\Users\visha\archon
+cd path\\to\\archon
 install.cmd
 ```
 
 WSL, Linux, or macOS:
 
 ```bash
-cd /mnt/c/Users/visha/archon
+cd /path/to/archon
 ./install.sh
 ```
 

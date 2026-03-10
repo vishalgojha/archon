@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARCHON — Growth Swarm</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;700;800&display=swap");
+
+      :root {
+        --bg: #0a0a0b;
+        --surface: #111114;
+        --border: #1e1e24;
+        --border-hi: #2e2e38;
+        --dim: #3a3a48;
+        --muted: #5a5a72;
+        --text: #c8c8d8;
+        --bright: #e8e8f0;
+        --accent: #7c6cfc;
+        --accent-lo: rgba(124, 108, 252, 0.08);
+        --accent-md: rgba(124, 108, 252, 0.18);
+        --ok: #3dd68c;
+        --ok-lo: rgba(61, 214, 140, 0.08);
+        --warn: #f0a04a;
+        --warn-lo: rgba(240, 160, 74, 0.08);
+        --fail: #e05a5a;
+        --fail-lo: rgba(224, 90, 90, 0.08);
+        --pulse: rgba(124, 108, 252, 0.4);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        height: 100vh;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 36px 1fr 28px;
+        grid-template-columns: 220px 1fr 260px;
+      }
+
+      .topbar {
+        grid-column: 1 / -1;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 24px;
+        background: var(--surface);
+      }
+
+      .logo {
+        font-family: "Syne", sans-serif;
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        color: var(--bright);
+      }
+      .logo span {
+        color: var(--accent);
+      }
+      .topbar-sep {
+        width: 1px;
+        height: 16px;
+        background: var(--border-hi);
+      }
+      .topbar-label {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .topbar-val {
+        font-size: 11px;
+        color: var(--text);
+      }
+      .topbar-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ok);
+        box-shadow: 0 0 6px var(--ok);
+        animation: breathe 2.4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .kbd {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 5px;
+        border: 1px solid var(--border-hi);
+        border-radius: 3px;
+        font-size: 9px;
+        color: var(--muted);
+        letter-spacing: 0.05em;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        padding: 12px 0;
+        overflow-y: auto;
+      }
+      .sidebar-section {
+        padding: 0 14px;
+        margin-bottom: 20px;
+      }
+      .sidebar-title {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        color: var(--muted);
+        transition: all 0.15s;
+        margin-bottom: 1px;
+      }
+      .nav-item:hover {
+        background: var(--surface);
+        color: var(--text);
+      }
+      .nav-item.active {
+        background: var(--accent-lo);
+        color: var(--accent);
+        border-left: 2px solid var(--accent);
+        padding-left: 6px;
+      }
+      .nav-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+      }
+      .nav-badge {
+        margin-left: auto;
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 10px;
+        background: var(--accent-md);
+        color: var(--accent);
+      }
+
+      .main {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .main-header {
+        padding: 14px 20px 10px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .main-title {
+        font-family: "Syne", sans-serif;
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--bright);
+        letter-spacing: 0.04em;
+      }
+      .run-id {
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+      .main-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .tier-label {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .tier-label::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .tier-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .agent-card {
+        flex: 1;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: var(--surface);
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .agent-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--dim);
+        transition: background 0.3s;
+      }
+      .agent-card.running::before {
+        background: var(--accent);
+      }
+      .agent-card.complete::before {
+        background: var(--ok);
+      }
+      .agent-card.failed::before {
+        background: var(--fail);
+      }
+      .agent-card.skipped::before {
+        background: var(--warn);
+      }
+      .agent-card.pending {
+        opacity: 0.55;
+      }
+
+      .agent-card.running {
+        border-color: rgba(124, 108, 252, 0.3);
+        box-shadow: 0 0 0 1px rgba(124, 108, 252, 0.1) inset;
+        animation: cardpulse 2s ease-in-out infinite;
+      }
+      .agent-card.complete {
+        border-color: rgba(61, 214, 140, 0.2);
+      }
+
+      .agent-name {
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--bright);
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      .agent-status-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .agent-status-line .dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .agent-status-line.running .dot {
+        background: var(--accent);
+        box-shadow: 0 0 5px var(--accent);
+        animation: breathe 1.2s ease-in-out infinite;
+      }
+      .agent-status-line.complete .dot {
+        background: var(--ok);
+      }
+      .agent-status-line.failed .dot {
+        background: var(--fail);
+      }
+      .agent-status-line.skipped .dot {
+        background: var(--warn);
+      }
+
+      .agent-progress {
+        height: 2px;
+        background: var(--border);
+        border-radius: 1px;
+        overflow: hidden;
+        margin-top: 6px;
+      }
+      .agent-progress-fill {
+        height: 100%;
+        border-radius: 1px;
+        transition: width 0.4s ease;
+        background: var(--dim);
+      }
+      .running .agent-progress-fill {
+        background: var(--accent);
+      }
+      .complete .agent-progress-fill {
+        background: var(--ok);
+        width: 100% !important;
+      }
+      .failed .agent-progress-fill {
+        background: var(--fail);
+      }
+      .skipped .agent-progress-fill {
+        background: var(--warn);
+      }
+
+      .agent-output {
+        margin-top: 8px;
+        font-size: 10px;
+        color: var(--muted);
+        font-style: italic;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-height: 14px;
+      }
+      .agent-output.complete {
+        color: var(--ok);
+        font-style: normal;
+      }
+      .agent-output.failed {
+        color: var(--fail);
+        font-style: normal;
+      }
+      .agent-output.skipped {
+        color: var(--warn);
+        font-style: normal;
+      }
+
+      .agent-timing {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        font-size: 9px;
+        color: var(--dim);
+        letter-spacing: 0.04em;
+      }
+      .agent-timing.complete {
+        color: var(--muted);
+      }
+
+      .log-stream {
+        flex-shrink: 0;
+        border-top: 1px solid var(--border);
+        height: 130px;
+        overflow-y: auto;
+        padding: 8px 20px;
+        background: var(--bg);
+      }
+      .log-line {
+        display: flex;
+        gap: 10px;
+        font-size: 10px;
+        line-height: 1.8;
+        color: var(--muted);
+      }
+      .log-time {
+        color: var(--dim);
+        flex-shrink: 0;
+        width: 62px;
+      }
+      .log-level {
+        flex-shrink: 0;
+        width: 48px;
+      }
+      .log-level.info {
+        color: var(--accent);
+      }
+      .log-level.ok {
+        color: var(--ok);
+      }
+      .log-level.warn {
+        color: var(--warn);
+      }
+      .log-level.err {
+        color: var(--fail);
+      }
+      .log-body {
+        flex: 1;
+      }
+
+      .rightpanel {
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .rp-section {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .rp-title {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-bottom: 10px;
+      }
+
+      .metric-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 7px;
+      }
+      .metric-key {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .metric-val {
+        font-size: 11px;
+        color: var(--bright);
+        font-weight: 500;
+      }
+      .metric-val.accent {
+        color: var(--accent);
+      }
+      .metric-val.ok {
+        color: var(--ok);
+      }
+      .metric-val.warn {
+        color: var(--warn);
+      }
+
+      .spend-bar-wrap {
+        margin-top: 4px;
+      }
+      .spend-bar-track {
+        height: 3px;
+        background: var(--border-hi);
+        border-radius: 2px;
+        overflow: hidden;
+        margin-bottom: 4px;
+      }
+      .spend-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, var(--ok), var(--accent));
+        transition: width 0.5s ease;
+      }
+      .spend-bar-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 9px;
+        color: var(--dim);
+      }
+
+      .approval-gate {
+        margin: 0 14px 10px;
+        border: 1px solid rgba(240, 160, 74, 0.4);
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: var(--warn-lo);
+      }
+      .gate-title {
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--warn);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .gate-title::before {
+        content: "⚠";
+        font-size: 10px;
+      }
+      .gate-desc {
+        font-size: 10px;
+        color: var(--text);
+        margin-bottom: 10px;
+        line-height: 1.5;
+      }
+      .gate-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .gate-btn {
+        padding: 4px 10px;
+        border-radius: 3px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 10px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.15s;
+        border: 1px solid;
+      }
+      .gate-btn.approve {
+        background: var(--ok-lo);
+        border-color: rgba(61, 214, 140, 0.4);
+        color: var(--ok);
+      }
+      .gate-btn.approve:hover {
+        background: rgba(61, 214, 140, 0.2);
+      }
+      .gate-btn.deny {
+        background: var(--fail-lo);
+        border-color: rgba(224, 90, 90, 0.3);
+        color: var(--fail);
+      }
+      .gate-btn.deny:hover {
+        background: rgba(224, 90, 90, 0.15);
+      }
+
+      .dep-graph {
+        padding: 8px 0;
+      }
+      .dep-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 5px;
+        font-size: 10px;
+      }
+      .dep-node {
+        padding: 2px 7px;
+        border-radius: 3px;
+        border: 1px solid var(--border-hi);
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.06em;
+      }
+      .dep-node.complete {
+        border-color: rgba(61, 214, 140, 0.4);
+        color: var(--ok);
+      }
+      .dep-node.running {
+        border-color: rgba(124, 108, 252, 0.5);
+        color: var(--accent);
+      }
+      .dep-node.failed {
+        border-color: rgba(224, 90, 90, 0.5);
+        color: var(--fail);
+      }
+      .dep-node.skipped {
+        border-color: rgba(240, 160, 74, 0.5);
+        color: var(--warn);
+      }
+      .dep-node.pending {
+        opacity: 0.4;
+      }
+      .dep-arrow {
+        color: var(--dim);
+        font-size: 9px;
+      }
+
+      .bottombar {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 20px;
+      }
+      .bb-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .bb-sep {
+        width: 1px;
+        height: 12px;
+        background: var(--border-hi);
+      }
+
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border-hi);
+        border-radius: 2px;
+      }
+
+      @keyframes cardpulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 1px rgba(124, 108, 252, 0.1) inset;
+        }
+        50% {
+          box-shadow: 0 0 0 1px rgba(124, 108, 252, 0.25) inset;
+        }
+      }
+
+      @keyframes scan {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(400%);
+        }
+      }
+      .scan-line {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 25%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        opacity: 0;
+      }
+      .running .scan-line {
+        opacity: 0.6;
+        animation: scan 1.8s ease-in-out infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="logo">ARC<span>H</span>ON</div>
+      <div class="topbar-sep"></div>
+      <div class="topbar-label">run</div>
+      <div class="topbar-val" id="run-id">—</div>
+      <div class="topbar-sep"></div>
+      <div class="topbar-label">elapsed</div>
+      <div class="topbar-val" id="elapsed">00:00</div>
+      <div class="topbar-sep"></div>
+      <div class="topbar-label">tier</div>
+      <div class="topbar-val" id="tier-display">—</div>
+      <div class="topbar-right">
+        <div class="status-dot"></div>
+        <div class="topbar-label">orchestrator live</div>
+        <div class="topbar-sep"></div>
+        <span class="kbd">q</span><span style="font-size: 10px; color: var(--muted); margin-left: 3px">quit</span>
+        <span class="kbd">a</span><span style="font-size: 10px; color: var(--muted); margin-left: 3px">approve</span>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">modules</div>
+        <div class="nav-item active"><div class="nav-dot"></div>growth swarm<div class="nav-badge">live</div></div>
+        <div class="nav-item"><div class="nav-dot"></div>mission control</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">run goal</div>
+        <div style="display: grid; gap: 8px">
+          <input
+            id="goal-input"
+            style="
+              width: 100%;
+              padding: 7px 8px;
+              border-radius: 6px;
+              border: 1px solid var(--border-hi);
+              background: var(--bg);
+              color: var(--bright);
+              font-family: 'IBM Plex Mono', monospace;
+              font-size: 11px;
+            "
+            placeholder="Type a growth goal then press Enter"
+          />
+          <div style="font-size: 10px; color: var(--muted); line-height: 1.6">
+            Connects via WebChat WS and runs orchestrator in <span style="color: var(--accent)">growth</span> mode.
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">session</div>
+        <div style="font-size: 10px; color: var(--muted); line-height: 1.7; padding: 0 2px">
+          <div>session: <span style="color: var(--text)" id="session-id">—</span></div>
+          <div>tenant: <span style="color: var(--text)" id="tenant-id">—</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-header">
+        <div class="main-title">growth swarm</div>
+        <div class="run-id" id="main-run-id">· websocket · 3-tier</div>
+      </div>
+      <div class="main-body" id="main-body">
+        <div class="tier-label">tier 1 — parallel</div>
+        <div class="tier-row">
+          <div class="agent-card pending" id="card-prospector">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-prospector">—</div>
+            <div class="agent-name">prospector</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-prospector">pending</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-prospector" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-prospector">—</div>
+          </div>
+          <div class="agent-card pending" id="card-icp">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-icp">—</div>
+            <div class="agent-name">icp</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-icp">pending</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-icp" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-icp">—</div>
+          </div>
+          <div class="agent-card pending" id="card-revenueintel">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-revenueintel">—</div>
+            <div class="agent-name">revenue_intel</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-revenueintel">pending</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-revenueintel" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-revenueintel">—</div>
+          </div>
+          <div class="agent-card pending" id="card-partner">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-partner">—</div>
+            <div class="agent-name">partner</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-partner">pending</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-partner" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-partner">—</div>
+          </div>
+        </div>
+
+        <div class="tier-label" style="margin-top: 6px">tier 2 — outreach (awaits t1)</div>
+        <div class="tier-row">
+          <div class="agent-card pending" id="card-outreach" style="max-width: 320px">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-outreach">—</div>
+            <div class="agent-name">outreach</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-outreach">awaiting tier 1</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-outreach" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-outreach">needs prospector + icp</div>
+          </div>
+        </div>
+
+        <div class="tier-label" style="margin-top: 6px">tier 3 — parallel</div>
+        <div class="tier-row">
+          <div class="agent-card pending" id="card-nurture">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-nurture">—</div>
+            <div class="agent-name">nurture</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-nurture">awaiting outreach</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-nurture" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-nurture">—</div>
+          </div>
+          <div class="agent-card pending" id="card-churndefense">
+            <div class="scan-line"></div>
+            <div class="agent-timing" id="time-churndefense">—</div>
+            <div class="agent-name">churn_defense</div>
+            <div class="agent-status-line pending"><div class="dot"></div><span id="statustext-churndefense">awaiting revenue_intel</span></div>
+            <div class="agent-progress"><div class="agent-progress-fill" id="prog-churndefense" style="width: 0%"></div></div>
+            <div class="agent-output" id="out-churndefense">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="log-stream" id="log-stream"></div>
+    </main>
+
+    <aside class="rightpanel">
+      <div class="rp-section">
+        <div class="rp-title">cost governor</div>
+        <div class="metric-row"><div class="metric-key">spent</div><div class="metric-val ok" id="spent">$0.00</div></div>
+        <div class="metric-row"><div class="metric-key">limit</div><div class="metric-val" id="limit">$0.00</div></div>
+        <div class="metric-row"><div class="metric-key">tokens</div><div class="metric-val accent" id="tokens">0</div></div>
+        <div class="spend-bar-wrap">
+          <div class="spend-bar-track"><div class="spend-bar-fill" id="spend-bar" style="width: 0%"></div></div>
+          <div class="spend-bar-labels"><span>$0</span><span id="spend-pct">0%</span><span id="limit-label">$0</span></div>
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-title">swarm metrics</div>
+        <div class="metric-row"><div class="metric-key">agents total</div><div class="metric-val">7</div></div>
+        <div class="metric-row"><div class="metric-key">complete</div><div class="metric-val ok" id="m-complete">0</div></div>
+        <div class="metric-row"><div class="metric-key">running</div><div class="metric-val accent" id="m-running">0</div></div>
+        <div class="metric-row"><div class="metric-key">pending</div><div class="metric-val" id="m-pending">7</div></div>
+        <div class="metric-row"><div class="metric-key">parallelism</div><div class="metric-val accent" id="m-parallel">—</div></div>
+      </div>
+
+      <div class="approval-gate" id="approval-gate" style="display: none">
+        <div class="gate-title">approval required</div>
+        <div class="gate-desc" id="gate-desc">A guarded action is waiting.</div>
+        <div class="gate-actions">
+          <button class="gate-btn approve" id="gate-approve"><span class="kbd">a</span> approve</button>
+          <button class="gate-btn deny" id="gate-deny"><span class="kbd">d</span> deny</button>
+        </div>
+      </div>
+
+      <div class="rp-section" style="flex: 1; overflow-y: auto">
+        <div class="rp-title">dependency graph</div>
+        <div class="dep-graph" id="dep-graph">
+          <div class="dep-row">
+            <div class="dep-node pending" id="dep-prospector">prospector</div>
+            <div class="dep-arrow">→</div>
+            <div class="dep-node pending" id="dep-outreach2">outreach</div>
+          </div>
+          <div class="dep-row">
+            <div class="dep-node pending" id="dep-icp">icp</div>
+            <div class="dep-arrow">→</div>
+            <div class="dep-node pending" style="opacity: 0.2">outreach</div>
+          </div>
+          <div class="dep-row" style="margin-top: 4px">
+            <div class="dep-node pending" id="dep-outreach3">outreach</div>
+            <div class="dep-arrow">→</div>
+            <div class="dep-node pending" id="dep-nurture">nurture</div>
+          </div>
+          <div class="dep-row">
+            <div class="dep-node pending" id="dep-revenueintel">rev_intel</div>
+            <div class="dep-arrow">→</div>
+            <div class="dep-node pending" id="dep-churn">churn_def</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <footer class="bottombar">
+      <div class="bb-item"><span class="kbd">↑↓</span> scroll log</div>
+      <div class="bb-sep"></div>
+      <div class="bb-item"><span class="kbd">tab</span> focus panel</div>
+      <div class="bb-sep"></div>
+      <div class="bb-item" id="bb-status" style="margin-left: auto; color: var(--accent)">connecting…</div>
+    </footer>
+
+    <script>
+      const startTime = Date.now();
+      const logStream = document.getElementById("log-stream");
+      const goalInput = document.getElementById("goal-input");
+      const statusEl = document.getElementById("bb-status");
+      const approvalGate = document.getElementById("approval-gate");
+      const gateDesc = document.getElementById("gate-desc");
+      const gateApprove = document.getElementById("gate-approve");
+      const gateDeny = document.getElementById("gate-deny");
+
+      const agentIdByName = {
+        ProspectorAgent: "prospector",
+        ICPAgent: "icp",
+        RevenueIntelAgent: "revenueintel",
+        PartnerAgent: "partner",
+        OutreachAgent: "outreach",
+        NurtureAgent: "nurture",
+        ChurnDefenseAgent: "churndefense",
+      };
+
+      const tier1 = new Set(["prospector", "icp", "revenueintel", "partner"]);
+      const tier2 = new Set(["outreach"]);
+      const tier3 = new Set(["nurture", "churndefense"]);
+
+      let websocket = null;
+      let pendingApprovalId = "";
+      let session = { sessionId: "", token: "", tenant: "" };
+      let lastTaskId = "";
+
+      function elapsed() {
+        const s = Math.floor((Date.now() - startTime) / 1000);
+        const m = Math.floor(s / 60)
+          .toString()
+          .padStart(2, "0");
+        const ss = (s % 60).toString().padStart(2, "0");
+        return `${m}:${ss}`;
+      }
+
+      setInterval(() => {
+        document.getElementById("elapsed").textContent = elapsed();
+      }, 1000);
+
+      function addLog(level, msg) {
+        const now = new Date();
+        const t = now.toTimeString().slice(0, 8);
+        const line = document.createElement("div");
+        line.className = "log-line";
+        line.innerHTML = `<span class="log-time">${t}</span><span class="log-level ${level}">${level.toUpperCase()}</span><span class="log-body">${msg}</span>`;
+        logStream.appendChild(line);
+        logStream.scrollTop = logStream.scrollHeight;
+      }
+
+      function resolveApiBase() {
+        if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+          return window.location.origin.replace(/\/$/, "");
+        }
+        return "http://127.0.0.1:8000";
+      }
+
+      function wsBaseUrl() {
+        const base = resolveApiBase();
+        if (base.startsWith("wss://") || base.startsWith("ws://")) {
+          return base;
+        }
+        if (base.startsWith("https://")) {
+          return `wss://${base.slice("https://".length)}`;
+        }
+        if (base.startsWith("http://")) {
+          return `ws://${base.slice("http://".length)}`;
+        }
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${base.replace(/^(https?:\/\/|wss?:\/\/)/, "")}`;
+      }
+
+      function setAgentState(id, state, output) {
+        const card = document.getElementById(`card-${id}`);
+        const statusText = document.getElementById(`statustext-${id}`);
+        const prog = document.getElementById(`prog-${id}`);
+        const outEl = document.getElementById(`out-${id}`);
+        if (!card) return;
+
+        card.className = `agent-card ${state}`;
+        statusText.textContent = state;
+        if (state === "running") {
+          prog.style.width = "35%";
+        } else if (state === "complete") {
+          prog.style.width = "100%";
+        } else if (state === "failed" || state === "skipped") {
+          prog.style.width = "100%";
+        } else {
+          prog.style.width = "0%";
+        }
+        if (output !== undefined) {
+          outEl.textContent = output || "—";
+          outEl.className = `agent-output ${state}`;
+        }
+      }
+
+      function setDepNode(id, state) {
+        const el = document.getElementById(`dep-${id}`);
+        if (!el) return;
+        el.className = `dep-node ${state}`;
+        el.style.opacity = "";
+      }
+
+      function updateTierDisplay() {
+        const states = {};
+        Object.values(agentIdByName).forEach((id) => {
+          const card = document.getElementById(`card-${id}`);
+          if (!card) return;
+          if (card.classList.contains("running")) states[id] = "running";
+          else if (card.classList.contains("complete")) states[id] = "complete";
+          else if (card.classList.contains("failed")) states[id] = "failed";
+          else if (card.classList.contains("skipped")) states[id] = "skipped";
+          else states[id] = "pending";
+        });
+
+        const anyTier3Running = [...tier3].some((id) => states[id] === "running");
+        const anyTier2Running = [...tier2].some((id) => states[id] === "running");
+        const anyTier1Running = [...tier1].some((id) => states[id] === "running");
+
+        if (anyTier3Running) {
+          document.getElementById("tier-display").textContent = "3 / 3";
+          return;
+        }
+        if (anyTier2Running) {
+          document.getElementById("tier-display").textContent = "2 / 3";
+          return;
+        }
+        if (anyTier1Running) {
+          document.getElementById("tier-display").textContent = "1 / 3";
+          return;
+        }
+      }
+
+      function updateMetrics() {
+        const ids = ["prospector", "icp", "revenueintel", "partner", "outreach", "nurture", "churndefense"];
+        let c = 0;
+        let r = 0;
+        let p = 0;
+        ids.forEach((id) => {
+          const card = document.getElementById(`card-${id}`);
+          if (!card) return;
+          if (card.classList.contains("complete")) c++;
+          else if (card.classList.contains("running")) r++;
+          else p++;
+        });
+        document.getElementById("m-complete").textContent = c;
+        document.getElementById("m-running").textContent = r;
+        document.getElementById("m-pending").textContent = p;
+        document.getElementById("m-parallel").textContent = r > 1 ? `${r}× concurrent` : r === 1 ? "1× serial" : "—";
+      }
+
+      function patchCost(event) {
+        if (!event || typeof event !== "object") return;
+        let spent = null;
+        let budget = null;
+        if (event.type === "cost_update") {
+          spent = Number(event.spent ?? event.total_spent ?? 0);
+          budget = Number(event.budget ?? event.limit ?? 0);
+        }
+        if (event.type === "task_completed" && event.budget) {
+          spent = Number(event.budget.spent_usd ?? 0);
+          budget = Number(event.budget.budget_usd ?? event.budget.limit_usd ?? 0);
+        }
+        if (spent === null || budget === null) return;
+
+        document.getElementById("spent").textContent = `$${spent.toFixed(2)}`;
+        document.getElementById("limit").textContent = `$${budget.toFixed(2)}`;
+        document.getElementById("limit-label").textContent = `$${budget.toFixed(0)}`;
+        const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+        document.getElementById("spend-bar").style.width = pct + "%";
+        document.getElementById("spend-pct").textContent = pct.toFixed(0) + "%";
+      }
+
+      function showApproval(item) {
+        pendingApprovalId = String(item.request_id || item.action_id || "").trim();
+        if (!pendingApprovalId) return;
+        const action = String(item.action || item.action_type || "guarded action");
+        gateDesc.textContent = `${action} (${pendingApprovalId})`;
+        approvalGate.style.display = "block";
+        statusEl.textContent = "approval required — press [a] to approve";
+      }
+
+      function hideApproval() {
+        approvalGate.style.display = "none";
+        pendingApprovalId = "";
+      }
+
+      function sendWs(payload) {
+        if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+        websocket.send(JSON.stringify(payload));
+      }
+
+      async function ensureSession() {
+        if (session.sessionId && session.token) return session;
+        const response = await fetch(`${resolveApiBase()}/webchat/token`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        if (!response.ok) throw new Error(`token bootstrap failed (${response.status})`);
+        const payload = await response.json();
+        session.sessionId = String(payload?.session?.session_id || payload?.identity?.session_id || "").trim();
+        session.token = String(payload?.token || "").trim();
+        session.tenant = String(payload?.identity?.tenant_id || "webchat").trim();
+        document.getElementById("session-id").textContent = session.sessionId || "—";
+        document.getElementById("tenant-id").textContent = session.tenant || "—";
+        return session;
+      }
+
+      async function connect() {
+        await ensureSession();
+        const wsUrl = `${wsBaseUrl()}/webchat/ws/${encodeURIComponent(session.sessionId)}?token=${encodeURIComponent(session.token)}`;
+        websocket = new WebSocket(wsUrl);
+        statusEl.textContent = "connecting…";
+
+        websocket.onopen = () => {
+          addLog("ok", "connected");
+          statusEl.textContent = "connected · waiting for goal";
+        };
+        websocket.onclose = () => {
+          addLog("warn", "disconnected");
+          statusEl.textContent = "disconnected";
+        };
+        websocket.onerror = () => {
+          addLog("err", "websocket error");
+          statusEl.textContent = "error";
+        };
+        websocket.onmessage = (event) => {
+          let msg = null;
+          try {
+            msg = JSON.parse(event.data);
+          } catch (_e) {
+            return;
+          }
+          if (!msg || typeof msg !== "object") return;
+
+          if (msg.type === "session_restored") {
+            addLog("info", "session restored");
+            return;
+          }
+
+          if (msg.type === "approval_required") {
+            addLog("warn", `approval_required: ${msg.action || msg.action_type || "action"}`);
+            showApproval(msg);
+            return;
+          }
+
+          patchCost(msg);
+
+          if (msg.type === "task_started") {
+            if (String(msg.mode || "") !== "growth") return;
+            lastTaskId = String(msg.task_id || "");
+            document.getElementById("run-id").textContent = lastTaskId || "—";
+            document.getElementById("main-run-id").textContent = `· run ${lastTaskId} · websocket · 3-tier`;
+            addLog("info", `task_started: ${lastTaskId}`);
+            statusEl.textContent = "tier 1 — running";
+            document.getElementById("tier-display").textContent = "1 / 3";
+            return;
+          }
+
+          if (msg.type === "agent_start") {
+            if (String(msg.mode || "") !== "growth") return;
+            const agentName = String(msg.agent || msg.agent_name || "").trim();
+            const id = agentIdByName[agentName] || "";
+            if (!id) return;
+            setAgentState(id, "running", "working…");
+            if (id === "outreach") {
+              setDepNode("outreach2", "running");
+              setDepNode("outreach3", "running");
+              statusEl.textContent = "tier 2 — running";
+            }
+            if (id === "nurture" || id === "churndefense") {
+              statusEl.textContent = "tier 3 — running";
+            }
+            if (id === "prospector") setDepNode("prospector", "running");
+            if (id === "icp") setDepNode("icp", "running");
+            if (id === "revenueintel") setDepNode("revenueintel", "running");
+            if (id === "partner") setDepNode("partner", "running");
+            if (id === "nurture") setDepNode("nurture", "running");
+            if (id === "churndefense") setDepNode("churn", "running");
+            updateTierDisplay();
+            updateMetrics();
+            return;
+          }
+
+          if (msg.type === "agent_end" || msg.type === "growth_agent_completed") {
+            if (String(msg.mode || "") !== "growth") return;
+            const agentName = String(msg.agent || msg.agent_name || "").trim();
+            const id = agentIdByName[agentName] || "";
+            if (!id) return;
+            const status = String(msg.status || "done").toLowerCase();
+            const mapped =
+              status === "done" ? "complete" : status === "failed" ? "failed" : status === "skipped" ? "skipped" : "complete";
+            const preview = String(msg.output_preview || "");
+            setAgentState(id, mapped, preview || mapped);
+            if (id === "outreach") {
+              setDepNode("outreach2", mapped);
+              setDepNode("outreach3", mapped);
+            }
+            if (id === "nurture") setDepNode("nurture", mapped);
+            if (id === "churndefense") setDepNode("churn", mapped);
+            if (id === "prospector") setDepNode("prospector", mapped);
+            if (id === "icp") setDepNode("icp", mapped);
+            if (id === "revenueintel") setDepNode("revenueintel", mapped);
+            if (id === "partner") setDepNode("partner", mapped);
+            addLog(mapped === "complete" ? "ok" : mapped === "failed" ? "err" : "warn", `${id}: ${mapped}`);
+            updateTierDisplay();
+            updateMetrics();
+            return;
+          }
+
+          if (msg.type === "task_completed") {
+            if (String(msg.mode || "") !== "growth") return;
+            addLog("ok", "task_completed");
+            statusEl.textContent = "swarm complete";
+            document.getElementById("tier-display").textContent = "✓ done";
+            hideApproval();
+            patchCost(msg);
+            return;
+          }
+
+          if (msg.type === "error") {
+            addLog("err", String(msg.error || "error"));
+            return;
+          }
+        };
+      }
+
+      function runGrowth(goal) {
+        const trimmed = String(goal || "").trim();
+        if (!trimmed) return;
+        hideApproval();
+        statusEl.textContent = "starting growth run…";
+        sendWs({ type: "message", content: trimmed, mode: "growth" });
+        addLog("info", `goal: ${trimmed}`);
+      }
+
+      gateApprove.addEventListener("click", () => {
+        if (!pendingApprovalId) return;
+        addLog("ok", `approve: ${pendingApprovalId}`);
+        sendWs({ type: "approve", request_id: pendingApprovalId });
+        hideApproval();
+      });
+      gateDeny.addEventListener("click", () => {
+        if (!pendingApprovalId) return;
+        addLog("warn", `deny: ${pendingApprovalId}`);
+        sendWs({ type: "deny", request_id: pendingApprovalId, notes: "Denied from Growth Swarm board." });
+        hideApproval();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "q") {
+          if (websocket && websocket.readyState < 2) websocket.close(1000, "Quit");
+        }
+        if (e.key === "a" && pendingApprovalId) {
+          gateApprove.click();
+        }
+      });
+
+      goalInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          runGrowth(goalInput.value);
+          goalInput.select();
+        }
+      });
+
+      addLog("info", "initializing growth swarm board");
+      connect().catch((err) => {
+        addLog("err", String(err?.message || err));
+        statusEl.textContent = "failed to connect";
+      });
+    </script>
+  </body>
+</html>

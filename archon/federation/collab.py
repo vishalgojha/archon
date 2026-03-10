@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -12,6 +13,7 @@ from typing import Any
 import httpx
 
 from archon.core.approval_gate import ApprovalGate, EventSink
+from archon.federation.auth import json_bytes, path_with_query, signed_headers
 from archon.federation.peer_discovery import Peer
 
 
@@ -109,11 +111,30 @@ class TaskBroker:
         started = time.monotonic()
         payload = asdict(task)
         try:
-            response = await self._client.post(
-                f"{peer.address.rstrip('/')}/federation/tasks/execute",
-                json=payload,
-                timeout=max(1.0, task.deadline_s),
-            )
+            url = f"{peer.address.rstrip('/')}/federation/tasks/execute"
+            secret = str(os.getenv("ARCHON_FEDERATION_SHARED_SECRET", "")).strip()
+            if secret:
+                body = json_bytes(payload)
+                headers = signed_headers(
+                    secret=secret,
+                    method="POST",
+                    path=path_with_query(url),
+                    body=body,
+                    peer_id=str(task.requester_instance_id),
+                )
+                headers["Content-Type"] = "application/json"
+                response = await self._client.post(
+                    url,
+                    content=body,
+                    headers=headers,
+                    timeout=max(1.0, task.deadline_s),
+                )
+            else:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    timeout=max(1.0, task.deadline_s),
+                )
         except Exception:
             elapsed = max(0.0, time.monotonic() - started)
             return FederatedResult(
@@ -147,11 +168,31 @@ class TaskBroker:
         )
 
         try:
-            response = await self._client.post(
-                f"{peer.address.rstrip('/')}/federation/tasks/bid",
-                json=asdict(task),
-                timeout=max(1.0, task.deadline_s),
-            )
+            url = f"{peer.address.rstrip('/')}/federation/tasks/bid"
+            payload = asdict(task)
+            secret = str(os.getenv("ARCHON_FEDERATION_SHARED_SECRET", "")).strip()
+            if secret:
+                body = json_bytes(payload)
+                headers = signed_headers(
+                    secret=secret,
+                    method="POST",
+                    path=path_with_query(url),
+                    body=body,
+                    peer_id=str(task.requester_instance_id),
+                )
+                headers["Content-Type"] = "application/json"
+                response = await self._client.post(
+                    url,
+                    content=body,
+                    headers=headers,
+                    timeout=max(1.0, task.deadline_s),
+                )
+            else:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    timeout=max(1.0, task.deadline_s),
+                )
             if int(response.status_code) >= 400:
                 return BidResponse(
                     peer_id=peer.peer_id,

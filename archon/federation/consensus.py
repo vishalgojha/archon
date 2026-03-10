@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+from archon.federation.auth import json_bytes, path_with_query, signed_headers
 
 
 @dataclass(slots=True, frozen=True)
@@ -134,11 +137,30 @@ class HiveConsensus:
             "requester_id": request.requester_id,
         }
         try:
-            response = await self._client.post(
-                f"{address.rstrip('/')}/federation/consensus",
-                json=payload,
-                timeout=timeout_s,
-            )
+            url = f"{address.rstrip('/')}/federation/consensus"
+            secret = str(os.getenv("ARCHON_FEDERATION_SHARED_SECRET", "")).strip()
+            if secret:
+                body = json_bytes(payload)
+                headers = signed_headers(
+                    secret=secret,
+                    method="POST",
+                    path=path_with_query(url),
+                    body=body,
+                    peer_id=request.requester_id,
+                )
+                headers["Content-Type"] = "application/json"
+                response = await self._client.post(
+                    url,
+                    content=body,
+                    headers=headers,
+                    timeout=timeout_s,
+                )
+            else:
+                response = await self._client.post(
+                    url,
+                    json=payload,
+                    timeout=timeout_s,
+                )
             if response.status_code >= 400:
                 return None
             data = response.json()

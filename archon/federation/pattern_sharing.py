@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import random
 from dataclasses import dataclass, replace
 from typing import Any
 
 import httpx
+
+from archon.federation.auth import json_bytes, path_with_query, signed_headers
 
 
 @dataclass(slots=True, frozen=True)
@@ -25,8 +28,15 @@ class WorkflowPattern:
 class PatternStore:
     """In-memory pattern store with merge semantics for shared IDs."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, store: Any | None = None) -> None:
         self.patterns: dict[str, WorkflowPattern] = {}
+        self._store = store
+        if self._store is not None:
+            try:
+                for pattern in list(self._store.list_patterns(limit=500)):
+                    self.patterns[pattern.pattern_id] = pattern
+            except Exception:
+                self.patterns = {}
 
     def merge(self, incoming: WorkflowPattern) -> WorkflowPattern:
         """Merge incoming pattern, averaging score for known IDs."""
@@ -34,6 +44,11 @@ class PatternStore:
         existing = self.patterns.get(incoming.pattern_id)
         if existing is None:
             self.patterns[incoming.pattern_id] = incoming
+            if self._store is not None:
+                try:
+                    self._store.upsert_pattern(incoming)
+                except Exception:
+                    pass
             return incoming
 
         merged = WorkflowPattern(
@@ -44,6 +59,11 @@ class PatternStore:
             sample_count=max(1, int(round((existing.sample_count + incoming.sample_count) / 2.0))),
         )
         self.patterns[incoming.pattern_id] = merged
+        if self._store is not None:
+            try:
+                self._store.upsert_pattern(merged)
+            except Exception:
+                pass
         return merged
 
     def get(self, pattern_id: str) -> WorkflowPattern | None:
@@ -119,7 +139,24 @@ class PatternSharer:
 
     async def _post(self, url: str, payload: dict[str, Any]) -> bool:
         try:
-            response = await self._client.post(url, json=payload)
+            secret = str(os.getenv("ARCHON_FEDERATION_SHARED_SECRET", "")).strip()
+            if secret:
+                body = json_bytes(payload)
+                actor = (
+                    str(os.getenv("ARCHON_INSTANCE_ID", "local-instance")).strip()
+                    or "local-instance"
+                )
+                headers = signed_headers(
+                    secret=secret,
+                    method="POST",
+                    path=path_with_query(url),
+                    body=body,
+                    peer_id=actor,
+                )
+                headers["Content-Type"] = "application/json"
+                response = await self._client.post(url, content=body, headers=headers)
+            else:
+                response = await self._client.post(url, json=payload)
             return response.status_code < 400
         except Exception:
             return False

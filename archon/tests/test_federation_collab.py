@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -11,8 +12,8 @@ from typing import Any
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
 
+from archon.core.orchestrator import OrchestrationResult
 from archon.federation.collab import (
     BidResponse,
     CollabOrchestrator,
@@ -22,6 +23,7 @@ from archon.federation.collab import (
 )
 from archon.federation.peer_discovery import Peer
 from archon.interfaces.api.server import app
+from archon.testing.asgi import lifespan, request
 
 
 @pytest.fixture(autouse=True)
@@ -265,8 +267,18 @@ def test_federation_bid_endpoint_shape() -> None:
         "deadline_s": 30,
         "context": {},
     }
-    with TestClient(app) as client:
-        response = client.post("/federation/tasks/bid", json=payload, headers=_auth_headers())
+
+    async def _run():
+        async with lifespan(app):
+            return await request(
+                app,
+                "POST",
+                "/federation/tasks/bid",
+                json_body=payload,
+                headers=_auth_headers(),
+            )
+
+    response = asyncio.run(_run())
     assert response.status_code == 200
     body = response.json()
     assert {
@@ -287,8 +299,37 @@ def test_federation_execute_endpoint_streams_tokens_and_result() -> None:
         "deadline_s": 30,
         "context": {},
     }
-    with TestClient(app) as client:
-        response = client.post("/federation/tasks/execute", json=payload, headers=_auth_headers())
+
+    async def _run():
+        async with lifespan(app):
+            orchestrator = app.state.orchestrator
+
+            async def _stub_execute(**kwargs: Any) -> OrchestrationResult:  # noqa: ANN401
+                return OrchestrationResult(
+                    task_id="task-stub",
+                    goal=str(kwargs.get("goal", "")),
+                    mode=str(kwargs.get("mode", "debate")),  # type: ignore[arg-type]
+                    final_answer="stubbed result",
+                    confidence=90,
+                    budget={"spent_usd": 0.0, "limit_usd": 0.0, "cost_by_provider_model": {}},
+                    debate=None,
+                    growth=None,
+                )
+
+            original_execute = orchestrator.execute
+            orchestrator.execute = _stub_execute  # type: ignore[assignment]
+            try:
+                return await request(
+                    app,
+                    "POST",
+                    "/federation/tasks/execute",
+                    json_body=payload,
+                    headers=_auth_headers(),
+                )
+            finally:
+                orchestrator.execute = original_execute  # type: ignore[assignment]
+
+    response = asyncio.run(_run())
     assert response.status_code == 200
     lines = [line for line in response.text.splitlines() if line.strip()]
     parsed = [json.loads(line) for line in lines]

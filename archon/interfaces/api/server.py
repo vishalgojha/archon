@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -21,8 +22,8 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi.errors import RateLimitExceeded
-from slowapi.extension import _rate_limit_exceeded_handler
 from starlette.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
+from starlette.responses import JSONResponse
 
 from archon.analytics import AnalyticsCollector
 from archon.analytics.dashboard_api import create_router as create_analytics_router
@@ -41,6 +42,11 @@ from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalRequiredError
 from archon.core.orchestrator import OrchestrationResult, Orchestrator
 from archon.evolution.engine import Step, WorkflowDefinition
+from archon.federation.auth import FederationAuthError, NonceCache
+from archon.federation.auth import verify as verify_federation_auth
+from archon.federation.pattern_sharing import PatternSharer, PatternStore
+from archon.federation.peer_discovery import Peer, PeerRegistry
+from archon.federation.store import FederationStore
 from archon.interfaces.api.auth import AuthMiddleware, AuthSettings, websocket_auth_context
 from archon.interfaces.api.billing_api import create_router as create_billing_router
 from archon.interfaces.api.rate_limit import (
@@ -53,6 +59,7 @@ from archon.interfaces.webchat.server import mount_webchat
 from archon.marketplace import DeveloperOnboarding, StripeConnectClient
 from archon.marketplace.payout_orchestrator import PartnerRevenueReport, PayoutOrchestrator
 from archon.marketplace.revenue_share import PayoutQueue, RevenueShareLedger
+from archon.memory.store import MemoryStore as TenantMemoryStore
 from archon.mobile.sync_store import MobileSyncStore
 from archon.notifications.approval_notifier import wrap_gate
 from archon.notifications.device_registry import DeviceRegistry
@@ -181,6 +188,25 @@ class FederationTaskRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class FederationAnnounceRequest(BaseModel):
+    """Inbound federation announce payload from a peer."""
+
+    address: str = Field(min_length=1)
+    peer_id: str | None = None
+    public_key: str | None = None
+    timestamp: float | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    version: str | None = None
+
+
+class FederationConsensusRequest(BaseModel):
+    """Inbound federation consensus request from a peer."""
+
+    question: str = Field(min_length=1)
+    options: list[str] = Field(min_length=1)
+    requester_id: str = Field(min_length=1)
+
+
 class StudioWorkflowRequest(BaseModel):
     """Payload for storing one Studio workflow definition."""
 
@@ -215,6 +241,24 @@ class MarketplaceRunCycleRequest(BaseModel):
     auto_approve: bool = False
 
 
+class TenantMemoryImportRequest(BaseModel):
+    """Payload for importing tenant episodic memory rows."""
+
+    tenant_id: str = Field(min_length=1)
+    entries: list[dict[str, Any]] = Field(default_factory=list)
+    allow_tenant_mismatch: bool = False
+    on_conflict: Literal["skip", "overwrite"] = "skip"
+
+
+class TenantMemoryImportResponse(BaseModel):
+    """Response for tenant memory import."""
+
+    status: str
+    imported: int
+    replaced: int
+    skipped: int
+
+
 def _to_response(result: OrchestrationResult) -> TaskResponse:
     return TaskResponse(
         task_id=result.task_id,
@@ -246,7 +290,8 @@ async def lifespan(app: FastAPI):
         return default_name
 
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
-    app.state.orchestrator = Orchestrator(load_archon_config(config_path))
+    config = load_archon_config(config_path)
+    app.state.orchestrator = Orchestrator(config)
     app.state.auth_settings = AuthSettings.from_env()
     app.state.analytics_collector = AnalyticsCollector(
         path=_db_path("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
@@ -256,6 +301,9 @@ async def lifespan(app: FastAPI):
     )
     app.state.mobile_device_registry = DeviceRegistry(
         path=_db_path("ARCHON_DEVICE_TOKENS_DB", "archon_device_tokens.sqlite3")
+    )
+    app.state.tenant_memory_store = TenantMemoryStore(
+        db_path=_db_path("ARCHON_MEMORY_DB", "archon_memory.sqlite3")
     )
     stripe_api_key = os.getenv("ARCHON_STRIPE_SECRET_KEY", "") or os.getenv("STRIPE_SECRET_KEY", "")
     webhook_secret = os.getenv("ARCHON_STRIPE_WEBHOOK_SECRET", "") or os.getenv(
@@ -344,6 +392,33 @@ async def lifespan(app: FastAPI):
         app.state.mobile_push_notifier,
         sync_store=app.state.mobile_sync_store,
     )
+    federation_production = (
+        str(os.getenv("ARCHON_FEDERATION_PRODUCTION_MODE", "")).strip().lower() == "true"
+    )
+    federation_secret = str(os.getenv("ARCHON_FEDERATION_SHARED_SECRET", "")).strip()
+    federation_allowlist = (
+        str(os.getenv("ARCHON_FEDERATION_ALLOWLIST", "")).strip().lower() == "true"
+    ) or federation_production
+    allowlisted_peer_ids = {
+        str(peer.peer_id).strip()
+        for peer in getattr(getattr(config, "federation", None), "peers", [])
+        if str(getattr(peer, "peer_id", "")).strip()
+    }
+    app.state.federation_store = FederationStore(
+        path=_db_path("ARCHON_FEDERATION_DB", "archon_federation.sqlite3")
+    )
+    app.state.peer_registry = PeerRegistry(
+        production_mode=federation_production,
+        store=app.state.federation_store,
+    )
+    app.state.pattern_sharer = PatternSharer(
+        pattern_store=PatternStore(store=app.state.federation_store),
+    )
+    app.state.federation_auth_required = bool(federation_production)
+    app.state.federation_shared_secret = federation_secret
+    app.state.federation_nonce_cache = NonceCache(entries={})
+    app.state.federation_allowlist_enabled = bool(federation_allowlist)
+    app.state.federation_allowlist_peer_ids = allowlisted_peer_ids
     app.state.started_monotonic = time.monotonic()
     if not isinstance(getattr(app.state, "console_tenant_config", None), dict):
         app.state.console_tenant_config = {}
@@ -357,6 +432,18 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        tenant_memory_store = getattr(app.state, "tenant_memory_store", None)
+        if isinstance(tenant_memory_store, TenantMemoryStore):
+            tenant_memory_store.close()
+        pattern_sharer = getattr(app.state, "pattern_sharer", None)
+        if isinstance(pattern_sharer, PatternSharer):
+            await pattern_sharer.aclose()
+        peer_registry = getattr(app.state, "peer_registry", None)
+        if isinstance(peer_registry, PeerRegistry):
+            await peer_registry.aclose()
+        federation_store = getattr(app.state, "federation_store", None)
+        if isinstance(federation_store, FederationStore):
+            federation_store.close()
         marketplace_stripe_client = getattr(app.state, "marketplace_stripe_client", None)
         if marketplace_stripe_client is not None and callable(
             getattr(marketplace_stripe_client, "aclose", None)
@@ -390,6 +477,8 @@ _exempt_paths = {
     "/agents/status",
     "/dashboard",
     "/dashboard/",
+    "/dashboard/growth-swarm",
+    "/dashboard/growth-swarm/",
     "/metrics",
     "/observability/traces",
     "/studio",
@@ -435,11 +524,10 @@ if (_dashboard_static_dir / "src").exists():
         StaticFiles(directory=str(_dashboard_static_dir / "src")),
         name="dashboard-src",
     )
-_rate_limit_handler = cast(
-    Callable[[Request, Exception], Response],
-    _rate_limit_exceeded_handler,
-)
-app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> Response:
+    del request
+    return JSONResponse({"error": f"Rate limit exceeded: {exc.detail}"}, status_code=429)
 app.include_router(create_billing_router())
 app.include_router(create_analytics_router())
 app.include_router(create_webhook_router())
@@ -481,6 +569,19 @@ async def dashboard_index() -> Response:
     if not _dashboard_static_dir.exists():
         raise HTTPException(status_code=404, detail="Dashboard UI is unavailable.")
     return FileResponse(_dashboard_static_dir / "index.html")
+
+
+@app.get("/dashboard/growth-swarm", include_in_schema=False)
+@app.get("/dashboard/growth-swarm/", include_in_schema=False)
+async def dashboard_growth_swarm() -> Response:
+    """Serve the Growth Swarm live board (standalone dashboard surface)."""
+
+    if not _dashboard_static_dir.exists():
+        raise HTTPException(status_code=404, detail="Dashboard UI is unavailable.")
+    path = _dashboard_static_dir / "growth_swarm.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Growth Swarm UI is unavailable.")
+    return FileResponse(path)
 
 
 @app.get("/health")
@@ -1064,6 +1165,43 @@ async def send_outbound_webchat(
     )
 
 
+@app.post("/v1/memory/import", response_model=TenantMemoryImportResponse)
+@limiter.limit(limit_for_key)
+async def import_tenant_memory(
+    request: Request,
+    payload: TenantMemoryImportRequest,
+) -> TenantMemoryImportResponse:
+    """Import tenant episodic memory entries (transfer/restore)."""
+
+    if request.state.auth.tenant_id != payload.tenant_id:
+        raise HTTPException(status_code=403, detail="tenant_id mismatch.")
+    store = getattr(app.state, "tenant_memory_store", None)
+    if not isinstance(store, TenantMemoryStore):
+        raise HTTPException(status_code=503, detail="Tenant memory store is unavailable.")
+    outcome = store.import_entries(
+        tenant_id=payload.tenant_id,
+        entries=list(payload.entries),
+        allow_tenant_mismatch=bool(payload.allow_tenant_mismatch),
+        on_conflict=str(payload.on_conflict),
+    )
+    await _emit_analytics_event(
+        {
+            "tenant_id": payload.tenant_id,
+            "event_type": "state_change",
+            "state": "memory_imported",
+            "imported": int(outcome.get("imported", 0)),
+            "replaced": int(outcome.get("replaced", 0)),
+            "skipped": int(outcome.get("skipped", 0)),
+        }
+    )
+    return TenantMemoryImportResponse(
+        status="ok",
+        imported=int(outcome.get("imported", 0)),
+        replaced=int(outcome.get("replaced", 0)),
+        skipped=int(outcome.get("skipped", 0)),
+    )
+
+
 @app.post("/studio/workflows")
 async def studio_save_workflow(
     payload: StudioWorkflowRequest,
@@ -1202,11 +1340,159 @@ async def studio_run_ws(websocket: WebSocket, run_id: str) -> None:
         return
 
 
+@app.post("/federation/announce")
+async def federation_announce(
+    payload: FederationAnnounceRequest, request: Request
+) -> dict[str, Any]:
+    """Receive federation announce payload and upsert peer entry."""
+
+    await _require_federation_auth(request)
+    actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
+    if actor and payload.peer_id and str(payload.peer_id).strip() != actor:
+        raise HTTPException(
+            status_code=422, detail="Federation actor does not match payload peer_id."
+        )
+    peer_registry: PeerRegistry = app.state.peer_registry
+    peer_id = str(payload.peer_id or "").strip() or f"peer-{uuid.uuid4().hex[:8]}"
+    public_key = str(payload.public_key or "unknown")
+    last_seen = float(payload.timestamp or time.time())
+    version = str(payload.version or "unknown")
+    capabilities = [str(item) for item in (payload.capabilities or [])]
+    try:
+        peer = Peer(
+            peer_id=peer_id,
+            address=str(payload.address),
+            public_key=public_key,
+            last_seen=last_seen,
+            capabilities=capabilities,
+            version=version,
+        )
+        normalized = await peer_registry.upsert_inbound(peer)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await _emit_analytics_event(
+        {
+            "event_type": "federation_peer_announced",
+            "peer_id": normalized.peer_id,
+            "address": normalized.address,
+            "capabilities": list(normalized.capabilities),
+            "version": normalized.version,
+        }
+    )
+    return {"status": "ok", "peer_id": normalized.peer_id}
+
+
+@app.get("/federation/peers")
+async def federation_peers(request: Request, capability: str | None = None) -> dict[str, Any]:
+    """List known federation peers."""
+
+    await _require_federation_auth(request)
+    peer_registry: PeerRegistry = app.state.peer_registry
+    peers = await peer_registry.discover(capability)
+    return {
+        "peers": [
+            {
+                "peer_id": peer.peer_id,
+                "address": peer.address,
+                "public_key": peer.public_key,
+                "last_seen": peer.last_seen,
+                "capabilities": list(peer.capabilities),
+                "version": peer.version,
+            }
+            for peer in peers
+        ]
+    }
+
+
+@app.post("/federation/patterns")
+async def federation_patterns(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Receive and store a federated workflow pattern payload."""
+
+    await _require_federation_auth(request)
+    sharer: PatternSharer = app.state.pattern_sharer
+    try:
+        stored = await sharer.receive(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await _emit_analytics_event(
+        {
+            "event_type": "federation_pattern_received",
+            "pattern_id": stored.pattern_id,
+            "workflow_type": stored.workflow_type,
+            "sample_count": stored.sample_count,
+        }
+    )
+    return {
+        "status": "ok",
+        "pattern": {
+            "pattern_id": stored.pattern_id,
+            "workflow_type": stored.workflow_type,
+            "step_sequence": list(stored.step_sequence),
+            "avg_score": stored.avg_score,
+            "sample_count": stored.sample_count,
+        },
+    }
+
+
+@app.get("/federation/patterns")
+async def federation_patterns_list(request: Request, limit: int = 50) -> dict[str, Any]:
+    """List stored federated workflow patterns (best-effort, in-memory)."""
+
+    await _require_federation_auth(request)
+    sharer: PatternSharer = app.state.pattern_sharer
+    patterns = list(sharer.pattern_store.patterns.values())
+    patterns.sort(key=lambda row: row.sample_count, reverse=True)
+    limit = max(1, min(int(limit), 500))
+    return {
+        "patterns": [
+            {
+                "pattern_id": pattern.pattern_id,
+                "workflow_type": pattern.workflow_type,
+                "step_sequence": list(pattern.step_sequence),
+                "avg_score": pattern.avg_score,
+                "sample_count": pattern.sample_count,
+            }
+            for pattern in patterns[:limit]
+        ],
+        "count": min(len(patterns), limit),
+    }
+
+
+@app.post("/federation/consensus")
+async def federation_consensus(
+    payload: FederationConsensusRequest, request: Request
+) -> dict[str, Any]:
+    """Return a local vote for a consensus request (heuristic baseline)."""
+
+    await _require_federation_auth(request)
+    actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
+    if actor and str(payload.requester_id).strip() != actor:
+        raise HTTPException(status_code=422, detail="Federation actor does not match requester_id.")
+    options = [str(item) for item in (payload.options or []) if str(item).strip()]
+    if not options:
+        raise HTTPException(status_code=422, detail="Consensus options cannot be empty.")
+    choice = options[0]
+    await _emit_analytics_event(
+        {
+            "event_type": "federation_consensus_voted",
+            "requester_id": payload.requester_id,
+            "option": choice,
+        }
+    )
+    return {"option": choice, "reasoning": "baseline_heuristic:first_option"}
+
+
 @app.post("/federation/tasks/bid")
 async def federation_bid(payload: FederationTaskRequest, request: Request) -> dict[str, Any]:
     """Return local bid for an incoming federated task."""
 
-    del request
+    await _require_federation_auth(request)
+    actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
+    if actor and str(payload.requester_instance_id).strip() != actor:
+        raise HTTPException(
+            status_code=422,
+            detail="Federation actor does not match requester_instance_id.",
+        )
     required = [str(item).strip().lower() for item in payload.required_capabilities if str(item)]
     local_capabilities = {"debate", "growth", "analysis", "reasoning", "translation"}
     missing = [item for item in required if item not in local_capabilities]
@@ -1241,6 +1527,13 @@ async def federation_execute(
 ) -> StreamingResponse:
     """Execute federated task locally and stream result tokens back to requester."""
 
+    await _require_federation_auth(request)
+    actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
+    if actor and str(payload.requester_instance_id).strip() != actor:
+        raise HTTPException(
+            status_code=422,
+            detail="Federation actor does not match requester_instance_id.",
+        )
     orchestrator: Orchestrator = app.state.orchestrator
     auth = getattr(request.state, "auth", None)
     tenant_id = getattr(auth, "tenant_id", "system")
@@ -2055,6 +2348,54 @@ def _tokenize_federation(text: str) -> list[str]:
         if word or suffix:
             chunks.append(word + suffix)
     return chunks
+
+
+def _federation_path(request: Request) -> str:
+    query = str(getattr(request.url, "query", "") or "").strip()
+    if query:
+        return f"{request.url.path}?{query}"
+    return request.url.path
+
+
+async def _require_federation_auth(request: Request) -> None:
+    required = bool(getattr(app.state, "federation_auth_required", False))
+    secret = str(getattr(app.state, "federation_shared_secret", "") or "").strip()
+    allowlist_enabled = bool(getattr(app.state, "federation_allowlist_enabled", False))
+    allowlisted = getattr(app.state, "federation_allowlist_peer_ids", set())
+    if not required and not secret:
+        return
+    if not secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Federation auth is required; set ARCHON_FEDERATION_SHARED_SECRET.",
+        )
+    body = await request.body()
+    headers = {str(k).lower(): str(v) for k, v in request.headers.items()}
+    try:
+        verify_federation_auth(
+            secret=secret,
+            method=request.method,
+            path=_federation_path(request),
+            body=body,
+            headers=headers,
+            nonce_cache=getattr(app.state, "federation_nonce_cache", None),
+        )
+    except FederationAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    actor = str(headers.get("x-archon-fed-from", "")).strip()
+    if actor:
+        request.state.federation_peer_id = actor
+    if allowlist_enabled:
+        if not actor:
+            raise HTTPException(status_code=401, detail="Missing federation actor header.")
+        allowed_ids = allowlisted if isinstance(allowlisted, set) else set(allowlisted or [])
+        if not allowed_ids:
+            raise HTTPException(
+                status_code=503,
+                detail="Federation allowlist is enabled but no peer_ids are configured.",
+            )
+        if actor not in allowed_ids:
+            raise HTTPException(status_code=403, detail="Federation peer is not allowlisted.")
 
 
 async def _emit_analytics_event(payload: dict[str, Any]) -> None:
