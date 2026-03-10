@@ -1620,12 +1620,103 @@ def _acquire_managed_server_slot(*, host: str, port: int) -> Path:
         _wait_for_process_exit(managed_pid, timeout_s=5.0)
     _clear_managed_server_slot(lock_path)
     if not _port_is_bindable(host, port):
-        raise RuntimeError(
-            f"ARCHON could not start on {host}:{port} because the port is already in use "
-            "by an unmanaged process. Stop it or choose a different port."
-        )
+        if _should_kill_port_conflict():
+            _terminate_process_on_port(host=host, port=port)
+        if not _port_is_bindable(host, port):
+            raise RuntimeError(
+                f"ARCHON could not start on {host}:{port} because the port is already in use "
+                "by an unmanaged process. Stop it or choose a different port."
+            )
     _write_managed_server_lock(lock_path, pid=current_pid, host=host, port=port)
     return lock_path
+
+
+def _should_kill_port_conflict() -> bool:
+    value = str(os.getenv("ARCHON_KILL_PORT", "")).strip().lower()
+    return value in {"1", "true", "yes", "y"}
+
+
+def _terminate_process_on_port(*, host: str, port: int) -> None:
+    pid = _find_pid_for_port(host=host, port=port)
+    if pid <= 0 or pid == os.getpid():
+        return
+    _terminate_process(pid)
+    _wait_for_process_exit(pid, timeout_s=5.0)
+
+
+def _find_pid_for_port(*, host: str, port: int) -> int:
+    if os.name == "nt":
+        return _find_pid_for_port_windows(port=port)
+    return _find_pid_for_port_posix(port=port)
+
+
+def _find_pid_for_port_windows(*, port: int) -> int:
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return 0
+    if result.returncode != 0:
+        return 0
+    needle = f":{int(port)}"
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line or not line.lower().startswith("tcp"):
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        local_addr = parts[1]
+        state = parts[3].upper()
+        pid_text = parts[4]
+        if needle in local_addr and state == "LISTENING" and pid_text.isdigit():
+            return int(pid_text)
+    return 0
+
+
+def _find_pid_for_port_posix(*, port: int) -> int:
+    for cmd in (
+        ["lsof", "-nP", f"-iTCP:{int(port)}", "-sTCP:LISTEN", "-t"],
+        ["fuser", "-n", "tcp", str(int(port))],
+        ["ss", "-lptn"],
+    ):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except OSError:
+            continue
+        if result.returncode != 0 and not result.stdout:
+            continue
+        if cmd[0] == "ss":
+            for raw_line in result.stdout.splitlines():
+                line = raw_line.strip()
+                if f":{int(port)}" not in line:
+                    continue
+                pid = _parse_pid_from_ss(line)
+                if pid > 0:
+                    return pid
+            continue
+        for token in result.stdout.replace(",", " ").split():
+            if token.isdigit():
+                return int(token)
+    return 0
+
+
+def _parse_pid_from_ss(line: str) -> int:
+    marker = "pid="
+    if marker not in line:
+        return 0
+    tail = line.split(marker, 1)[1]
+    digits = []
+    for ch in tail:
+        if ch.isdigit():
+            digits.append(ch)
+        elif digits:
+            break
+    return int("".join(digits)) if digits else 0
 
 
 def _managed_server_lock_path(host: str, port: int) -> Path:

@@ -884,11 +884,14 @@ def _open_web_shell(base_url: str, *, route: str, command_name: str) -> None:
     _launch_url(f"{normalized}/{route}")
 
 
-def _run_api_server_with_env(*, host: str, port: int) -> None:
+def _run_api_server_with_env(*, host: str, port: int, kill_port: bool = False) -> None:
     previous_host = os.environ.get("ARCHON_HOST")
     previous_port = os.environ.get("ARCHON_PORT")
+    previous_kill = os.environ.get("ARCHON_KILL_PORT")
     os.environ["ARCHON_HOST"] = host
     os.environ["ARCHON_PORT"] = str(port)
+    if kill_port:
+        os.environ["ARCHON_KILL_PORT"] = "1"
     try:
         from archon.interfaces.api.server import run as run_api_server
 
@@ -902,6 +905,10 @@ def _run_api_server_with_env(*, host: str, port: int) -> None:
             os.environ.pop("ARCHON_PORT", None)
         else:
             os.environ["ARCHON_PORT"] = previous_port
+        if previous_kill is None:
+            os.environ.pop("ARCHON_KILL_PORT", None)
+        else:
+            os.environ["ARCHON_KILL_PORT"] = previous_kill
 
 
 def _parse_prometheus_text(text: str) -> dict[str, list[dict[str, Any]]]:
@@ -1191,7 +1198,10 @@ def unistall_command(home: Path, skip_path: bool, dry_run: bool, yes: bool) -> N
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8000, show_default=True, type=int)
 @click.option("--config", "config_path", default=DEFAULT_CONFIG_PATH, show_default=True)
-def serve_command(ctx: click.Context, host: str, port: int, config_path: str) -> None:
+@click.option("--kill-port", is_flag=True, default=False, help="Terminate the process using host:port before starting.")
+def serve_command(
+    ctx: click.Context, host: str, port: int, config_path: str, kill_port: bool
+) -> None:
     """Start the ARCHON API server."""
 
     if not Path(config_path).exists():
@@ -1202,7 +1212,7 @@ def serve_command(ctx: click.Context, host: str, port: int, config_path: str) ->
     with _load_env_file():
         _load_config(config_path)
         try:
-            _run_api_server_with_env(host=host, port=port)
+            _run_api_server_with_env(host=host, port=port, kill_port=kill_port)
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
 

@@ -44,7 +44,15 @@ def _worker_paths():
 class _Serve(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(self, session, *, host: str, port: int, config_path: str):  # type: ignore[no-untyped-def,override]
+    def run(
+        self,
+        session,
+        *,
+        host: str,
+        port: int,
+        config_path: str,
+        kill_port: bool,
+    ):  # type: ignore[no-untyped-def,override]
         path = Path(config_path)
         if not path.exists():
             from archon.cli.drawers.core import _Init
@@ -54,7 +62,7 @@ class _Serve(ArchonCommand):
         session.run_step(1, self.bindings._load_config, config_path)
         session.update_step(2, "running")
         try:
-            self.bindings._run_api_server_with_env(host=host, port=port)
+            self.bindings._run_api_server_with_env(host=host, port=port, kill_port=kill_port)
         finally:
             session.update_step(2, "success")
         return {"host": host, "port": port}
@@ -189,8 +197,14 @@ def build_group(bindings):
     @click.option("--host", default="127.0.0.1")
     @click.option("--port", default=8000, type=int)
     @click.option("--config", "config_path", default="config.archon.yaml")
-    def serve_command(host: str, port: int, config_path: str) -> None:
-        _Serve(bindings).invoke(host=host, port=port, config_path=config_path)
+    @click.option("--kill-port", is_flag=True, default=False)
+    def serve_command(host: str, port: int, config_path: str, kill_port: bool) -> None:
+        _Serve(bindings).invoke(
+            host=host,
+            port=port,
+            config_path=config_path,
+            kill_port=kill_port,
+        )
 
     @group.command("health", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.option("--base-url", default="http://127.0.0.1:8000")
