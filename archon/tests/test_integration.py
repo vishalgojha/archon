@@ -15,7 +15,7 @@ import wave
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, Iterator
 
 import jwt
 import pytest
@@ -37,16 +37,16 @@ from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rat
 from archon.interfaces.api.server import app
 from archon.marketplace.connect import CONNECT_ACCOUNT_METADATA_KEY, ConnectAccount
 from archon.multimodal import MultimodalOrchestrator, TranscriptResult
-from archon.testing.asgi import lifespan, request, websocket_session
-
-pytestmark = pytest.mark.asyncio
 from archon.onprem import DeploymentConfig, DeployValidator, DockerComposeGenerator
 from archon.partners.viral_loop import ViralLoop, visitor_fingerprint
 from archon.studio.workflow_serializer import deserialize, serialize
+from archon.testing.asgi import lifespan, request, websocket_session
 from archon.validate_config import validate_config
 from archon.vernacular.detector import LanguageDetector
 from archon.vernacular.pipeline import VernacularPipeline
 from archon.vernacular.reasoner import VernacularReasoner
+
+pytestmark = pytest.mark.asyncio
 
 _JWT_SECRET = "archon-dev-secret-change-me-32-bytes"
 
