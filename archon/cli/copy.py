@@ -69,13 +69,13 @@ DRAWER_COPY = {
         "title": "Web Intelligence",
         "icon": "[W]",
         "tagline": "Crawl, classify, and optimize websites from one drawer.",
-        "availability": "staged",
+        "availability": "partial",
         "explanation": (
             "The web stack combines crawling, intent classification, injection "
             "generation, and optimization helpers for research and site-level execution. "
-            "The drawer is present now while command implementations are staged."
+            "Crawl is live; optimization remains staged while experiments are finalized."
         ),
-        "requires": ["network access", "web provider routing"],
+        "requires": ["network access", "config.archon.yaml"],
         "commands": {
             "web.crawl": "Crawl a target site and extract structured findings.",
             "web.optimize": "Generate optimization actions from web intelligence.",
@@ -369,13 +369,18 @@ COMMAND_COPY = {
     "web.crawl": {
         "what": "Crawl a site and convert the response into structured web intelligence findings.",
         "steps": [
-            "Reserve the command surface for the web crawl path.",
+            "Load config and validate the target URL.",
+            "Crawl the site and extract structured page content.",
+            "Classify site intent from the crawled pages.",
+            "Generate an embed snippet tailored to the site intent.",
         ],
         "results": {
-            "success": "{command} is reserved for the {module} module.",
+            "success": "Crawled {page_count} page(s). Primary intent: {primary_intent}. Suggested mode: {suggested_mode}.",
+            "failure": "Web crawl failed. {error}",
         },
         "next_steps": [
-            "Run archon web to review the planned control surface.",
+            "Use --mode or --greeting to override embed defaults.",
+            "Run archon web optimize once optimization is live.",
         ],
     },
     "web.optimize": {

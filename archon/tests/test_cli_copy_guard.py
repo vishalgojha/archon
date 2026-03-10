@@ -53,7 +53,6 @@ def test_no_inline_prose_in_drawers() -> None:
 def test_placeholder_commands_no_traceback() -> None:
     runner = CliRunner()
     cases = [
-        ["web", "crawl"],
         ["web", "optimize"],
         ["evolve", "plan"],
         ["evolve", "apply"],
