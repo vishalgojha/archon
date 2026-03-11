@@ -8,7 +8,9 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _RUNTIME_INSTALLER_PATH = _REPO_ROOT / "archon" / "runtime_installer.py"
 
-_SPEC = importlib.util.spec_from_file_location("archon_runtime_installer_bootstrap", _RUNTIME_INSTALLER_PATH)
+_SPEC = importlib.util.spec_from_file_location(
+    "archon_runtime_installer_bootstrap", _RUNTIME_INSTALLER_PATH
+)
 if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError(f"Could not load runtime installer from {_RUNTIME_INSTALLER_PATH}")
 _MODULE = importlib.util.module_from_spec(_SPEC)

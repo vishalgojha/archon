@@ -220,7 +220,9 @@ async def test_full_debate_flow_streams_events_with_budget_snapshot() -> None:
 
     token = _auth_token(tenant="tenant-debate", tier="business")
     async with lifespan(app):
-        async with websocket_session(app, "/v1/tasks/ws", query_string=f"token={token}") as websocket:
+        async with websocket_session(
+            app, "/v1/tasks/ws", query_string=f"token={token}"
+        ) as websocket:
             await websocket.send_json(
                 {
                     "goal": "Explain the CAP theorem in simple terms and give one practical tradeoff example.",
@@ -331,7 +333,9 @@ async def test_approval_gate_integration_emits_event_and_completes_after_approve
     headers = _auth_headers(tenant="tenant-approval", tier="business")
 
     async with lifespan(app):
-        async with websocket_session(app, "/v1/tasks/ws", query_string=f"token={token}") as websocket:
+        async with websocket_session(
+            app, "/v1/tasks/ws", query_string=f"token={token}"
+        ) as websocket:
             await websocket.send_json(
                 {
                     "goal": "Create a growth action plan and execute one guarded operation.",
@@ -393,7 +397,9 @@ async def test_webchat_flow_anonymous_ws_stream_done_and_session_restore() -> No
         ) as ws_first:
             restored_1 = await ws_first.receive_json()
             assert restored_1["type"] == "session_restored"
-            await ws_first.send_json({"type": "message", "content": "Hello from integration smoke test"})
+            await ws_first.send_json(
+                {"type": "message", "content": "Hello from integration smoke test"}
+            )
 
             saw_token = False
             saw_done = False
@@ -1123,7 +1129,9 @@ async def test_studio_integration_roundtrip_save_load_deserialize(
     }
 
     async with lifespan(app):
-        saved = await request(app, "POST", "/studio/workflows", json_body=payload, headers=_auth_headers())
+        saved = await request(
+            app, "POST", "/studio/workflows", json_body=payload, headers=_auth_headers()
+        )
         loaded = await request(
             app,
             "GET",

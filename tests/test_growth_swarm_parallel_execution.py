@@ -79,7 +79,9 @@ def test_growth_swarm_tier1_runs_in_parallel(monkeypatch: pytest.MonkeyPatch) ->
             output="nurture",
             require_keys=("outreach_sequences",),
         ),
-        revenue_intel=_StubAgent("RevenueIntelAgent", role="primary", output="signals", barrier=barrier),
+        revenue_intel=_StubAgent(
+            "RevenueIntelAgent", role="primary", output="signals", barrier=barrier
+        ),
         partner=_StubAgent("PartnerAgent", output="partners", barrier=barrier),
         churn_defense=_StubAgent(
             "ChurnDefenseAgent",
@@ -148,4 +150,3 @@ def test_growth_swarm_skips_dependents_when_upstream_fails(monkeypatch: pytest.M
     assert by_agent["OutreachAgent"]["metadata"]["swarm_status"] == "skipped"
     assert by_agent["NurtureAgent"]["metadata"]["swarm_status"] == "skipped"
     assert by_agent["ChurnDefenseAgent"]["metadata"]["swarm_status"] == "complete"
-

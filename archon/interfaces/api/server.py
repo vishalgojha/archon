@@ -529,10 +529,14 @@ if (_dashboard_static_dir / "src").exists():
         StaticFiles(directory=str(_dashboard_static_dir / "src")),
         name="dashboard-src",
     )
+
+
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> Response:
     del request
     return JSONResponse({"error": f"Rate limit exceeded: {exc.detail}"}, status_code=429)
+
+
 app.include_router(create_billing_router())
 app.include_router(create_analytics_router())
 app.include_router(create_webhook_router())

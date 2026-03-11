@@ -328,7 +328,9 @@ async def test_webchat_can_request_growth_mode(monkeypatch: pytest.MonkeyPatch) 
         session_id = token_payload["session"]["session_id"]
         token = token_payload["token"]
 
-        async with websocket_session(app, f"/webchat/ws/{session_id}", query_string=f"token={token}") as ws:
+        async with websocket_session(
+            app, f"/webchat/ws/{session_id}", query_string=f"token={token}"
+        ) as ws:
             restored = await ws.receive_json()
             assert restored["type"] == "session_restored"
             await ws.send_json(
@@ -400,6 +402,7 @@ async def test_memory_timeline_endpoint_filters_by_session(
     ]
 
     async with lifespan(app):
+
         async def fake_list_recent(*, limit: int) -> list[dict[str, object]]:
             assert limit >= 2
             return rows

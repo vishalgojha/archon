@@ -263,7 +263,9 @@ def validate_config(
             report.warnings.append(f"Provider '{provider_name}' skipped (--dry-run).")
         return report
 
-    health_rows = _ping_configured_providers(validated.providers, checks, timeout_seconds=timeout_seconds)
+    health_rows = _ping_configured_providers(
+        validated.providers, checks, timeout_seconds=timeout_seconds
+    )
     report.provider_health.extend(health_rows)
     for item in health_rows:
         if item.status in NON_FAILURE_STATUSES:

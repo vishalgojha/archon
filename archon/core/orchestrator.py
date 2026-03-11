@@ -521,7 +521,9 @@ class Orchestrator:
 
         # Tier 2: Outreach depends on Prospector + ICP outputs.
         outreach_deps = ["prospector", "icp"]
-        if _is_complete(results_by_key.get("prospector")) and _is_complete(results_by_key.get("icp")):
+        if _is_complete(results_by_key.get("prospector")) and _is_complete(
+            results_by_key.get("icp")
+        ):
             outreach_ctx = {
                 "leads": results_by_key["prospector"].output,
                 "icp_profile": results_by_key["icp"].output,

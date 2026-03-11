@@ -106,7 +106,7 @@ def test_render_posix_shim_targets_repo_runtime() -> None:
     module = _installer_module()
     shim = module.render_posix_shim("-m", "archon.archon_cli", "serve")
 
-    assert '#!/usr/bin/env sh' in shim
+    assert "#!/usr/bin/env sh" in shim
     assert '"$SCRIPT_DIR/../venv/bin/python" -m archon.archon_cli serve "$@"' in shim
 
 

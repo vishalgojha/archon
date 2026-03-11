@@ -448,9 +448,7 @@ def create_webchat_app(
                     continue
                 mode = str(payload.get("mode", "debate")).strip().lower() or "debate"
                 if mode not in {"debate", "growth"}:
-                    await websocket.send_json(
-                        {"type": "error", "error": f"Invalid mode '{mode}'."}
-                    )
+                    await websocket.send_json({"type": "error", "error": f"Invalid mode '{mode}'."})
                     continue
                 if content == "__approval_context__":
                     await _send_approval_context(
