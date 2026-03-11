@@ -45,7 +45,7 @@ def _worker_paths():
 class _Serve(ArchonCommand):
     command_id = COMMAND_IDS[0]
 
-    def run(
+    def run(  # type: ignore[no-untyped-def,override]
         self,
         session,
         *,
@@ -53,7 +53,7 @@ class _Serve(ArchonCommand):
         port: int,
         config_path: str,
         kill_port: bool,
-    ):  # type: ignore[no-untyped-def,override]
+    ):
         previous_kill = os.environ.get("ARCHON_KILL_PORT")
         path = Path(config_path)
         if not path.exists():

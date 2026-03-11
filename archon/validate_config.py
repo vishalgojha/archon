@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Sequence
@@ -285,22 +287,25 @@ def _ping_configured_providers(
     *,
     timeout_seconds: float,
 ) -> list[ProviderHealth]:
-    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
-        return [
-            _ping_one_provider(client, provider=provider_name, providers=providers)
-            for provider_name in sorted(checks)
-        ]
+    async def _run() -> list[ProviderHealth]:
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+            return [
+                await _ping_one_provider(client, provider=provider_name, providers=providers)
+                for provider_name in sorted(checks)
+            ]
+
+    return _run_sync(_run())
 
 
-def _ping_one_provider(
-    client: httpx.Client,
+async def _ping_one_provider(
+    client: httpx.AsyncClient,
     *,
     provider: str,
     providers: ProvidersSection,
 ) -> ProviderHealth:
     url, headers = _build_health_request(provider, providers)
     try:
-        response = client.get(url, headers=headers)
+        response = await client.get(url, headers=headers)
     except httpx.TimeoutException as exc:
         return ProviderHealth(
             provider=provider,
@@ -339,6 +344,36 @@ def _ping_one_provider(
         http_status=response.status_code,
         url=url,
     )
+
+
+def _run_sync(coro):  # type: ignore[no-untyped-def]
+    """Run an async coroutine from sync code.
+
+    Uses `asyncio.run` normally, but falls back to a dedicated thread if already
+    running inside an event loop (e.g. invoked from async code).
+    """
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: Any = None
+    error: BaseException | None = None
+
+    def _runner():  # type: ignore[no-untyped-def]
+        nonlocal result, error
+        try:
+            result = asyncio.run(coro)
+        except BaseException as exc:
+            error = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error is not None:
+        raise error
+    return result
 
 
 def _providers_to_check(validated: RuntimeValidationConfig) -> set[str]:

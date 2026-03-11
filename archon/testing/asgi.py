@@ -122,7 +122,6 @@ async def request(
 
     receive_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     receive_queue.put_nowait({"type": "http.request", "body": body_bytes, "more_body": False})
-    receive_queue.put_nowait({"type": "http.disconnect"})
 
     async def receive() -> dict[str, Any]:
         return await receive_queue.get()

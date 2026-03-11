@@ -10,7 +10,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:  # pragma: no cover - optional dependency
     import psutil
@@ -182,8 +182,9 @@ class SandboxedAgent:
                 )
             else:
                 stdout_bytes, stderr_bytes = await asyncio.to_thread(
-                    process.communicate,
-                    timeout=effective_timeout_s,
+                    lambda: cast(subprocess.Popen[bytes], process).communicate(
+                        timeout=effective_timeout_s
+                    )
                 )
         except (asyncio.TimeoutError, subprocess.TimeoutExpired):
             timed_out = True
