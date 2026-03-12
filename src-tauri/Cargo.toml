@@ -1,0 +1,16 @@
+[package]
+name = "archon-desktop"
+version = "0.1.0"
+description = "ARCHON desktop wrapper"
+authors = ["visha"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "1", features = [ "shell-sidecar", "http-all"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

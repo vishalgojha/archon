@@ -54,10 +54,15 @@
   }
 
   function resolveApiBase() {
+    const stored = String(safeStorageGet("archon.api_base") || "").trim();
+    // In the Tauri desktop wrapper the UI may be served from an internal webview URL
+    // (not from the backend origin). Always prefer an explicit stored base or localhost.
+    if (typeof window !== "undefined" && window.__TAURI__) {
+      return (stored || "http://127.0.0.1:8000").replace(/\/$/, "");
+    }
     if (window.location.protocol === "http:" || window.location.protocol === "https:") {
       return window.location.origin.replace(/\/$/, "");
     }
-    const stored = String(safeStorageGet("archon.api_base") || "").trim();
     if (stored) {
       return stored.replace(/\/$/, "");
     }

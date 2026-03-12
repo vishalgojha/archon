@@ -12,6 +12,7 @@ pytest-cache-files-*/
 coverage.xml
 dist/
 build/
+target/
 *.egg-info/
 *.db
 *.sqlite
@@ -32,6 +33,7 @@ tests/_tmp_*
 agency-agents/
 ai-terminal/
 web/dashboard/node_modules/
+archon/interfaces/web/dashboard/node_modules/
 ai-terminal/node_modules/
 ai-terminal/.env
 ai-terminal/.ai-terminal-state.json

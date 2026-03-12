@@ -287,6 +287,67 @@
       display: flex;
       flex-direction: column;
     }
+    .archon-desktop-titlebar {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid ${COLORS.border};
+      background: rgba(10, 10, 10, 0.98);
+      flex-shrink: 0;
+    }
+    .archon-desktop-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: ${COLORS.textPrimary};
+    }
+    .archon-desktop-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: ${COLORS.green};
+      box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18);
+    }
+    .archon-desktop-status {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid ${COLORS.border};
+      color: ${COLORS.textSecondary};
+      background: rgba(17, 17, 17, 0.7);
+    }
+    .archon-desktop-status--running {
+      color: ${COLORS.green};
+      border-color: rgba(22, 163, 74, 0.35);
+    }
+    .archon-desktop-status--starting {
+      color: ${COLORS.amber};
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .archon-desktop-status--stopped {
+      color: ${COLORS.textSecondary};
+    }
+    .archon-desktop-control {
+      border: 1px solid ${COLORS.border};
+      background: rgba(17, 17, 17, 0.7);
+      color: ${COLORS.textPrimary};
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .archon-desktop-control:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
     .archon-shell * {
       box-sizing: border-box;
     }
@@ -1342,6 +1403,17 @@
     return headers;
   }
 
+  function maskToken(value) {
+    const token = String(value || "").trim();
+    if (!token) {
+      return "";
+    }
+    if (token.length <= 12) {
+      return `${token.slice(0, 3)}…${token.slice(-3)}`;
+    }
+    return `${token.slice(0, 6)}…${token.slice(-6)}`;
+  }
+
   function normalizeWords(value) {
     return String(value || "")
       .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -1823,6 +1895,104 @@
     const costState = archon?.costState || { spent: 0, budget: 0, history: [] };
     const send = typeof archon?.send === "function" ? archon.send : () => {};
 
+    const tauriInvoke =
+      typeof window !== "undefined" &&
+      window.__TAURI__ &&
+      typeof window.__TAURI__.invoke === "function"
+        ? window.__TAURI__.invoke
+        : null;
+
+    const [desktopStatus, setDesktopStatus] = useState(tauriInvoke ? "STARTING" : "");
+    const [desktopBusy, setDesktopBusy] = useState(false);
+    const [desktopError, setDesktopError] = useState("");
+
+    const [bearerToken, setBearerToken] = useState("");
+    const [showDevAuth, setShowDevAuth] = useState(false);
+    const [bearerDraft, setBearerDraft] = useState("");
+    const [devAuthError, setDevAuthError] = useState("");
+
+    const [quickPrompt, setQuickPrompt] = useState("");
+    const [quickMode, setQuickMode] = useState("debate");
+
+    useEffect(() => {
+      if (!tauriInvoke) {
+        return;
+      }
+
+      let active = true;
+
+      const poll = async () => {
+        try {
+          const ok = await tauriInvoke("server_health");
+          if (!active) return;
+          setDesktopStatus(ok ? "RUNNING" : "STOPPED");
+          if (ok) {
+            setDesktopError("");
+          }
+        } catch (_error) {
+          if (!active) return;
+          setDesktopStatus("STOPPED");
+        }
+      };
+
+      poll();
+      const timer = setInterval(poll, 2000);
+      return () => {
+        active = false;
+        clearInterval(timer);
+      };
+    }, [tauriInvoke]);
+
+    useEffect(() => {
+      if (!showDevAuth) {
+        setBearerDraft("");
+        setDevAuthError("");
+      }
+    }, [showDevAuth]);
+
+    useEffect(() => {
+      try {
+        const stored = String(localStorage.getItem("archon.desktop.bearer") || "").trim();
+        if (stored) {
+          setBearerToken(stored);
+        }
+      } catch (_error) {}
+    }, []);
+
+    useEffect(() => {
+      try {
+        const normalized = String(bearerToken || "").trim();
+        if (normalized) {
+          localStorage.setItem("archon.desktop.bearer", normalized);
+        } else {
+          localStorage.removeItem("archon.desktop.bearer");
+        }
+      } catch (_error) {}
+    }, [bearerToken]);
+
+    const handleDesktopStartStop = async () => {
+      if (!tauriInvoke || desktopBusy) {
+        return;
+      }
+
+      setDesktopBusy(true);
+      try {
+        if (desktopStatus === "RUNNING") {
+          await tauriInvoke("stop_server");
+          setDesktopStatus("STOPPED");
+        } else {
+          setDesktopStatus("STARTING");
+          await tauriInvoke("start_server");
+          setDesktopError("");
+        }
+      } catch (error) {
+        setDesktopError(String(error?.message || error || "Backend action failed."));
+        setDesktopStatus("STOPPED");
+      } finally {
+        setDesktopBusy(false);
+      }
+    };
+
     const [activeTab, setActiveTab] = useState("dashboard");
     const [openTooltipAgent, setOpenTooltipAgent] = useState("");
     const [showCapabilityDetails, setShowCapabilityDetails] = useState(false);
@@ -1831,18 +2001,9 @@
     const [fadingApprovals, setFadingApprovals] = useState({});
     const [approvedCount, setApprovedCount] = useState(0);
     const [localFeedItems, setLocalFeedItems] = useState([]);
-    const [workflowEntries, setWorkflowEntries] = useState(
-      PRESET_WORKFLOWS.map((item) => ({
-        id: item.id,
-        name: item.name,
-        lastRunText: item.lastRunText,
-        source: "preset",
-      })),
-    );
-    const [workflowPayloads, setWorkflowPayloads] = useState(() =>
-      Object.fromEntries(PRESET_WORKFLOWS.map((item) => [item.id, item.payload])),
-    );
-    const [activeWorkflowId, setActiveWorkflowId] = useState(PRESET_WORKFLOWS[0].id);
+    const [workflowEntries, setWorkflowEntries] = useState([]);
+    const [workflowPayloads, setWorkflowPayloads] = useState({});
+    const [activeWorkflowId, setActiveWorkflowId] = useState("");
     const [studioNotice, setStudioNotice] = useState("");
     const [studioBusy, setStudioBusy] = useState(false);
     const apiBase = useMemo(() => resolveApiBase(), []);
@@ -1891,13 +2052,18 @@
     }, [pendingApprovals]);
 
     useEffect(() => {
-      if (!token) {
-        return undefined;
-      }
       let cancelled = false;
 
+      if (!bearerToken) {
+        setWorkflowEntries([]);
+        setWorkflowPayloads({});
+        setActiveWorkflowId("");
+        setStudioNotice("Studio is locked. Use Dev Auth to paste a Bearer token.");
+        return undefined;
+      }
+
       fetch(`${apiBase}/studio/workflows`, {
-        headers: buildHeaders(token),
+        headers: buildHeaders(bearerToken),
       })
         .then(async (response) => {
           if (!response.ok) {
@@ -1906,10 +2072,16 @@
           return response.json();
         })
         .then((rows) => {
-          if (cancelled || !Array.isArray(rows) || !rows.length) {
+          if (cancelled) {
             return;
           }
-          const nextEntries = rows.slice(0, 3).map((row) => ({
+          if (!Array.isArray(rows) || !rows.length) {
+            setWorkflowEntries([]);
+            setActiveWorkflowId("");
+            setStudioNotice("No workflows found for this tenant.");
+            return;
+          }
+          const nextEntries = rows.slice(0, 12).map((row) => ({
             id: String(row.id || row.workflow_id || ""),
             name: String(row.name || "Untitled workflow"),
             lastRunText: formatRelativeDay(row.updated_at),
@@ -1922,24 +2094,28 @@
           setActiveWorkflowId((current) =>
             nextEntries.some((item) => item.id === current) ? current : nextEntries[0].id,
           );
+          setStudioNotice("");
         })
         .catch((_error) => {
           if (!cancelled) {
-            setStudioNotice("Studio API unavailable - showing built-in workflows.");
+            setWorkflowEntries([]);
+            setWorkflowPayloads({});
+            setActiveWorkflowId("");
+            setStudioNotice("Studio API unavailable (or Bearer token invalid).");
           }
         });
 
       return () => {
         cancelled = true;
       };
-    }, [apiBase, token]);
+    }, [apiBase, bearerToken]);
 
     const activeWorkflowEntry = useMemo(() => {
       return workflowEntries.find((item) => item.id === activeWorkflowId) || workflowEntries[0] || null;
     }, [activeWorkflowId, workflowEntries]);
 
     useEffect(() => {
-      if (!token || !activeWorkflowEntry || activeWorkflowEntry.source !== "api") {
+      if (!bearerToken || !activeWorkflowEntry || activeWorkflowEntry.source !== "api") {
         return undefined;
       }
       if (workflowPayloads[activeWorkflowEntry.id]) {
@@ -1948,7 +2124,7 @@
 
       let cancelled = false;
       fetch(`${apiBase}/studio/workflows/${encodeURIComponent(activeWorkflowEntry.id)}`, {
-        headers: buildHeaders(token),
+        headers: buildHeaders(bearerToken),
       })
         .then(async (response) => {
           if (!response.ok) {
@@ -1970,7 +2146,7 @@
       return () => {
         cancelled = true;
       };
-    }, [activeWorkflowEntry, apiBase, token, workflowPayloads]);
+    }, [activeWorkflowEntry, apiBase, bearerToken, workflowPayloads]);
 
     const agentNodes = useMemo(() => {
       const latestEvents = {};
@@ -2097,12 +2273,12 @@
             "ARCHON has already done the research and drafted the next step. Review the queued actions first, then reveal the live system only if you need to inspect the agent state behind them.",
         };
       }
-      if (!token) {
+      if (!bearerToken) {
         return {
-          kicker: "Session ready",
-          title: "Connect a tenant token before you run protected workflows.",
+          kicker: "Ready",
+          title: "Unlock Studio only when you need protected workflows.",
           copy:
-            "Mission Control can explain the system and show its current state right away, but saved workflow runs and protected API actions stay locked until a tenant JWT is present.",
+            "Mission Control can operate anonymously. Studio and other protected API actions require a tenant Bearer token.",
         };
       }
       if (activeWorkflowEntry) {
@@ -2119,13 +2295,18 @@
         copy:
           "Use this view to understand what the system can do in plain language. Agent graphs, cost, and event flow stay collapsed until you ask to see them.",
       };
-    }, [activeWorkflowEntry, token, visibleApprovals.length]);
+    }, [activeWorkflowEntry, bearerToken, visibleApprovals.length]);
 
     function addLocalFeedItem(item) {
       setLocalFeedItems((current) => [item, ...current].slice(0, 16));
     }
 
     function openStudioSurface(note = "") {
+      if (!bearerToken) {
+        setStudioNotice("Studio is locked. Use Dev Auth to paste a Bearer token.");
+        setShowDevAuth(true);
+        return;
+      }
       if (note) {
         setStudioNotice(note);
       }
@@ -2158,11 +2339,14 @@
       if (workflowPayloads[entry.id]) {
         return workflowPayloads[entry.id];
       }
-      if (entry.source !== "api" || !token) {
+      if (entry.source !== "api") {
         return null;
       }
+      if (!bearerToken) {
+        throw new Error("Studio is locked. Use Dev Auth to paste a Bearer token.");
+      }
       const response = await fetch(`${apiBase}/studio/workflows/${encodeURIComponent(entry.id)}`, {
-        headers: buildHeaders(token),
+        headers: buildHeaders(bearerToken),
       });
       if (!response.ok) {
         throw new Error(`Could not load "${entry.name}" (${response.status})`);
@@ -2173,7 +2357,7 @@
     }
 
     function connectStudioRunSocket(websocketPath, workflowName) {
-      if (!token || !websocketPath) {
+      if (!bearerToken || !websocketPath) {
         return;
       }
       if (studioSocketRef.current) {
@@ -2183,7 +2367,7 @@
           return;
         }
       }
-      const url = `${resolveWsBase(apiBase)}${websocketPath}?token=${encodeURIComponent(token)}`;
+      const url = `${resolveWsBase(apiBase)}${websocketPath}?token=${encodeURIComponent(bearerToken)}`;
       const socket = new WebSocket(url);
       studioSocketRef.current = socket;
       socket.onmessage = (event) => {
@@ -2205,8 +2389,9 @@
     }
 
     async function handleRunNow() {
-      if (!token) {
-        setStudioNotice("A valid tenant session is required before Studio can run a workflow.");
+      if (!bearerToken) {
+        setStudioNotice("Studio is locked. Use Dev Auth to paste a Bearer token.");
+        setShowDevAuth(true);
         return;
       }
       if (!activeWorkflowEntry) {
@@ -2222,7 +2407,7 @@
         }
         const response = await fetch(`${apiBase}/studio/run`, {
           method: "POST",
-          headers: buildHeaders(token, true),
+          headers: buildHeaders(bearerToken, true),
           body: JSON.stringify({ workflow: payload }),
         });
         if (!response.ok) {
@@ -2258,6 +2443,24 @@
     }
 
     function renderDashboard() {
+      const actionStream = history
+        .filter((event) => {
+          const type = String(event?.type || "").toLowerCase();
+          return [
+            "task_started",
+            "task_completed",
+            "agent_start",
+            "agent_end",
+            "growth_agent_completed",
+            "approval_required",
+            "approval_resolved",
+            "approval_result",
+            "error",
+          ].includes(type);
+        })
+        .slice(-12)
+        .reverse();
+
       const primaryAction = visibleApprovals.length
         ? {
             label: "Review approvals",
@@ -2269,15 +2472,12 @@
             },
             disabled: false,
           }
-        : !token
+        : !bearerToken
           ? {
-              label: "Open Studio",
-              body: "Attach a tenant token before you run protected workflows.",
+              label: "Unlock Studio",
+              body: "Paste a Bearer token (tenant JWT) to run protected workflows.",
               tone: "muted",
-              onClick: () =>
-                openStudioSurface(
-                  "Studio is available now, but protected runs stay locked until a tenant JWT is present.",
-                ),
+              onClick: () => setShowDevAuth(true),
               disabled: false,
             }
           : activeWorkflowEntry
@@ -2305,8 +2505,8 @@
 
       const focusCopy = visibleApprovals.length
         ? "Review the queued sign-offs first. Everything else can stay collapsed until you need the full audit trail."
-        : !token
-          ? "Mission Control can explain the system now, but protected runs wait for tenant auth. You only need Studio when you are ready to run or edit workflows."
+        : !bearerToken
+          ? "Mission Control can operate anonymously, but protected workflows require a tenant Bearer token. Unlock Studio only when you need workflow control."
           : activeWorkflowEntry
             ? `${activeWorkflowEntry.name} is loaded and ready. You can launch it immediately, then reveal the deeper system view only if you want agent-by-agent context.`
             : "Nothing is blocked. Use this screen as an operator briefing until the next workflow or approval requires intervention.";
@@ -2365,6 +2565,176 @@
               <div className="archon-focus-copy">{focusCopy}</div>
 
               <div className="archon-action-list">
+                {tauriInvoke ? (
+                  <div className="archon-action-card">
+                    <div className="archon-action-copy">
+                      <div className="archon-action-title">Backend</div>
+                      <div className="archon-action-body">
+                        {desktopStatus === "RUNNING"
+                          ? "ARCHON server is running on 127.0.0.1:8000."
+                          : desktopStatus === "STARTING"
+                            ? "Starting ARCHON server…"
+                            : "ARCHON server is stopped."}
+                        {desktopError ? (
+                          <div style={{ marginTop: 6, color: COLORS.amber }}>{desktopError}</div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={
+                        desktopStatus === "RUNNING"
+                          ? "archon-button archon-button--muted"
+                          : "archon-button archon-button--run"
+                      }
+                      onClick={handleDesktopStartStop}
+                      disabled={desktopBusy}
+                    >
+                      {desktopStatus === "RUNNING" ? "Stop" : "Start"}
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="archon-action-card">
+                  <div className="archon-action-copy">
+                    <div className="archon-action-title">New run</div>
+                    <div className="archon-action-body">
+                      Send a goal to ARCHON. Results stream into the live feed.
+                    </div>
+                    <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ fontSize: 12, color: COLORS.textSecondary }}>Mode</div>
+                        <button
+                          type="button"
+                          className={
+                            quickMode === "debate"
+                              ? "archon-button archon-button--run"
+                              : "archon-button archon-button--muted"
+                          }
+                          onClick={() => setQuickMode("debate")}
+                          style={{ padding: "6px 10px" }}
+                        >
+                          Debate
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            quickMode === "growth"
+                              ? "archon-button archon-button--run"
+                              : "archon-button archon-button--muted"
+                          }
+                          onClick={() => setQuickMode("growth")}
+                          style={{ padding: "6px 10px" }}
+                        >
+                          Growth
+                        </button>
+                      </div>
+                      <input
+                        value={quickPrompt}
+                        onChange={(e) => setQuickPrompt(e.target.value)}
+                        placeholder="e.g. Draft a 5-step outreach plan for dental clinics in Austin"
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: `1px solid ${COLORS.border}`,
+                          background: "rgba(10,10,10,0.9)",
+                          color: COLORS.textPrimary,
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="archon-button archon-button--run"
+                          disabled={!String(quickPrompt || "").trim()}
+                          onClick={() => {
+                            const content = String(quickPrompt || "").trim();
+                            if (!content) return;
+                            send({ type: "message", content, mode: quickMode });
+                            setQuickPrompt("");
+                            setShowSystemView(true);
+                          }}
+                        >
+                          Run
+                        </button>
+                        <button
+                          type="button"
+                          className="archon-button archon-button--muted"
+                          onClick={() => setQuickPrompt("")}
+                          disabled={!String(quickPrompt || "").trim()}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="archon-action-card">
+                  <div className="archon-action-copy">
+                    <div className="archon-action-title">Actions & Tools</div>
+                    <div className="archon-action-body">
+                      The server decides which agents/tools to run. This stream shows key events and approval-gated actions.
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 10,
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: 12,
+                        padding: 10,
+                        background: "rgba(10,10,10,0.55)",
+                        maxHeight: 180,
+                        overflow: "auto",
+                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                        fontSize: 12,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {actionStream.length ? (
+                        actionStream.map((event, index) => {
+                          const type = String(event?.type || "").toLowerCase();
+                          const stamp = formatClock(eventTimestampSeconds(event));
+                          const label =
+                            type === "approval_required"
+                              ? `approval_required: ${approvalTitle(event)}`
+                              : type === "approval_resolved" || type === "approval_result"
+                                ? `approval_resolved: ${String(event?.action_type || event?.action || "").trim() || "action"}`
+                                : type === "agent_start"
+                                  ? `agent_start: ${String(event?.agent || "agent")}`
+                                  : type === "agent_end" || type === "growth_agent_completed"
+                                    ? `agent_end: ${String(event?.agent || "agent")}`
+                                    : type === "task_started"
+                                      ? `task_started: ${String(event?.mode || "").trim() || "run"}`
+                                      : type === "task_completed"
+                                        ? `task_completed: ${String(event?.mode || "").trim() || "run"}`
+                                        : type;
+                          const detail = historyEventMessage(event);
+                          return (
+                            <div key={`${type}-${index}`} style={{ opacity: index ? 0.9 : 1 }}>
+                              <span style={{ color: COLORS.textSecondary }}>{stamp}</span>{" "}
+                              <span style={{ color: COLORS.textPrimary }}>{label}</span>
+                              {detail ? (
+                                <span style={{ color: COLORS.textSecondary }}> — {String(detail)}</span>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div style={{ color: COLORS.textSecondary }}>
+                          No events yet. If “Run” does nothing, check the connection badge (top right) and the Backend status.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="archon-button archon-button--muted"
+                    onClick={() => setShowSystemView(true)}
+                  >
+                    Open live system
+                  </button>
+                </div>
+
                 <div className="archon-action-card">
                   <div className="archon-action-copy">
                     <div className="archon-action-title">{primaryAction.label}</div>
@@ -2392,9 +2762,9 @@
                     className="archon-button archon-button--muted"
                     onClick={() =>
                       openStudioSurface(
-                        token
+                        bearerToken
                           ? "Studio is ready. Load a workflow or run the active one."
-                          : "Studio is visible, but protected runs still need a tenant JWT.",
+                          : "Studio is locked. Paste a Bearer token in Dev Auth to unlock it.",
                       )
                     }
                   >
@@ -2806,6 +3176,26 @@
       <div className="archon-shell">
         <style>{SHELL_CSS}</style>
 
+        {tauriInvoke ? (
+          <div className="archon-desktop-titlebar">
+            <div className="archon-desktop-brand">
+              <span className="archon-desktop-dot" />
+              ARCHON
+            </div>
+            <div className={`archon-desktop-status archon-desktop-status--${String(desktopStatus || "").toLowerCase()}`}>
+              {desktopStatus}
+            </div>
+            <button
+              type="button"
+              className="archon-desktop-control"
+              onClick={handleDesktopStartStop}
+              disabled={desktopBusy}
+            >
+              {desktopStatus === "RUNNING" ? "Stop" : "Start"}
+            </button>
+          </div>
+        ) : null}
+
         <header className="archon-nav">
           <div className="archon-nav-tabs">
             <button
@@ -2818,9 +3208,9 @@
             <button
               type="button"
               className={`archon-nav-tab ${activeTab === "studio" ? "archon-nav-tab--active" : ""}`}
-              onClick={() => setActiveTab("studio")}
+              onClick={() => (bearerToken ? setActiveTab("studio") : setShowDevAuth(true))}
             >
-              Studio
+              Studio{bearerToken ? "" : " (Locked)"}
             </button>
           </div>
           <div className="archon-nav-meta">
@@ -2828,8 +3218,140 @@
               className={`archon-live-dot archon-live-dot--${connectionTone(status, isInitializing, Boolean(sessionId && token))}`}
             />
             <span>{connectionLabel(status, isInitializing, Boolean(sessionId && token))}</span>
+            {tauriInvoke ? (
+              <button
+                type="button"
+                className="archon-nav-tab"
+                style={{ marginLeft: 12, padding: "6px 10px" }}
+                onClick={() => setShowDevAuth(true)}
+                title="Dev-only: set Bearer token for Studio/protected APIs"
+              >
+                Dev Auth{bearerToken ? ` (${maskToken(bearerToken)})` : ""}
+              </button>
+            ) : null}
           </div>
         </header>
+
+        {showDevAuth ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.55)",
+              display: "grid",
+              placeItems: "center",
+              zIndex: 9999,
+            }}
+            onClick={() => setShowDevAuth(false)}
+          >
+            <div
+              style={{
+                width: "min(720px, 92vw)",
+                background: "rgba(17, 17, 17, 0.98)",
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: 12,
+                padding: 16,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 12, color: COLORS.textSecondary, letterSpacing: 0.4 }}>
+                    Dev Auth (in-memory)
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Bearer Token</div>
+                </div>
+                <button
+                  type="button"
+                  className="archon-button archon-button--muted"
+                  onClick={() => setShowDevAuth(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div style={{ marginTop: 12, fontSize: 13, color: COLORS.textSecondary }}>
+                Used only for Studio/protected API calls. Saved locally (desktop only).
+              </div>
+
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                <input
+                  type="password"
+                  placeholder="Paste Authorization Bearer token (JWT)"
+                  value={bearerDraft}
+                  onChange={(e) => setBearerDraft(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${COLORS.border}`,
+                    background: "rgba(10,10,10,0.9)",
+                    color: COLORS.textPrimary,
+                  }}
+                />
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  {tauriInvoke ? (
+                    <button
+                      type="button"
+                      className="archon-button archon-button--muted"
+                      onClick={async () => {
+                        setDevAuthError("");
+                        try {
+                          const token = await tauriInvoke("create_token", {
+                            tenant_id: "tenant_local",
+                            tier: "free",
+                            expires_in: 86400,
+                          });
+                          setBearerDraft(String(token || "").trim());
+                        } catch (error) {
+                          setDevAuthError(String(error?.message || error || "Failed to create token."));
+                        }
+                      }}
+                      title="Creates a local dev token (requires ARCHON_JWT_SECRET in .env or env vars)"
+                    >
+                      Generate token
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="archon-button archon-button--run"
+                    onClick={() => {
+                      setBearerToken(String(bearerDraft || "").trim());
+                      setShowDevAuth(false);
+                    }}
+                    disabled={!String(bearerDraft || "").trim()}
+                  >
+                    Use token
+                  </button>
+                  <button
+                    type="button"
+                    className="archon-button archon-button--muted"
+                    onClick={() => setBearerToken("")}
+                    disabled={!bearerToken}
+                  >
+                    Clear token
+                  </button>
+                  <button
+                    type="button"
+                    className="archon-button archon-button--muted"
+                    onClick={() => setBearerDraft(bearerToken)}
+                    disabled={!bearerToken}
+                  >
+                    Copy current
+                  </button>
+                  <div style={{ fontSize: 12, color: COLORS.textSecondary }}>
+                    Current: {bearerToken ? maskToken(bearerToken) : "not set"}
+                  </div>
+                </div>
+                {devAuthError ? (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#ffb4b4" }}>{devAuthError}</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {activeTab === "dashboard" ? renderDashboard() : renderStudio()}
       </div>
