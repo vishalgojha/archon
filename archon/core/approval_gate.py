@@ -24,6 +24,8 @@ HIGH_RISK_ACTIONS: frozenset[str] = frozenset(
         "shell_exec",
         "email_send",
         "db_delete",
+        "studio_write",
+        "briefing_export",
         "outbound_email",
         "outbound_webchat",
         "outbound_sms",

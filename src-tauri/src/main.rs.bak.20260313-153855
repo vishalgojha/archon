@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::ffi::OsStr;
+
 use tauri::{Manager, WindowEvent};
 
 type SharedChild = Arc<Mutex<Option<Child>>>;
@@ -185,45 +185,6 @@ fn stop_server(child: tauri::State<'_, SharedChild>) -> Result<&'static str, Str
     Ok("not_running")
 }
 
-fn spawn_detached<I, S>(program: &str, args: I, cwd: Option<&std::path::Path>) -> Result<(), String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let mut cmd = Command::new(program);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
-    cmd.spawn()
-        .map(|_| ())
-        .map_err(|err| format!("failed to spawn {program}: {err}"))
-}
-
-#[tauri::command]
-fn launch_archon_ez(app: tauri::AppHandle) -> Result<&'static str, String> {
-    let script = app
-        .path_resolver()
-        .resolve_resource("archon-ez/archon-ez.ps1")
-        .ok_or("Could not resolve bundled resource: archon-ez/archon-ez.ps1")?;
-
-    // Use Windows PowerShell for maximum compatibility.
-    spawn_detached(
-        "powershell",
-        [
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            script.to_string_lossy().as_ref(),
-        ],
-        None,
-    )?;
-    Ok("launched")
-}
 fn main() {
     let child: SharedChild = Arc::new(Mutex::new(None));
 
@@ -233,8 +194,7 @@ fn main() {
             start_server,
             stop_server,
             server_health,
-            create_token,
-            launch_archon_ez
+            create_token
         ])
         .setup(move |app| {
             // Best-effort: start on launch so the dashboard is immediately usable.
@@ -252,6 +212,3 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-
-

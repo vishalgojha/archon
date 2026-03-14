@@ -12,6 +12,7 @@ import jwt
 from jwt import ExpiredSignatureError, InvalidTokenError
 
 from archon.api.auth import TIER_RATE_LIMITS, TenantContext
+from archon.config import load_archon_config
 
 ALGORITHM = "HS256"
 TOKEN_TYPE = "webchat"
@@ -24,6 +25,8 @@ _TIER_ALIAS: dict[str, str] = {
     "growth": "pro",
     "business": "enterprise",
 }
+
+_JWT_SECRET_CACHE: str | None = None
 
 
 class WebChatTokenError(ValueError):
@@ -198,7 +201,20 @@ def identity_to_tenant_context(identity: WebChatIdentity) -> TenantContext:
 def _jwt_secret() -> str:
     secret = os.getenv("ARCHON_JWT_SECRET", "").strip()
     if not secret:
-        raise WebChatTokenError("ARCHON_JWT_SECRET is not set.")
+        global _JWT_SECRET_CACHE
+        if _JWT_SECRET_CACHE is None:
+            config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
+            try:
+                config = load_archon_config(config_path)
+            except Exception:
+                _JWT_SECRET_CACHE = ""
+            else:
+                _JWT_SECRET_CACHE = str(
+                    getattr(getattr(config, "auth", None), "jwt_secret", "") or ""
+                ).strip()
+        secret = _JWT_SECRET_CACHE or ""
+    if not secret:
+        raise WebChatTokenError("ARCHON_JWT_SECRET is not set (env or config auth.jwt_secret).")
     return secret
 
 

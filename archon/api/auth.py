@@ -12,6 +12,8 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from jwt import ExpiredSignatureError, InvalidTokenError
 
+from archon.config import load_archon_config
+
 TierName = Literal["free", "pro", "enterprise"]
 TOKEN_TYPE = "tenant"
 ALGORITHM = "HS256"
@@ -179,11 +181,30 @@ class RateLimiter:
             return
         self.store.delete(tenant_id)
 
+_JWT_SECRET_CACHE: str | None = None
+
+
+def _jwt_secret_from_config() -> str:
+    global _JWT_SECRET_CACHE
+    if _JWT_SECRET_CACHE is not None:
+        return _JWT_SECRET_CACHE
+    config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
+    try:
+        config = load_archon_config(config_path)
+    except Exception:
+        _JWT_SECRET_CACHE = ""
+        return _JWT_SECRET_CACHE
+    secret = str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
+    _JWT_SECRET_CACHE = secret
+    return secret
+
 
 def _jwt_secret() -> str:
     secret = os.getenv("ARCHON_JWT_SECRET", "").strip()
     if not secret:
-        raise TenantTokenError("ARCHON_JWT_SECRET is not set.")
+        secret = _jwt_secret_from_config()
+    if not secret:
+        raise TenantTokenError("ARCHON_JWT_SECRET is not set (env or config auth.jwt_secret).")
     return secret
 
 

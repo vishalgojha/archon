@@ -1,10 +1,12 @@
 """FastAPI server entrypoint for ARCHON runtime APIs."""
 
 import ast
+import io
 import asyncio
 import importlib.util
 import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -32,6 +34,7 @@ from starlette.responses import (
 
 from archon.analytics import AnalyticsCollector
 from archon.analytics.dashboard_api import create_router as create_analytics_router
+from archon.api.auth import TenantTokenError, create_tenant_token
 from archon.billing import (
     BillingService,
     BillingStore,
@@ -212,6 +215,18 @@ class FederationConsensusRequest(BaseModel):
     requester_id: str = Field(min_length=1)
 
 
+class SessionTokenRequest(BaseModel):
+    """Request for issuing an ephemeral session token.
+
+    Example:
+        >>> SessionTokenRequest(tenant_id="demo", tier="pro", expires_in=3600)
+    """
+
+    tenant_id: str | None = None
+    tier: str | None = None
+    expires_in: int = Field(default=3600, ge=60, le=7 * 24 * 3600)
+
+
 class StudioWorkflowRequest(BaseModel):
     """Payload for storing one Studio workflow definition."""
 
@@ -227,6 +242,48 @@ class StudioRunRequest(BaseModel):
     """Payload for executing one Studio workflow definition."""
 
     workflow: dict[str, Any]
+
+
+class StudioTeamRequest(BaseModel):
+    """Payload for storing one Studio team config.
+
+    Example:
+        >>> StudioTeamRequest(name="Rev Pod", lead="Ops Lead", members=["A"]).name
+        'Rev Pod'
+    """
+
+    team_id: str | None = None
+    name: str = Field(min_length=1)
+    summary: str | None = None
+    lead: str | None = None
+    members: list[str] = Field(default_factory=list)
+    guardrails: list[str] = Field(default_factory=list)
+
+
+class BriefingDraftRequest(BaseModel):
+    """Payload for generating a CXO briefing draft.
+
+    Example:
+        >>> BriefingDraftRequest(title="Weekly Brief", audience="CXO").title
+        'Weekly Brief'
+    """
+
+    title: str = Field(min_length=1)
+    audience: str = Field(min_length=1)
+    period: str = Field(min_length=1)
+    objectives: str = Field(min_length=1)
+
+
+class BriefingExportRequest(BaseModel):
+    """Payload for exporting a CXO briefing.
+
+    Example:
+        >>> BriefingExportRequest(briefing={"title":"Demo"}, format="pdf").format
+        'pdf'
+    """
+
+    briefing: dict[str, Any]
+    format: Literal["pdf"] = "pdf"
 
 
 class MarketplaceOnboardRequest(BaseModel):
@@ -296,8 +353,17 @@ async def lifespan(app: FastAPI):
 
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
     config = load_archon_config(config_path)
+    secret = str(os.getenv("ARCHON_JWT_SECRET", "")).strip()
+    if not secret:
+        secret = str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
+    if not secret:
+        secret = secrets.token_urlsafe(48)
+        os.environ["ARCHON_JWT_SECRET"] = secret
+        app.state.ephemeral_auth = True
+    else:
+        app.state.ephemeral_auth = False
     app.state.orchestrator = Orchestrator(config)
-    app.state.auth_settings = AuthSettings.from_env()
+    app.state.auth_settings = AuthSettings.from_env(config)
     app.state.analytics_collector = AnalyticsCollector(
         path=_db_path("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
     )
@@ -346,6 +412,8 @@ async def lifespan(app: FastAPI):
         path=_db_path("ARCHON_STUDIO_DB", "archon_studio.sqlite3")
     )
     app.state.studio_run_broker = WorkflowRunBroker()
+    app.state.briefing_exports = {}
+    app.state.pending_gate_tasks = {}
     app.state.partner_registry = PartnerRegistry(
         path=_db_path("ARCHON_PARTNERS_DB", "archon_partners.sqlite3")
     )
@@ -493,6 +561,7 @@ _exempt_paths = {
     "/webchat/upgrade",
     "/billing/webhooks/stripe",
     "/v1/billing/webhooks/stripe",
+    "/v1/auth/session-token",
     "/openapi.json",
     "/docs",
     "/redoc",
@@ -505,7 +574,7 @@ _exempt_path_prefixes = {
 }
 app.add_middleware(
     AuthMiddleware,
-    settings=AuthSettings.from_env(),
+    settings=AuthSettings.from_env(load_archon_config(os.getenv("ARCHON_CONFIG", "config.archon.yaml"))),
     exempt_paths=_exempt_paths,
     exempt_path_prefixes=_exempt_path_prefixes,
 )
@@ -612,6 +681,58 @@ async def healthcheck() -> dict[str, str]:
     """Simple readiness probe endpoint."""
 
     return {"status": "ok"}
+
+
+@app.post("/v1/auth/session-token")
+async def issue_session_token(payload: SessionTokenRequest, request: Request) -> dict[str, Any]:
+    """Issue an ephemeral session token when no JWT secret is configured.
+
+    Example:
+        >>> # POST /v1/auth/session-token
+        >>> {"token": "...", "tenant_id": "session-abc123", "tier": "pro"}
+    """
+
+    if not bool(getattr(request.app.state, "ephemeral_auth", False)):
+        raise HTTPException(
+            status_code=403,
+            detail="Session token issuance is disabled when JWT secret is configured.",
+        )
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1"}:
+        raise HTTPException(status_code=403, detail="Session token endpoint is localhost-only.")
+
+    tenant_id = str(payload.tenant_id or "").strip() or f"session-{uuid.uuid4().hex[:10]}"
+    tier = str(payload.tier or "").strip().lower() or "pro"
+    expires_in = int(payload.expires_in or 3600)
+    settings = getattr(request.app.state, "auth_settings", None)
+    secret = settings.secret if isinstance(settings, AuthSettings) else None
+    try:
+        token = create_tenant_token(
+            tenant_id=tenant_id,
+            tier=tier,  # type: ignore[arg-type]
+            expires_in_seconds=expires_in,
+            secret=secret,
+        )
+    except TenantTokenError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await _emit_analytics_event(
+        {
+            "tenant_id": tenant_id,
+            "event_type": "auth_session_token_issued",
+            "tier": tier,
+            "expires_in": expires_in,
+            "ephemeral": True,
+        }
+    )
+
+    return {
+        "token": token,
+        "tenant_id": tenant_id,
+        "tier": tier,
+        "expires_in": expires_in,
+        "ephemeral": True,
+    }
 
 
 @app.get("/metrics", include_in_schema=False)
@@ -999,6 +1120,41 @@ async def approve_guarded_action(
     return {"status": "approved", "request_id": request_id}
 
 
+@app.get("/v1/approvals")
+@limiter.limit(limit_for_key)
+async def list_pending_approvals(request: Request) -> dict[str, Any]:
+    """List pending approvals for the authenticated tenant.
+
+    Example:
+        >>> isinstance(list_pending_approvals, object)
+        True
+    """
+
+    orchestrator: Orchestrator = app.state.orchestrator
+    gate = orchestrator.approval_gate
+    tenant_id = request.state.auth.tenant_id
+    approvals = []
+    for row in gate.pending_actions:
+        context = row.get("context", {}) if isinstance(row, dict) else {}
+        if not isinstance(context, dict):
+            continue
+        if str(context.get("tenant_id", "")).strip() != tenant_id:
+            continue
+        created_at = float(row.get("created_at", time.time()))
+        approvals.append(
+            {
+                "request_id": str(row.get("action_id") or ""),
+                "action_id": str(row.get("action_id") or ""),
+                "action": str(row.get("action") or ""),
+                "risk_level": row.get("risk_level"),
+                "created_at": created_at,
+                "context": dict(context),
+                "timeout_remaining_s": _approval_timeout_remaining(created_at, gate=gate),
+            }
+        )
+    return {"approvals": approvals}
+
+
 @app.post("/v1/approvals/{request_id}/deny")
 @limiter.limit(limit_for_key)
 async def deny_guarded_action(
@@ -1281,6 +1437,265 @@ async def studio_delete_workflow(workflow_id: str, request: Request) -> dict[str
         }
     )
     return {"status": "deleted", "workflow_id": workflow_id}
+
+
+@app.post("/studio/workflows/compose")
+async def studio_compose_workflow(
+    payload: StudioWorkflowRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Save one workflow through approval-gated Studio writes.
+
+    Example:
+        >>> isinstance(studio_compose_workflow, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    store = _studio_store()
+    workflow = _studio_request_to_workflow(payload)
+    request_id = f"studio-write-{uuid.uuid4().hex[:12]}"
+
+    async def execute() -> None:
+        saved = store.save(tenant_id, workflow, workflow_id=payload.workflow_id)
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "workflow_created",
+                "workflow_id": saved.workflow_id,
+                "name": saved.name,
+            }
+        )
+
+    gate = app.state.orchestrator.approval_gate
+    if gate.requires_approval("studio_write"):
+        await _queue_gate_action(
+            tenant_id=tenant_id,
+            action="studio_write",
+            context={"workflow_id": workflow.workflow_id, "name": workflow.name},
+            request_id=request_id,
+            execute=execute,
+        )
+        return {"status": "pending", "request_id": request_id}
+
+    await execute()
+    return {"status": "saved", "workflow_id": workflow.workflow_id}
+
+
+@app.post("/studio/teams")
+async def studio_save_team(
+    payload: StudioTeamRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Save a team configuration with approval gates.
+
+    Example:
+        >>> isinstance(studio_save_team, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    store = _studio_store()
+    workflow = _team_to_workflow(payload)
+    request_id = f"team-write-{uuid.uuid4().hex[:12]}"
+
+    async def execute() -> None:
+        saved = store.save(tenant_id, workflow, workflow_id=workflow.workflow_id)
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "team_saved",
+                "team_id": saved.workflow_id,
+                "name": saved.name,
+            }
+        )
+
+    gate = app.state.orchestrator.approval_gate
+    if gate.requires_approval("studio_write"):
+        await _queue_gate_action(
+            tenant_id=tenant_id,
+            action="studio_write",
+            context={"team_id": workflow.workflow_id, "name": workflow.name},
+            request_id=request_id,
+            execute=execute,
+        )
+        return {"status": "pending", "request_id": request_id, "team_id": workflow.workflow_id}
+
+    await execute()
+    return {"status": "saved", "team_id": workflow.workflow_id}
+
+
+@app.get("/studio/teams")
+async def studio_list_teams(request: Request) -> list[dict[str, Any]]:
+    """List saved team configurations.
+
+    Example:
+        >>> isinstance(studio_list_teams, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    store = _studio_store()
+    results: list[dict[str, Any]] = []
+    for row in store.list(tenant_id):
+        workflow = store.get(tenant_id, row.workflow_id)
+        if workflow is None:
+            continue
+        metadata = dict(workflow.metadata or {})
+        if metadata.get("type") != "team_config":
+            continue
+        payload = _team_from_workflow(workflow)
+        payload["updated_at"] = row.updated_at
+        results.append(payload)
+    return results
+
+
+@app.get("/studio/teams/{team_id}")
+async def studio_get_team(team_id: str, request: Request) -> dict[str, Any]:
+    """Return one stored team configuration.
+
+    Example:
+        >>> isinstance(studio_get_team, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    workflow = _studio_store().get(tenant_id, team_id)
+    if workflow is None or dict(workflow.metadata or {}).get("type") != "team_config":
+        raise HTTPException(status_code=404, detail="Team not found.")
+    return _team_from_workflow(workflow)
+
+
+@app.delete("/studio/teams/{team_id}")
+async def studio_delete_team(team_id: str, request: Request) -> dict[str, Any]:
+    """Delete one stored team configuration.
+
+    Example:
+        >>> isinstance(studio_delete_team, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    store = _studio_store()
+    request_id = f"team-delete-{uuid.uuid4().hex[:12]}"
+
+    async def execute() -> None:
+        deleted = store.delete(tenant_id, team_id)
+        if not deleted:
+            return
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "team_deleted",
+                "team_id": team_id,
+            }
+        )
+
+    gate = app.state.orchestrator.approval_gate
+    if gate.requires_approval("studio_write"):
+        await _queue_gate_action(
+            tenant_id=tenant_id,
+            action="studio_write",
+            context={"team_id": team_id},
+            request_id=request_id,
+            execute=execute,
+        )
+        return {"status": "pending", "request_id": request_id, "team_id": team_id}
+
+    await execute()
+    return {"status": "deleted", "team_id": team_id}
+
+
+@app.post("/studio/briefings/draft")
+async def studio_briefing_draft(
+    payload: BriefingDraftRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Generate a deterministic CXO briefing draft.
+
+    Example:
+        >>> isinstance(studio_briefing_draft, object)
+        True
+    """
+
+    del request
+    return _draft_briefing(payload)
+
+
+@app.post("/studio/briefings/export")
+async def studio_briefing_export(
+    payload: BriefingExportRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Approval-gated briefing export to PDF.
+
+    Example:
+        >>> isinstance(studio_briefing_export, object)
+        True
+    """
+
+    tenant_id = request.state.auth.tenant_id
+    request_id = f"briefing-export-{uuid.uuid4().hex[:12]}"
+    exports = getattr(app.state, "briefing_exports", {})
+
+    async def execute() -> None:
+        content, content_type = _render_briefing_pdf(payload.briefing)
+        filename = f"archon-briefing-{request_id}.pdf" if content_type == "application/pdf" else f"archon-briefing-{request_id}.txt"
+        exports[request_id] = {
+            "bytes": content,
+            "content_type": content_type,
+            "filename": filename,
+            "created_at": time.time(),
+        }
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "briefing_exported",
+                "request_id": request_id,
+                "format": payload.format,
+            }
+        )
+
+    gate = app.state.orchestrator.approval_gate
+    if gate.requires_approval("briefing_export"):
+        await _queue_gate_action(
+            tenant_id=tenant_id,
+            action="briefing_export",
+            context={"title": str(payload.briefing.get("title", "")), "format": payload.format},
+            request_id=request_id,
+            execute=execute,
+        )
+        return {"status": "pending", "request_id": request_id}
+
+    await execute()
+    return {"status": "ready", "request_id": request_id}
+
+
+@app.get("/studio/briefings/export/{request_id}")
+async def studio_briefing_export_download(
+    request_id: str,
+    request: Request,
+) -> Response:
+    """Download a ready briefing export.
+
+    Example:
+        >>> isinstance(studio_briefing_export_download, object)
+        True
+    """
+
+    del request
+    exports = getattr(app.state, "briefing_exports", {})
+    entry = exports.get(request_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Export not ready.")
+    content = entry.get("bytes", b"")
+    content_type = entry.get("content_type", "application/octet-stream")
+    filename = entry.get("filename", f"archon-briefing-{request_id}.pdf")
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+    )
 
 
 @app.post("/studio/run")
@@ -2704,6 +3119,217 @@ def _workflow_to_payload(workflow: WorkflowDefinition) -> dict[str, Any]:
         "version": workflow.version,
         "created_at": workflow.created_at,
     }
+
+
+def _team_to_workflow(payload: StudioTeamRequest, *, team_id: str | None = None) -> WorkflowDefinition:
+    """Convert a team config into a Studio workflow wrapper.
+
+    Example:
+        >>> wf = _team_to_workflow(StudioTeamRequest(name="Ops", members=["A"]))
+        >>> wf.name
+        'Ops'
+    """
+
+    workflow_id = team_id or payload.team_id or f"team-{uuid.uuid4().hex[:12]}"
+    return WorkflowDefinition(
+        workflow_id=workflow_id,
+        name=payload.name,
+        steps=[],
+        metadata={
+            "type": "team_config",
+            "team": payload.model_dump(exclude_none=True),
+        },
+        version=1,
+        created_at=time.time(),
+    )
+
+
+def _team_from_workflow(workflow: WorkflowDefinition) -> dict[str, Any]:
+    """Deserialize team config stored in workflow metadata.
+
+    Example:
+        >>> _team_from_workflow(WorkflowDefinition("t","Team",[],{"type":"team_config","team":{"name":"X"}},1,1.0))["name"]
+        'X'
+    """
+
+    metadata = dict(workflow.metadata or {})
+    team = dict(metadata.get("team") or {})
+    return {
+        "team_id": workflow.workflow_id,
+        "name": str(team.get("name") or workflow.name),
+        "summary": team.get("summary"),
+        "lead": team.get("lead"),
+        "members": list(team.get("members") or []),
+        "guardrails": list(team.get("guardrails") or []),
+        "updated_at": workflow.created_at,
+    }
+
+
+def _draft_briefing(payload: BriefingDraftRequest) -> dict[str, Any]:
+    """Create a deterministic briefing draft.
+
+    Example:
+        >>> _draft_briefing(BriefingDraftRequest(title="Brief", audience="CXO", period="7d", objectives="Growth"))["title"]
+        'Brief'
+    """
+
+    created_at = time.time()
+    return {
+        "title": payload.title,
+        "audience": payload.audience,
+        "period": payload.period,
+        "objectives": payload.objectives,
+        "created_at": created_at,
+        "executive_summary": (
+            f"{payload.title} for {payload.audience}. Focus: {payload.objectives}. "
+            f"Period: {payload.period}."
+        ),
+        "key_metrics": [
+            {"label": "Pipeline Created", "value": "TBD"},
+            {"label": "Revenue at Risk", "value": "TBD"},
+            {"label": "Retention Health", "value": "TBD"},
+        ],
+        "risks": [
+            {"risk": "Top churn driver", "status": "Needs review"},
+            {"risk": "Budget variance", "status": "Monitor"},
+        ],
+        "next_actions": [
+            "Review approval queue for high-risk actions.",
+            "Align on next-week growth experiments.",
+            "Confirm operational priorities for the period.",
+        ],
+    }
+
+
+def _render_briefing_pdf(briefing: dict[str, Any]) -> tuple[bytes, str]:
+    lines = [
+        str(briefing.get("title") or "ARCHON Briefing"),
+        f"Audience: {briefing.get('audience', '')}",
+        f"Period: {briefing.get('period', '')}",
+        f"Objectives: {briefing.get('objectives', '')}",
+        "",
+        "Executive Summary:",
+        str(briefing.get("executive_summary") or ""),
+        "",
+        "Key Metrics:",
+    ]
+    for metric in briefing.get("key_metrics", []) or []:
+        lines.append(f"- {metric.get('label', '')}: {metric.get('value', '')}")
+    lines.append("")
+    lines.append("Risks:")
+    for risk in briefing.get("risks", []) or []:
+        lines.append(f"- {risk.get('risk', '')}: {risk.get('status', '')}")
+    lines.append("")
+    lines.append("Next Actions:")
+    for action in briefing.get("next_actions", []) or []:
+        lines.append(f"- {action}")
+
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        y = height - 50
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(50, y, lines[0])
+        y -= 22
+        pdf.setFont("Helvetica", 10)
+        for line in lines[1:]:
+            if y < 60:
+                pdf.showPage()
+                y = height - 50
+                pdf.setFont("Helvetica", 10)
+            pdf.drawString(50, y, line)
+            y -= 14
+        pdf.save()
+        return buffer.getvalue(), "application/pdf"
+    except Exception:
+        text = "\n".join(lines)
+        return text.encode("utf-8"), "text/plain"
+
+
+def _approval_timeout_remaining(created_at: float, *, gate: Any) -> float:
+    timeout_total = float(getattr(gate, "default_timeout_seconds", 120.0))
+    elapsed = max(0.0, time.time() - created_at)
+    return round(max(0.0, timeout_total - elapsed), 3)
+
+
+async def _approval_event_sink(*, tenant_id: str, event: dict[str, Any]) -> None:
+    if str(event.get("type", "")) == "approval_required":
+        await _emit_analytics_event(
+            {
+                "tenant_id": tenant_id,
+                "event_type": "approval_requested",
+                "request_id": str(event.get("request_id") or event.get("action_id") or ""),
+                "action": str(event.get("action") or event.get("action_type") or ""),
+            }
+        )
+        sync_store = getattr(app.state, "mobile_sync_store", None)
+        if isinstance(sync_store, MobileSyncStore):
+            sync_store.record_event(
+                tenant_id=tenant_id,
+                event_type="approval_required",
+                payload={"request_id": str(event.get("request_id") or event.get("action_id") or "")},
+            )
+
+
+def _track_gate_task(task_id: str, task: asyncio.Task[None]) -> None:
+    pending = getattr(app.state, "pending_gate_tasks", None)
+    if not isinstance(pending, dict):
+        return
+    pending[task_id] = task
+
+    def _cleanup(_task: asyncio.Task[None]) -> None:
+        pending.pop(task_id, None)
+
+    task.add_done_callback(_cleanup)
+
+
+async def _queue_gate_action(
+    *,
+    tenant_id: str,
+    action: str,
+    context: dict[str, Any],
+    request_id: str,
+    execute: callable,
+) -> None:
+    gate = app.state.orchestrator.approval_gate
+    sink = lambda event: _approval_event_sink(tenant_id=tenant_id, event=event)
+
+    async def _run() -> None:
+        try:
+            await gate.check(
+                action=action,
+                context={**context, "tenant_id": tenant_id, "event_sink": sink},
+                action_id=request_id,
+            )
+        except ApprovalDeniedError as exc:
+            await _emit_analytics_event(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": "approval_denied",
+                    "request_id": request_id,
+                    "reason": getattr(exc, "reason", "denied"),
+                }
+            )
+            return
+        try:
+            await execute()
+        except Exception as exc:  # pragma: no cover - best-effort background guard
+            await _emit_analytics_event(
+                {
+                    "tenant_id": tenant_id,
+                    "event_type": "state_change",
+                    "state": "gate_action_failed",
+                    "request_id": request_id,
+                    "error": str(exc),
+                }
+            )
+
+    task = asyncio.create_task(_run())
+    _track_gate_task(request_id, task)
 
 
 app.state.webchat_app = mount_webchat(app, path="/webchat")

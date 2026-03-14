@@ -12,6 +12,8 @@ from jwt import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from archon.config import ArchonConfig, load_archon_config
+
 TierName = Literal["free", "growth", "business", "enterprise"]
 SUPPORTED_TIERS: set[str] = {"free", "growth", "business", "enterprise"}
 
@@ -35,10 +37,25 @@ class AuthSettings:
     audience: str | None = None
 
     @classmethod
-    def from_env(cls) -> "AuthSettings":
+    def from_env(cls, config: ArchonConfig | None = None) -> "AuthSettings":
         defaults = cls()
+        env_secret = str(os.getenv("ARCHON_JWT_SECRET", "")).strip()
+        if not env_secret:
+            if config is None:
+                config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
+                try:
+                    config = load_archon_config(config_path)
+                except Exception:
+                    config = None
+            config_secret = (
+                str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
+                if config is not None
+                else ""
+            )
+        else:
+            config_secret = ""
         return cls(
-            secret=str(os.getenv("ARCHON_JWT_SECRET", defaults.secret)).strip() or defaults.secret,
+            secret=(env_secret or config_secret or defaults.secret),
             algorithm=(
                 str(os.getenv("ARCHON_JWT_ALGORITHM", defaults.algorithm)).strip()
                 or defaults.algorithm

@@ -90,6 +90,14 @@ class FederationConfig(BaseModel):
     peers: list[FederationPeerConfig] = Field(default_factory=list)
 
 
+class AuthConfig(BaseModel):
+    """JWT auth configuration shared across CLI and server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    jwt_secret: str | None = None
+
+
 class ArchonConfig(BaseModel):
     """Top-level ARCHON runtime configuration."""
 
@@ -97,6 +105,7 @@ class ArchonConfig(BaseModel):
 
     byok: ByokConfig = Field(default_factory=ByokConfig)
     federation: FederationConfig = Field(default_factory=FederationConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 def resolve_config_path(path: str | Path = "config.archon.yaml") -> Path:
