@@ -1,11 +1,11 @@
 # SESSION_HANDOFF
 
 ## Snapshot
-- Date: 2026-03-08
+- Date: 2026-03-14
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Sprint status: Prompts 1-46 built
-- Verification: full suite passing from `C:\Users\visha` (`pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> 612 passed, 9 skipped)
+- Sprint status: Prompts 1-46 built + domain sector skills added
+- Verification: full suite passing (`python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80` -> 729 passed, 9 skipped, coverage 80.81%)
 
 ## Post-Sprint Fixes
 - Global installer now prioritizes `%LOCALAPPDATA%\Programs\Archon\bin` ahead of stale Python `Scripts` launchers, and prints the direct shim path for immediate use in the current shell.
@@ -13,6 +13,10 @@
 - Mobile background sync is now implemented with silent push wakeups, device registration, tenant-safe incremental sync feed, persisted watermarks/backoff state, and offline queue replay.
 - Studio shell no longer loads blank pages: browser-executable assets are shipped, Studio API calls use the same JWT token pattern as Console, and the dashboard defaults to a less technical civilian operations view.
 - Validation, installer, and test harnesses are now hardened for Windows cwd/path edge cases: config resolution falls back to repo root, onboarding metadata / legacy budget config shapes validate cleanly, frontend/mobile contract tests resolve paths from the repo, and pytest no longer depends on the broken sandbox `tmp_path` temp root.
+- Federation endpoints now enforce auth before request body validation to return 401 on missing auth instead of 422 validation errors.
+- Runtime installer handles non-UTF-8 shell profiles and honors `HOME` on non-Windows platforms.
+- Domain sector skills registry added under `archon/agents/domain` with 8 sector agents and workflows.
+- `archon/elon.md` added as master orchestrator profile.
 
 ## Incremental Verification
 - `pytest archon/tests/test_mobile_sync.py archon/tests/test_mobile_background_sync_contracts.py archon/tests/test_notifications.py -q` -> passed
@@ -20,6 +24,11 @@
 - `pytest archon/tests/test_web_shell_contracts.py tests/test_api_server.py::test_dashboard_and_studio_shells_are_public_but_studio_api_stays_protected -q` -> passed
 - `pytest tests/test_global_installer.py -q` -> 10 passed
 - `pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> 612 passed, 9 skipped
+- `python -m pytest tests/test_federation_api.py tests/test_global_installer.py -q -x` -> 25 passed
+- `python -m pytest archon/tests/test_namespace_exports.py -q` -> 6 passed
+- `ruff check .` -> passed
+- `ruff format --check .` -> 283 files already formatted
+- `python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80` -> 729 passed, 9 skipped, coverage 80.81%
 
 ## Built ✅ (46 Items)
 1. Debate orchestration runtime (`Orchestrator` + `DebateEngine`) with streaming support.
@@ -68,6 +77,7 @@
 44. Marketplace payout orchestration and reporting (`archon/marketplace/payout_orchestrator.py`, `archon/archon_cli.py`) with monthly batch cycles, developer earnings/payout APIs, partner revenue reports, and payout CLI commands.
 45. Mobile background sync + silent push refresh (`archon/mobile/sync_store.py`, `archon/interfaces/webchat/server.py`, `archon/interfaces/mobile/useARCHONMobile.ts`, `archon/notifications/push.py`) with device registration, incremental sync, watermark recovery, and offline replay.
 46. Studio/dashboard polish + launcher/path hardening (`archon/interfaces/web/studio/*`, `archon/interfaces/web/dashboard/src/App.jsx`, `tools/install_archon.py`, `archon/config.py`, `archon/validate_config.py`) with blank-page fix, civilian dashboard mode, repo-root config fallback, and clearer global-install launcher guidance.
+47. Domain sector agents (`archon/agents/domain/*`) with workflows for real estate, legal, finance/CFO, HR ops, growth marketing, healthcare admin, logistics, and education.
 
 ## Pending
 - Marketplace: agent sandboxing security audit
@@ -78,7 +88,7 @@
 
 ## NEXT CODEX PROMPT
 Continue building ARCHON on Windows. All 46 modules are complete.
-Current verification baseline: `pytest C:\Users\visha\archon\tests C:\Users\visha\archon\archon\tests -q --maxfail=8` -> `612 passed, 9 skipped`.
+Current verification baseline: `python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80` -> `729 passed, 9 skipped`, coverage `80.81%`.
 
 Next sprint: Studio Deploy Flow + Launcher Cleanup
 
