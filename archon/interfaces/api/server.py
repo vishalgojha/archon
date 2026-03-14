@@ -1,9 +1,9 @@
 """FastAPI server entrypoint for ARCHON runtime APIs."""
 
 import ast
-import io
 import asyncio
 import importlib.util
+import io
 import json
 import os
 import secrets
@@ -3296,7 +3296,8 @@ async def _queue_gate_action(
     execute: callable,
 ) -> None:
     gate = app.state.orchestrator.approval_gate
-    sink = lambda event: _approval_event_sink(tenant_id=tenant_id, event=event)
+    def sink(event: dict[str, Any]) -> None:
+        _approval_event_sink(tenant_id=tenant_id, event=event)
 
     async def _run() -> None:
         try:
