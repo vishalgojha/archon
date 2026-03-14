@@ -181,6 +181,7 @@ class RateLimiter:
             return
         self.store.delete(tenant_id)
 
+
 _JWT_SECRET_CACHE: str | None = None
 
 

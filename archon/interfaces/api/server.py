@@ -574,7 +574,9 @@ _exempt_path_prefixes = {
 }
 app.add_middleware(
     AuthMiddleware,
-    settings=AuthSettings.from_env(load_archon_config(os.getenv("ARCHON_CONFIG", "config.archon.yaml"))),
+    settings=AuthSettings.from_env(
+        load_archon_config(os.getenv("ARCHON_CONFIG", "config.archon.yaml"))
+    ),
     exempt_paths=_exempt_paths,
     exempt_path_prefixes=_exempt_path_prefixes,
 )
@@ -1640,7 +1642,11 @@ async def studio_briefing_export(
 
     async def execute() -> None:
         content, content_type = _render_briefing_pdf(payload.briefing)
-        filename = f"archon-briefing-{request_id}.pdf" if content_type == "application/pdf" else f"archon-briefing-{request_id}.txt"
+        filename = (
+            f"archon-briefing-{request_id}.pdf"
+            if content_type == "application/pdf"
+            else f"archon-briefing-{request_id}.txt"
+        )
         exports[request_id] = {
             "bytes": content,
             "content_type": content_type,
@@ -1694,7 +1700,7 @@ async def studio_briefing_export_download(
     return StreamingResponse(
         io.BytesIO(content),
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -3121,7 +3127,9 @@ def _workflow_to_payload(workflow: WorkflowDefinition) -> dict[str, Any]:
     }
 
 
-def _team_to_workflow(payload: StudioTeamRequest, *, team_id: str | None = None) -> WorkflowDefinition:
+def _team_to_workflow(
+    payload: StudioTeamRequest, *, team_id: str | None = None
+) -> WorkflowDefinition:
     """Convert a team config into a Studio workflow wrapper.
 
     Example:
@@ -3271,7 +3279,9 @@ async def _approval_event_sink(*, tenant_id: str, event: dict[str, Any]) -> None
             sync_store.record_event(
                 tenant_id=tenant_id,
                 event_type="approval_required",
-                payload={"request_id": str(event.get("request_id") or event.get("action_id") or "")},
+                payload={
+                    "request_id": str(event.get("request_id") or event.get("action_id") or "")
+                },
             )
 
 
@@ -3296,6 +3306,7 @@ async def _queue_gate_action(
     execute: callable,
 ) -> None:
     gate = app.state.orchestrator.approval_gate
+
     def sink(event: dict[str, Any]) -> None:
         _approval_event_sink(tenant_id=tenant_id, event=event)
 
