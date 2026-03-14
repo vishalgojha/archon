@@ -1053,9 +1053,9 @@ def _marketplace_period_bounds(period: str) -> tuple[float, float]:
     return start.timestamp(), end.timestamp()
 
 
-def _marketplace_runtime() -> tuple[
-    PartnerRegistry, RevenueShareLedger, PayoutQueue, PayoutOrchestrator
-]:
+def _marketplace_runtime() -> (
+    tuple[PartnerRegistry, RevenueShareLedger, PayoutQueue, PayoutOrchestrator]
+):
     registry = PartnerRegistry(path=os.getenv("ARCHON_PARTNERS_DB", "archon_partners.sqlite3"))
     revenue_db = os.getenv("ARCHON_MARKETPLACE_REVENUE_DB", "archon_marketplace_revenue.sqlite3")
     queue = PayoutQueue(
