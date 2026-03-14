@@ -8,10 +8,11 @@ import sqlite3
 import time
 import uuid
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Iterator
 
 DEFAULT_SQLITE_PATH = "archon_webchat.sqlite3"
 MAX_HISTORY_MESSAGES = 200
@@ -450,11 +451,19 @@ class SQLiteSessionStore(AbstractSessionStore):
 
         return await asyncio.to_thread(self._prune_stale_sessions_sync, max_age_seconds)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(str(self.path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sqlite3
+from contextlib import closing
 from typing import Any
 
 import httpx
@@ -107,7 +108,7 @@ class Embedder:
             return [self._zero_vector() for _ in texts]
 
     def _ensure_cache_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS embedding_cache (
@@ -121,7 +122,7 @@ class Embedder:
 
     def _load_cache(self, text: str) -> list[float] | None:
         text_hash = _hash_text(text)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
                 "SELECT vector_json FROM embedding_cache WHERE text_hash = ?",
                 (text_hash,),
@@ -138,7 +139,7 @@ class Embedder:
     def _store_cache(self, text: str, vector: list[float]) -> None:
         text_hash = _hash_text(text)
         vector_json = json.dumps(vector, separators=(",", ":"))
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 INSERT INTO embedding_cache (text_hash, vector_json)

@@ -38,3 +38,5 @@ ai-terminal/node_modules/
 ai-terminal/.env
 ai-terminal/.ai-terminal-state.json
 validate-config-*.yaml
+*.bak
+*.bak.*

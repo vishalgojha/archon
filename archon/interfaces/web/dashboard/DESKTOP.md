@@ -34,9 +34,9 @@ If the window keeps respawning / multiple blank windows:
 ## If you must use WSL/Linux
 
 Ubuntu 24.04 ships WebKitGTK **4.1** packages, not 4.0, so Tauri v1 will fail with missing
-`javascriptcoregtk-4.0.pc`.
+`javascriptcoregtk-4.0.pc`. This includes WSL2 Ubuntu 24.04.
 
 Use one of:
 
-- WSL Ubuntu **22.04** (Jammy), which provides the needed `*-4.0-dev` packages, or
+- Ubuntu **22.04** (Jammy) for Linux builds (native or WSL), which provides the needed `*-4.0-dev` packages.
 - Upgrade the wrapper to Tauri v2 (not currently wired here).

@@ -6,12 +6,13 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date as date_cls
 from datetime import datetime, timezone
 from datetime import time as time_cls
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 @dataclass(slots=True, frozen=True)
@@ -439,11 +440,19 @@ class AnalyticsAggregator:
             raise ValueError("end must be >= start")
         return start_ts, end_ts
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.path), timeout=30.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def _safe_json_dict(payload: str) -> dict[str, Any]:

@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -95,7 +96,7 @@ class MemoryStore:
             embedding=list(vector),
             metadata=dict(metadata or {}),
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 INSERT INTO episodic_memory (
@@ -176,7 +177,7 @@ class MemoryStore:
             supporting_memory_ids=[str(item) for item in supporting_ids],
             timestamp=time.time(),
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 INSERT INTO causal_chains (
@@ -215,7 +216,7 @@ class MemoryStore:
             if tenant_id is not None:
                 where += " AND tenant_id = ?"
                 params.append(tenant_id)
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     f"""
@@ -242,7 +243,7 @@ class MemoryStore:
     ) -> list[EpisodicMemory]:
         """Return most recent session memories (non-forgotten)."""
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             params: list[Any] = [str(session_id)]
             where = "session_id = ? AND forgotten = 0"
@@ -264,7 +265,7 @@ class MemoryStore:
     def forget(self, memory_id: str) -> None:
         """Soft-delete memory by marking forgotten and dropping from active index."""
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 "UPDATE episodic_memory SET forgotten = 1 WHERE memory_id = ?",
                 (str(memory_id),),
@@ -291,7 +292,7 @@ class MemoryStore:
             limit_clause = " LIMIT ?"
             params.append(max(1, int(limit)))
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -435,7 +436,7 @@ class MemoryStore:
             vector = [0.0 for _ in range(max(1, dim))]
 
         replaced = False
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
                 "SELECT 1 FROM episodic_memory WHERE memory_id = ?",
                 (memory_id,),
@@ -491,7 +492,7 @@ class MemoryStore:
         return True, "replaced" if replaced else "imported"
 
     def _ensure_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS episodic_memory (
@@ -530,7 +531,7 @@ class MemoryStore:
             conn.commit()
 
     def _hydrate_vector_index(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -559,7 +560,7 @@ class MemoryStore:
             return {}
         placeholders = ",".join(["?"] * len(memory_ids))
         params = [tenant_id, *memory_ids]
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""

@@ -995,6 +995,7 @@
     const [desktopStatus, setDesktopStatus] = useState(tauriInvoke ? "STARTING" : "");
     const [desktopBusy, setDesktopBusy] = useState(false);
     const [desktopError, setDesktopError] = useState("");
+    const [desktopNotice, setDesktopNotice] = useState("");
 
     const [bearerToken, setBearerToken] = useState("");
     const [showDevAuth, setShowDevAuth] = useState(false);
@@ -1482,7 +1483,20 @@
       }
     };
 
-    const handleApprovalDecision = (item, decision) => {
+    const handleLaunchArchonEz = async () => {
+        if (!tauriInvoke || desktopBusy) {
+          return;
+        }
+        setDesktopNotice("Launching Archon EZ...");
+        try {
+          await tauriInvoke("launch_archon_ez");
+          setDesktopNotice("Archon EZ launched.");
+        } catch (error) {
+          setDesktopNotice(String(error?.message || "Launch failed."));
+        }
+      };
+
+      const handleApprovalDecision = (item, decision) => {
       const requestId = String(item?.request_id || item?.action_id || "").trim();
       if (!requestId) {
         return;
@@ -3185,19 +3199,30 @@
               <div className="archon-connection-pill">
                 <span>{desktopStatus || ""}</span>
                 {desktopError ? <span className="archon-subtle">{desktopError}</span> : null}
+                {desktopNotice ? <span className="archon-subtle">{desktopNotice}</span> : null}
               </div>
             ) : null}
           </div>
           <div className="archon-topbar-actions">
             {tauriInvoke ? (
-              <button
-                type="button"
-                className="archon-button"
-                onClick={handleDesktopStartStop}
-                disabled={desktopBusy}
-              >
-                {desktopStatus === "RUNNING" ? "Stop Core" : "Start Core"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="archon-button"
+                  onClick={handleDesktopStartStop}
+                  disabled={desktopBusy}
+                >
+                  {desktopStatus === "RUNNING" ? "Stop Core" : "Start Core"}
+                </button>
+                <button
+                  type="button"
+                  className="archon-button"
+                  onClick={handleLaunchArchonEz}
+                  disabled={desktopBusy}
+                >
+                  Launch Archon EZ
+                </button>
+              </>
             ) : null}
             <button type="button" className="archon-button" onClick={() => setShowDevAuth(true)}>
               Dev Auth
