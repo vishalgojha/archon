@@ -1,5 +1,7 @@
 """Domain skill registry for ARCHON sector agents."""
 
+from archon.agents.community.community_agent import CommunityAgent, SignalDetector
+from archon.agents.content.content_agent import ContentAgent, SEOOptimizer
 from archon.agents.domain.education.skill import EducationAgent
 from archon.agents.domain.finance_cfo.skill import FinanceCFOAgent
 from archon.agents.domain.growth_marketing.skill import GrowthMarketingAgent
@@ -20,4 +22,18 @@ SKILL_REGISTRY: dict[str, type] = {
     "education": EducationAgent,
 }
 
-__all__ = ["SKILL_REGISTRY"]
+__all__ = [
+    "CommunityAgent",
+    "ContentAgent",
+    "EducationAgent",
+    "FinanceCFOAgent",
+    "GrowthMarketingAgent",
+    "HealthcareAdminAgent",
+    "HROpsAgent",
+    "LegalAgent",
+    "LogisticsAgent",
+    "RealEstateAgent",
+    "SEOOptimizer",
+    "SignalDetector",
+    "SKILL_REGISTRY",
+]

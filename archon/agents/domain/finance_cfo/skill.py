@@ -46,7 +46,7 @@ class FinanceCFOAgent(BaseAgent):
             'finance_cfo'
         """
 
-        prompt = f"Goal: {goal}\n" f"Context: {context}\n" f"{SYSTEM_PROMPT}"
+        prompt = f"Goal: {goal}\nContext: {context}\n{SYSTEM_PROMPT}"
         response = await self.ask_model(
             prompt,
             task_id=task_id,
