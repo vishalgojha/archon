@@ -1,0 +1,104 @@
+[
+  {
+    "workflow_id": "logistics_dispatch_brief",
+    "name": "Generate daily dispatch briefing",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "logistics",
+        "action": "parse_orders",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "logistics",
+        "action": "flag_delays",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "logistics",
+        "action": "output_brief",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "logistics",
+      "icon": "🚚",
+      "description": "Daily dispatch briefing with delay flags."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  },
+  {
+    "workflow_id": "logistics_vendor_followup",
+    "name": "Draft vendor follow-up messages",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "logistics",
+        "action": "extract_pending",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "logistics",
+        "action": "rank_urgency",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "logistics",
+        "action": "draft_messages",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "logistics",
+      "icon": "📦",
+      "description": "Escalation-aware vendor follow-up drafts."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  },
+  {
+    "workflow_id": "logistics_reorder_alert",
+    "name": "Generate inventory reorder alerts",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "logistics",
+        "action": "parse_inventory",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "logistics",
+        "action": "compute_reorder",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "logistics",
+        "action": "output_alerts",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "logistics",
+      "icon": "📣",
+      "description": "Reorder point alerts for inventory teams."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  }
+]

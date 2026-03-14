@@ -1,47 +1,23 @@
-"""Domain-specific agent surfaces."""
+"""Domain skill registry for ARCHON sector agents."""
 
-from archon.agents.community.community_agent import (
-    ActionResult,
-    CommunityAgent,
-    CommunityPost,
-    DetectionResult,
-    DraftResponse,
-    HNCollector,
-    RedditCollector,
-    ResponseComposer,
-    RSSCollector,
-    SignalDetector,
-)
-from archon.agents.content.content_agent import (
-    ContentAgent,
-    ContentBrief,
-    ContentPiece,
-    ContentScheduler,
-    OptimizedPiece,
-    PublishingQueue,
-    PublishResult,
-    PublishTarget,
-    SEOOptimizer,
-)
+from archon.agents.domain.education.skill import EducationAgent
+from archon.agents.domain.finance_cfo.skill import FinanceCFOAgent
+from archon.agents.domain.growth_marketing.skill import GrowthMarketingAgent
+from archon.agents.domain.healthcare_admin.skill import HealthcareAdminAgent
+from archon.agents.domain.hr_ops.skill import HROpsAgent
+from archon.agents.domain.legal.skill import LegalAgent
+from archon.agents.domain.logistics.skill import LogisticsAgent
+from archon.agents.domain.real_estate.skill import RealEstateAgent
 
-__all__ = [
-    "ActionResult",
-    "CommunityAgent",
-    "CommunityPost",
-    "ContentAgent",
-    "ContentBrief",
-    "ContentPiece",
-    "ContentScheduler",
-    "DetectionResult",
-    "DraftResponse",
-    "HNCollector",
-    "OptimizedPiece",
-    "PublishingQueue",
-    "PublishResult",
-    "PublishTarget",
-    "RSSCollector",
-    "RedditCollector",
-    "ResponseComposer",
-    "SEOOptimizer",
-    "SignalDetector",
-]
+SKILL_REGISTRY: dict[str, type] = {
+    "real_estate": RealEstateAgent,
+    "legal": LegalAgent,
+    "finance_cfo": FinanceCFOAgent,
+    "hr_ops": HROpsAgent,
+    "growth_marketing": GrowthMarketingAgent,
+    "healthcare_admin": HealthcareAdminAgent,
+    "logistics": LogisticsAgent,
+    "education": EducationAgent,
+}
+
+__all__ = ["SKILL_REGISTRY"]

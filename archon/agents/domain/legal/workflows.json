@@ -1,0 +1,104 @@
+[
+  {
+    "workflow_id": "legal_contract_review",
+    "name": "Review and flag contract risks",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "legal",
+        "action": "parse_contract",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "legal",
+        "action": "flag_risks",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "legal",
+        "action": "output_summary",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "legal",
+      "icon": "⚖️",
+      "description": "Summarize contracts with red/amber/green risks."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  },
+  {
+    "workflow_id": "legal_notice_draft",
+    "name": "Draft legal notice",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "legal",
+        "action": "extract_facts",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "legal",
+        "action": "identify_statute",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "legal",
+        "action": "draft_notice",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "legal",
+      "icon": "📄",
+      "description": "Generate statutory notice drafts for advocate review."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  },
+  {
+    "workflow_id": "legal_compliance_check",
+    "name": "Run compliance checklist",
+    "steps": [
+      {
+        "step_id": "s1",
+        "agent": "legal",
+        "action": "identify_act",
+        "config": {},
+        "dependencies": []
+      },
+      {
+        "step_id": "s2",
+        "agent": "legal",
+        "action": "generate_checklist",
+        "config": {},
+        "dependencies": ["s1"]
+      },
+      {
+        "step_id": "s3",
+        "agent": "legal",
+        "action": "gap_analysis",
+        "config": {},
+        "dependencies": ["s2"]
+      }
+    ],
+    "metadata": {
+      "sector": "legal",
+      "icon": "✅",
+      "description": "Check compliance readiness against Indian acts."
+    },
+    "version": 1,
+    "created_at": 1700000000
+  }
+]

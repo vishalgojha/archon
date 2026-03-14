@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi.errors import RateLimitExceeded
@@ -356,6 +356,8 @@ async def lifespan(app: FastAPI):
     secret = str(os.getenv("ARCHON_JWT_SECRET", "")).strip()
     if not secret:
         secret = str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
+    if not secret and os.getenv("PYTEST_CURRENT_TEST"):
+        secret = "archon-dev-secret-change-me-32-bytes"
     if not secret:
         secret = secrets.token_urlsafe(48)
         os.environ["ARCHON_JWT_SECRET"] = secret
@@ -1770,13 +1772,15 @@ async def studio_run_ws(websocket: WebSocket, run_id: str) -> None:
         return
 
 
-@app.post("/federation/announce")
+async def _require_federation_auth_dependency(request: Request) -> None:
+    await _require_federation_auth(request)
+
+
+@app.post("/federation/announce", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_announce(
     payload: FederationAnnounceRequest, request: Request
 ) -> dict[str, Any]:
     """Receive federation announce payload and upsert peer entry."""
-
-    await _require_federation_auth(request)
     actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
     if actor and payload.peer_id and str(payload.peer_id).strip() != actor:
         raise HTTPException(
@@ -1812,11 +1816,9 @@ async def federation_announce(
     return {"status": "ok", "peer_id": normalized.peer_id}
 
 
-@app.get("/federation/peers")
+@app.get("/federation/peers", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_peers(request: Request, capability: str | None = None) -> dict[str, Any]:
     """List known federation peers."""
-
-    await _require_federation_auth(request)
     peer_registry: PeerRegistry = app.state.peer_registry
     peers = await peer_registry.discover(capability)
     return {
@@ -1834,11 +1836,9 @@ async def federation_peers(request: Request, capability: str | None = None) -> d
     }
 
 
-@app.post("/federation/patterns")
+@app.post("/federation/patterns", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_patterns(payload: dict[str, Any], request: Request) -> dict[str, Any]:
     """Receive and store a federated workflow pattern payload."""
-
-    await _require_federation_auth(request)
     sharer: PatternSharer = app.state.pattern_sharer
     try:
         stored = await sharer.receive(payload)
@@ -1864,11 +1864,9 @@ async def federation_patterns(payload: dict[str, Any], request: Request) -> dict
     }
 
 
-@app.get("/federation/patterns")
+@app.get("/federation/patterns", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_patterns_list(request: Request, limit: int = 50) -> dict[str, Any]:
     """List stored federated workflow patterns (best-effort, in-memory)."""
-
-    await _require_federation_auth(request)
     sharer: PatternSharer = app.state.pattern_sharer
     patterns = list(sharer.pattern_store.patterns.values())
     patterns.sort(key=lambda row: row.sample_count, reverse=True)
@@ -1888,13 +1886,11 @@ async def federation_patterns_list(request: Request, limit: int = 50) -> dict[st
     }
 
 
-@app.post("/federation/consensus")
+@app.post("/federation/consensus", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_consensus(
     payload: FederationConsensusRequest, request: Request
 ) -> dict[str, Any]:
     """Return a local vote for a consensus request (heuristic baseline)."""
-
-    await _require_federation_auth(request)
     actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
     if actor and str(payload.requester_id).strip() != actor:
         raise HTTPException(status_code=422, detail="Federation actor does not match requester_id.")
@@ -1912,11 +1908,9 @@ async def federation_consensus(
     return {"option": choice, "reasoning": "baseline_heuristic:first_option"}
 
 
-@app.post("/federation/tasks/bid")
+@app.post("/federation/tasks/bid", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_bid(payload: FederationTaskRequest, request: Request) -> dict[str, Any]:
     """Return local bid for an incoming federated task."""
-
-    await _require_federation_auth(request)
     actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
     if actor and str(payload.requester_instance_id).strip() != actor:
         raise HTTPException(
@@ -1950,14 +1944,12 @@ async def federation_bid(payload: FederationTaskRequest, request: Request) -> di
     return bid
 
 
-@app.post("/federation/tasks/execute")
+@app.post("/federation/tasks/execute", dependencies=[Depends(_require_federation_auth_dependency)])
 async def federation_execute(
     payload: FederationTaskRequest,
     request: Request,
 ) -> StreamingResponse:
     """Execute federated task locally and stream result tokens back to requester."""
-
-    await _require_federation_auth(request)
     actor = str(getattr(getattr(request, "state", None), "federation_peer_id", "") or "").strip()
     if actor and str(payload.requester_instance_id).strip() != actor:
         raise HTTPException(

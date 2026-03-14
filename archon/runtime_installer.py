@@ -395,7 +395,11 @@ def _broadcast_environment_change() -> None:
 
 
 def _shell_profile_candidates() -> list[Path]:
-    home = Path.home()
+    if _is_windows_platform(sys.platform):
+        home = Path.home()
+    else:
+        env_home = str(os.environ.get("HOME", "")).strip()
+        home = Path(env_home).expanduser() if env_home else Path.home()
     shell_name = Path(os.environ.get("SHELL", "")).name.lower()
     candidates: list[Path] = []
 
@@ -451,8 +455,20 @@ def _strip_archon_path_block(content: str) -> str:
     return stripped.strip("\n")
 
 
+def _read_profile_text(profile_path: Path) -> str:
+    if not profile_path.exists():
+        return ""
+    try:
+        return profile_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            return profile_path.read_text(encoding="utf-16")
+        except UnicodeDecodeError:
+            return profile_path.read_text(encoding="latin-1")
+
+
 def _upsert_archon_path_block(profile_path: Path, bin_dir: Path, *, dry_run: bool = False) -> bool:
-    existing = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+    existing = _read_profile_text(profile_path)
     base = _strip_archon_path_block(existing)
     block = _render_posix_path_block(bin_dir).rstrip("\n")
     next_content = f"{base}\n\n{block}\n" if base else f"{block}\n"
@@ -466,7 +482,7 @@ def _upsert_archon_path_block(profile_path: Path, bin_dir: Path, *, dry_run: boo
 def _remove_archon_path_block(profile_path: Path, *, dry_run: bool = False) -> bool:
     if not profile_path.exists():
         return False
-    existing = profile_path.read_text(encoding="utf-8")
+    existing = _read_profile_text(profile_path)
     trimmed = _strip_archon_path_block(existing)
     next_content = f"{trimmed}\n" if trimmed else ""
     if next_content == existing:
