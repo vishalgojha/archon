@@ -31,14 +31,14 @@ def test_studio_shell_uses_executable_js_assets_and_token_gate() -> None:
 
 def test_dashboard_shell_wires_live_mission_control_and_studio() -> None:
     source = (
-        _REPO_ROOT / "archon" / "interfaces" / "web" / "dashboard" / "src" / "App.jsx"
+        _REPO_ROOT / "archon" / "interfaces" / "web" / "dashboard" / "src" / "AgentOS.jsx"
     ).read_text(encoding="utf-8")
 
     assert "window.useARCHONContext" in source
     assert "fetch(`${apiBase}/studio/workflows`" in source
     assert "fetch(`${apiBase}/studio/run`" in source
     assert "new WebSocket(url)" in source
-    assert "Agent Canvas" in source
+    assert "Live Agent Pod" in source
     assert "Approvals" in source
-    assert "Live Feed" in source
-    assert "Run Now" in source
+    assert "Live Agent Pod" in source
+    assert "Run Selected" in source
