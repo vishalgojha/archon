@@ -93,7 +93,7 @@ def render_screen(
                 [
                     "ARCHON just came online.",
                     "Type the goal you want solved and the agent swarm will respond here.",
-                    "Use /mode growth for GTM work, /mode debate for analysis, and /context "
+                    "Use /mode debate for analysis, and /context "
                     '{"market":"India"} to pin session context.',
                 ],
                 width=width,
@@ -105,7 +105,7 @@ def render_screen(
                 "Commands",
                 [
                     "/help",
-                    "/mode <debate|growth|auto>",
+                    "/mode <debate>",
                     "/context <json-object>",
                     "/clear-context",
                     "/live <on|off>",

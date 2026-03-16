@@ -30,8 +30,7 @@ class BillingPlan:
 
 PLAN_CATALOG: dict[str, BillingPlan] = {
     "free": BillingPlan("free", "Free", 0.0, 5.0, 50, 0.05),
-    "growth": BillingPlan("growth", "Growth", 49.0, 25.0, 500, 0.02),
-    "business": BillingPlan("business", "Business", 199.0, 100.0, 5000, 0.01),
+    "pro": BillingPlan("pro", "Pro", 49.0, 25.0, 500, 0.02),
     "enterprise": BillingPlan("enterprise", "Enterprise", 999.0, 500.0, 50000, 0.005),
 }
 
@@ -40,7 +39,7 @@ def get_plan(plan_id: str) -> BillingPlan:
     """Return one plan by id.
 
     Example:
-        >>> get_plan("growth").base_monthly_usd
+        >>> get_plan("pro").base_monthly_usd
         49.0
     """
 
@@ -55,10 +54,10 @@ def list_plans() -> list[BillingPlan]:
 
     Example:
         >>> [plan.plan_id for plan in list_plans()]
-        ['free', 'growth', 'business', 'enterprise']
+        ['free', 'pro', 'enterprise']
     """
 
-    return [PLAN_CATALOG[key] for key in ("free", "growth", "business", "enterprise")]
+    return [PLAN_CATALOG[key] for key in ("free", "pro", "enterprise")]
 
 
 @dataclass(slots=True)

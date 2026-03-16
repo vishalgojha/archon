@@ -70,26 +70,6 @@ class ByokConfig(BaseModel):
     custom_endpoints: list[CustomEndpointConfig] = Field(default_factory=list)
 
 
-class FederationPeerConfig(BaseModel):
-    """Federation peer config entry."""
-
-    model_config = ConfigDict(extra="allow")
-
-    address: str
-    peer_id: str | None = None
-    capabilities: list[str] = Field(default_factory=list)
-    version: str | None = None
-    public_key: str | None = None
-
-
-class FederationConfig(BaseModel):
-    """Federation configuration."""
-
-    model_config = ConfigDict(extra="allow")
-
-    peers: list[FederationPeerConfig] = Field(default_factory=list)
-
-
 class AuthConfig(BaseModel):
     """JWT auth configuration shared across CLI and server."""
 
@@ -104,7 +84,6 @@ class ArchonConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     byok: ByokConfig = Field(default_factory=ByokConfig)
-    federation: FederationConfig = Field(default_factory=FederationConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
 
 

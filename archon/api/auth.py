@@ -18,7 +18,7 @@ TierName = Literal["free", "pro", "enterprise"]
 TOKEN_TYPE = "tenant"
 ALGORITHM = "HS256"
 TIER_RATE_LIMITS: dict[TierName, int] = {"free": 10, "pro": 100, "enterprise": 1000}
-_FREE_BLOCKED_FEATURES = {"vision", "federation"}
+_FREE_BLOCKED_FEATURES: set[str] = set()
 
 
 class TenantTokenError(ValueError):
@@ -52,7 +52,7 @@ class TenantContext:
         return f"tenant/{self.tenant_id}/keys"
 
     def can_use_feature(self, feature: str) -> bool:
-        """Feature gate. Example: `TenantContext('t','free',10).can_use_feature('vision')`."""
+        """Feature gate. Example: `TenantContext('t','free',10).can_use_feature('ui_pack')`."""
 
         normalized = feature.strip().lower()
         if self.tier == "free" and normalized in _FREE_BLOCKED_FEATURES:

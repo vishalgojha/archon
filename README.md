@@ -5,9 +5,10 @@ Autonomous Recursive Cognitive Hierarchy Orchestration Network.
 This repository bootstraps the ARCHON runtime with:
 
 - A provider-agnostic BYOK router (cloud, local, OpenAI-compatible custom endpoints)
-- Phase 1 swarm core (orchestrator, debate engine, base agents, cost governor)
+- Debate-mode orchestration core (orchestrator, debate engine, base agents, cost governor)
 - FastAPI + WebSocket service entrypoint
-- Config validation command and unit tests
+- CLI + TUI control plane with config validation
+- Memory, evolution, and UI pack shell support
 
 ## Quick Start
 
@@ -92,10 +93,10 @@ python -m archon.validate_config
 5. Start API server:
 
 ```powershell
-archon serve
+archon ops serve
 ```
 
-You can still use `archon-server`, but `archon serve` is now the primary CLI entrypoint.
+You can also run the dedicated server shim via `archon-server`.
 
 ## CLI
 
@@ -106,20 +107,14 @@ renders drawers for:
 
 - `core`
 - `agents`
-- `growth`
-- `vision`
-- `web`
 - `memory`
 - `evolve`
-- `federation`
 - `providers`
-- `marketplace`
-- `studio`
 - `ops`
 
 That root surface is for capability discovery and navigation. The interactive chat
-launcher is a separate path: use `archon tui` or `archon agents tui` when you want
-the transcript-driven terminal session.
+launcher lives under `archon core chat` or `archon agents tui` when you want the
+transcript-driven terminal session.
 
 Example commands:
 
@@ -127,41 +122,35 @@ Example commands:
 archon
 archon core
 archon agents
+archon memory
+archon evolve
 archon providers
 archon ops
 archon ops serve
-archon serve --kill-port
-archon dashboard
-archon studio open
-archon agents task "Increase qualified leads in Indian pharmacy SMBs" --mode growth
+archon ops health
+archon agents task "Increase qualified leads in Indian pharmacy SMBs"
+archon agents debate "Find the biggest bottleneck in our lead funnel"
 archon agents tui
-archon debate "Find the biggest bottleneck in our lead funnel"
-archon token create --tenant-id demo --tier pro
+archon core chat
 ```
-
-Direct top-level shortcuts from the legacy CLI are still available for common flows,
-including `archon serve`, `archon health`, `archon task`, `archon debate`, and
-`archon tui`.
 
 Useful entry points:
 
 - `archon` shows the capability drawers and available control surfaces.
-- `archon core chat`, `archon agents tui`, or `archon tui` opens the interactive terminal session.
-- `archon ops serve` or `archon serve` starts the API server.
-- `archon ops health` or `archon health` checks the running server.
-- `archon agents task` or `archon task` sends a task to the running API with tenant JWT auth.
-- `archon dashboard` opens Mission Control.
-- `archon studio open` opens Studio in the browser.
-- `archon debate` and `archon run` execute locally without going through HTTP.
+- `archon core chat` or `archon agents tui` opens the interactive terminal session.
+- `archon ops serve` starts the API server.
+- `archon ops health` checks the running server.
+- `archon agents task` sends a task to the running API with tenant JWT auth.
+- `archon agents debate` executes locally without going through HTTP.
 - Some drawers intentionally expose staged placeholder commands before the full operator flow is wired.
 
-6. Run tasks with explicit orchestration mode:
+6. Run tasks with explicit orchestration mode (debate-only today):
 
 ```json
 POST /v1/tasks
 {
   "goal": "Increase qualified leads in Indian pharmacy SMBs",
-  "mode": "growth",
+  "mode": "debate",
   "context": {
     "market": "India",
     "sector": "pharmacy"
@@ -169,16 +158,7 @@ POST /v1/tasks
 }
 ```
 
-`mode="debate"` (default) runs the adversarial truth swarm.
-`mode="growth"` runs the 7-agent sales/distribution growth swarm.
-
-7. Outbound channels (approval-gated):
-
-- `POST /v1/outbound/email`
-- `POST /v1/outbound/webchat`
-
-Both endpoints enforce JWT auth, per-tier rate limits, and `ApprovalGate` controls.
-Use `auto_approve: true` only for explicit operator-triggered sends.
+`mode="debate"` is the only supported orchestration mode right now, so you can omit it.
 
 ## Architecture (Implemented Runtime)
 
@@ -186,50 +166,23 @@ Use `auto_approve: true` only for explicit operator-triggered sends.
 archon/
 ├── core/
 │   ├── orchestrator.py
+│   ├── debate_engine.py
 │   ├── swarm_router.py
-│   └── growth_router.py
+│   ├── approval_gate.py
+│   └── cost_governor.py
 ├── agents/
-│   ├── (debate agents)
-│   └── growth/ (sales + distribution swarm)
+│   └── (debate agents)
 ├── providers/
-└── interfaces/api/
+├── memory/
+├── evolution/
+├── interfaces/api/
+├── interfaces/cli/
+├── interfaces/web/shell/
+└── ui_packs/
 ```
 
-Beyond the core orchestrator, debate, growth, provider, and API layers, the current
-repo also includes modules for vision, web intelligence, memory, evolution,
-federation, marketplace, notifications, observability, mobile sync, and the Studio
-/ Mission Control web surfaces. Some CLI drawers are still partially staged, but the
-runtime modules are present in the codebase.
-
-## Sales & Distribution Layer (Growth Swarm Spec)
-
-ARCHON now includes a scaffolded Growth Swarm designed for autonomous go-to-market execution.
-This layer is strategy-first and guardrail-constrained: high autonomy, human approval on sensitive actions.
-
-### Growth Swarm Agents
-
-- `ProspectorAgent`: Detects lead intent signals from hiring, review text, and operational pain indicators.
-- `ICPAgent`: Continuously rewrites ICP based on conversion, retention, and value realization data.
-- `OutreachAgent`: Runs multi-channel campaigns (WhatsApp/SMS, email, LinkedIn, in-app, voice).
-- `NurtureAgent`: Triggers contextual follow-ups based on in-product and engagement behaviors.
-- `RevenueIntelAgent`: Diagnoses funnel bottlenecks and proposes interventions with measurable KPIs.
-- `PartnerAgent`: Builds reseller/channel pipelines and manages onboarding + partner enablement.
-- `ChurnDefenseAgent`: Detects churn risk early and executes retention playbooks before cancellation.
-
-### Distribution Channels (Planned Operating Model)
-
-- Viral embed loop via optional `Powered by ARCHON` referral surface.
-- Federation-driven referrals across tenant networks.
-- Marketplace operations (listing creation, optimization, and experiment loops).
-- Multilingual content intelligence targeting automation pain-search queries.
-- Community listening and trust-led engagement in relevant public forums.
-
-### Revenue Guardrails
-
-- Free tier for adoption; upgrades driven by observed value and activation readiness.
-- Growth/Business/Enterprise expansion triggered by funnel evidence, not blanket promotions.
-- Partner economics must remain transparent and auditable.
-- Trust-critical markets require hybrid execution (agent autonomy + local human champions).
+Beyond the core orchestrator, provider, and API layers, the repo includes memory,
+evolution, and the UI pack registry + shell for browser-based operator experiences.
 
 ## BYOK Guarantees
 

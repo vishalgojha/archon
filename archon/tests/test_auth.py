@@ -105,13 +105,8 @@ def test_tenant_context_feature_gating() -> None:
     free_ctx = auth_module.TenantContext("tenant-free", "free", 10)
     enterprise_ctx = auth_module.TenantContext("tenant-ent", "enterprise", 1000)
 
-    assert free_ctx.can_use_feature("vision") is False
-    assert free_ctx.can_use_feature("federation") is False
     assert free_ctx.can_use_feature("debate") is True
-
-    assert enterprise_ctx.can_use_feature("vision") is True
-    assert enterprise_ctx.can_use_feature("federation") is True
-    assert enterprise_ctx.can_use_feature("growth_swarm") is True
+    assert enterprise_ctx.can_use_feature("ui_pack") is True
 
 
 def test_rate_limiter_allows_within_limit_and_blocks_at_limit() -> None:

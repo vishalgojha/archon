@@ -7,6 +7,8 @@ import click
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand, TaskLiveDisplay, approval_prompt
 from archon.cli.copy import DRAWER_COPY
+from archon.core.orchestrator import Orchestrator
+from archon.interfaces.cli.tui import run_agentic_tui
 
 DRAWER_ID = "agents"
 COMMAND_IDS = ("agents.task", "agents.debate", "agents.tui")
@@ -57,7 +59,7 @@ class _Task(ArchonCommand):
         context_file: Path | None,
         timeout_s: float,
     ):
-        effective_mode = session.run_step(0, self.bindings._resolve_mode, mode, goal)
+        effective_mode = "debate"
         context = session.run_step(
             1, self.bindings._parse_context, context_text or None, context_file
         )
@@ -109,10 +111,10 @@ class _Debate(ArchonCommand):
         config = session.run_step(0, self.bindings._load_config, config_path)
         if budget is not None:
             config.byok.budget_per_task_usd = float(budget)
-        effective_mode = self.bindings._resolve_mode(mode, question)
+        effective_mode = "debate"
         orchestrator = session.run_step(
             1,
-            self.bindings.Orchestrator,
+            Orchestrator,
             config=config,
             live_provider_calls=live_providers,
         )
@@ -166,7 +168,7 @@ class _Tui(ArchonCommand):
         )
         onboarding = _build_onboarding(self.bindings)
         session.update_step(2, "running")
-        await self.bindings.run_agentic_tui(
+        await run_agentic_tui(
             config=config,
             initial_mode=mode,
             live_provider_calls=effective_live,
@@ -193,7 +195,7 @@ def build_group(bindings):
 
     @group.command("task", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.argument("goal")
-    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--base-url", default="http://127.0.0.1:8000")
     @click.option("--tenant-id", default="default")
     @click.option("--tier", type=click.Choice(["free", "pro", "enterprise"]), default="pro")
@@ -230,7 +232,7 @@ def build_group(bindings):
 
     @group.command("debate", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
     @click.argument("question")
-    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--budget", type=float, default=None)
     @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
@@ -250,7 +252,7 @@ def build_group(bindings):
         )
 
     @group.command("tui", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
-    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--budget", type=float, default=None)
     @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--context", "context_text", default="")

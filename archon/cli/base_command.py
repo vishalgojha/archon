@@ -173,7 +173,7 @@ class TaskLiveDisplay:
         event_type = str(event.get("type", "")).strip().lower()
         self.state["event"] = event_type or self.state["event"]
         self.state["mode"] = str(event.get("mode", self.state["mode"]))
-        if event_type in {"agent_start", "agent_end", "growth_agent_completed"}:
+        if event_type in {"agent_start", "agent_end"}:
             self.state["agent"] = str(event.get("agent", self.state["agent"]))
         if event_type == "task_started":
             self.state["status"] = "running"

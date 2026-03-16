@@ -8,6 +8,7 @@ import click
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
 from archon.cli.copy import DRAWER_COPY
+from archon.memory.store import MemoryStore
 
 DRAWER_ID = "memory"
 COMMAND_IDS = ("memory.search", "memory.export", "memory.import")
@@ -28,7 +29,7 @@ class _Search(ArchonCommand):
         config_path: str,
     ):
         session.run_step(0, self.bindings._load_config, config_path)
-        store = self.bindings.MemoryStore()
+        store = MemoryStore()
         try:
             results = session.run_step(
                 1,
@@ -76,7 +77,7 @@ class _Export(ArchonCommand):
         config_path: str,
     ):
         session.run_step(0, self.bindings._load_config, config_path)
-        store = self.bindings.MemoryStore()
+        store = MemoryStore()
         try:
             resolved = output_path
             if not resolved:
@@ -122,7 +123,7 @@ class _Import(ArchonCommand):
         config_path: str,
     ):
         session.run_step(0, self.bindings._load_config, config_path)
-        store = self.bindings.MemoryStore()
+        store = MemoryStore()
         try:
             result = session.run_step(
                 1,

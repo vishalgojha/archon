@@ -20,7 +20,7 @@ from archon.config import SUPPORTED_PROVIDERS, ArchonConfig, resolve_config_path
 from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
 
 RoleName = Literal["primary", "coding", "vision", "fast", "embedding", "fallback"]
-TierName = Literal["free", "growth", "business", "enterprise"]
+TierName = Literal["free", "pro", "enterprise"]
 ProviderStatus = Literal[
     "PASS",
     "FAIL",

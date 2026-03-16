@@ -4,7 +4,6 @@ import os
 import sqlite3
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import click
@@ -17,7 +16,6 @@ DRAWER_ID = "ops"
 COMMAND_IDS = (
     "ops.serve",
     "ops.health",
-    "ops.monitor",
     "ops.worker",
     "ops.worker-status",
 )
@@ -105,51 +103,8 @@ class _Health(ArchonCommand):
         }
 
 
-class _Monitor(ArchonCommand):
-    command_id = COMMAND_IDS[2]
-
-    def run(self, session, *, base_url: str, timeout_s: float, interval: float):  # type: ignore[no-untyped-def,override]
-        normalized = self.bindings._normalize_base_url(base_url)
-        iterations = 0
-        session.update_step(0, "running")
-        try:
-            while True:
-                health = self.bindings._request_json(
-                    "GET",
-                    f"{normalized}/health",
-                    timeout_s=timeout_s,
-                )
-                metrics = self.bindings._request_text(
-                    "GET",
-                    f"{normalized}/metrics",
-                    timeout_s=timeout_s,
-                )
-                spans = self.bindings._request_json(
-                    "GET",
-                    f"{normalized}/observability/traces",
-                    timeout_s=timeout_s,
-                )
-                summary = self.bindings._summarize_metrics(metrics)
-                lines = [
-                    f"status {health.get('status', 'unknown')}",
-                    f"req {summary['requests_total']}",
-                    f"err {summary['error_rate']:.2f}",
-                    f"approvals {int(summary['pending_approvals'])}",
-                ]
-                if isinstance(spans, list) and spans:
-                    lines.extend(self.bindings._render_span_tree(spans[-3:]))
-                renderer.emit(renderer.detail_panel(self.command_id, lines))
-                iterations += 1
-                time.sleep(max(0.0, interval))
-        except KeyboardInterrupt:
-            session.update_step(0, "success")
-        session.run_step(1, lambda: None)
-        session.run_step(2, lambda: None)
-        return {"iteration_count": iterations}
-
-
 class _Worker(ArchonCommand):
-    command_id = COMMAND_IDS[3]
+    command_id = COMMAND_IDS[2]
 
     def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         runtime_dir, worker_db_path = _worker_paths()
@@ -178,7 +133,7 @@ class _Worker(ArchonCommand):
 
 
 class _WorkerStatus(ArchonCommand):
-    command_id = COMMAND_IDS[4]
+    command_id = COMMAND_IDS[3]
 
     def run(self, session):  # type: ignore[no-untyped-def]
         runtime_dir, worker_db_path = _worker_paths()
@@ -220,17 +175,10 @@ def build_group(bindings):
     def health_command(base_url: str, timeout_s: float) -> None:
         _Health(bindings).invoke(base_url=base_url, timeout_s=timeout_s)
 
-    @group.command("monitor", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
-    @click.option("--base-url", default="http://127.0.0.1:8000")
-    @click.option("--timeout", "timeout_s", default=5.0, type=float)
-    @click.option("--interval", default=5.0, type=float)
-    def monitor_command(base_url: str, timeout_s: float, interval: float) -> None:
-        _Monitor(bindings).invoke(base_url=base_url, timeout_s=timeout_s, interval=interval)
-
     @group.group(
         "worker",
         invoke_without_command=True,
-        help=str(COMMAND_HELP[COMMAND_IDS[3]]),
+        help=str(COMMAND_HELP[COMMAND_IDS[2]]),
     )
     @click.option("--config", "config_path", default="config.archon.yaml")
     @click.pass_context
@@ -238,7 +186,7 @@ def build_group(bindings):
         if ctx.invoked_subcommand is None:
             _Worker(bindings).invoke(config_path=config_path)
 
-    @worker_command.command("status", help=str(COMMAND_HELP[COMMAND_IDS[4]]))
+    @worker_command.command("status", help=str(COMMAND_HELP[COMMAND_IDS[3]]))
     def worker_status_command() -> None:
         _WorkerStatus(bindings).invoke()
 

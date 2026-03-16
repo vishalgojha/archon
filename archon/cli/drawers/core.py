@@ -9,6 +9,7 @@ import click
 from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand
 from archon.cli.copy import DRAWER_COPY, FLOW_COPY
+from archon.interfaces.cli.tui import run_agentic_tui
 
 DRAWER_ID = "core"
 COMMAND_IDS = ("core.init", "core.validate", "core.status", "core.chat")
@@ -221,7 +222,7 @@ class _Chat(ArchonCommand):
         onboarding = _build_onboarding_callbacks(self.bindings)
         session.run_step(1, lambda: None)
         session.update_step(2, "running")
-        await self.bindings.run_agentic_tui(
+        await run_agentic_tui(
             config=config,
             initial_mode=mode,
             live_provider_calls=self.bindings._should_default_tui_to_live(config),
@@ -262,7 +263,7 @@ def build_group(bindings):
         _Status(bindings).invoke(config_path=config_path)
 
     @group.command("chat", help=str(COMMAND_HELP[COMMAND_IDS[3]]))
-    @click.option("--mode", type=click.Choice(["debate", "growth", "auto"]), default="auto")
+    @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--config", "config_path", default="config.archon.yaml")
     def chat_command(mode: str, config_path: str) -> None:
         _Chat(bindings).invoke(mode=mode, config_path=config_path)

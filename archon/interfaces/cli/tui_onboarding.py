@@ -115,9 +115,7 @@ async def run_launcher(
                 title="Choose default mode",
                 body=["Select how ARCHON should route new prompts before the chat starts."],
                 options=[
-                    MenuOption("auto", "Auto", "Infer debate vs growth from the prompt."),
                     MenuOption("debate", "Debate", "Always use the adversarial analysis swarm."),
-                    MenuOption("growth", "Growth", "Always use the seven-agent GTM swarm."),
                 ],
             )
             notes.append(

@@ -75,34 +75,25 @@ class _FakeOrchestrator:
         )
         if event_sink is not None:
             await event_sink({"type": "task_started", "task_id": "task-123", "mode": mode})
-            if mode == "debate":
-                await event_sink(
-                    {
-                        "type": "debate_round_completed",
-                        "round": 1,
-                        "total_rounds": 6,
-                        "agent": "ResearcherAgent",
-                        "confidence": 72,
-                        "output_preview": "Mapped the design space.",
-                    }
-                )
-            else:
-                await event_sink(
-                    {
-                        "type": "growth_agent_completed",
-                        "agent": "ProspectorAgent",
-                        "confidence": 73,
-                    }
-                )
+            await event_sink(
+                {
+                    "type": "debate_round_completed",
+                    "round": 1,
+                    "total_rounds": 6,
+                    "agent": "ResearcherAgent",
+                    "confidence": 72,
+                    "output_preview": "Mapped the design space.",
+                }
+            )
             if not _FakeOrchestrator.emitted_approval and "guarded_action" in (context or {}):
                 _FakeOrchestrator.emitted_approval = True
                 await event_sink(
                     {
                         "type": "approval_required",
                         "request_id": "approval-1",
-                        "action_type": "outbound_email",
+                        "action_type": "ui_pack_build",
                         "risk_level": "HIGH",
-                        "context": {"to_email": "lead@example.com"},
+                        "context": {"version": "v1"},
                     }
                 )
             await event_sink(
@@ -112,29 +103,6 @@ class _FakeOrchestrator:
                     "confidence": 88,
                     "budget": {"spent_usd": 0.42},
                 }
-            )
-
-        if mode == "growth":
-            return OrchestrationResult(
-                task_id="task-123",
-                goal=goal,
-                mode="growth",
-                final_answer="Growth plan ready.",
-                confidence=88,
-                budget={"spent_usd": 0.42},
-                debate=None,
-                growth={
-                    "agent_reports": [
-                        {
-                            "agent": "ProspectorAgent",
-                            "confidence": 73,
-                            "output": "Found promising local pharmacy segments.",
-                        }
-                    ],
-                    "recommended_actions": [
-                        {"priority": 1, "objective": "Build a local-language outbound list"}
-                    ],
-                },
             )
 
         return OrchestrationResult(
@@ -159,7 +127,6 @@ class _FakeOrchestrator:
                 ],
                 "dissent": ["Critic noted rollout risk."],
             },
-            growth=None,
         )
 
     async def aclose(self) -> None:
@@ -187,7 +154,7 @@ def test_run_agentic_tui_renders_debate_events_and_history(
     assert _FakeOrchestrator.calls[0]["mode"] == "debate"
 
 
-def test_run_agentic_tui_updates_mode_context_and_growth_output(
+def test_run_agentic_tui_updates_mode_context_and_status(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -198,7 +165,7 @@ def test_run_agentic_tui_updates_mode_context_and_growth_output(
         "_read_session_line",
         _line_reader(
             [
-                "/mode growth",
+                "/mode debate",
                 '/context {"market":"India","sector":"pharmacy"}',
                 "Increase qualified leads",
                 "/status",
@@ -211,13 +178,9 @@ def test_run_agentic_tui_updates_mode_context_and_growth_output(
     asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="auto"))
 
     output = capsys.readouterr().out
-    assert "Mode set to growth." in output
+    assert "Mode set to debate." in output
     assert "Context updated with 2 keys." in output
-    assert "ProspectorAgent | growth" in output
-    assert "Confidence: 73%" in output
-    assert "Top actions:" in output
-    assert "Build a local-language outbound list" in output
-    assert "Mode=growth | live_providers=off | context_keys=market, sector | history=1" in output
+    assert "Mode=debate" in output
     assert _FakeOrchestrator.calls[0]["context"] == {"market": "India", "sector": "pharmacy"}
 
 
@@ -239,8 +202,8 @@ def test_run_agentic_tui_routes_approval_events_back_into_gate(
         "_read_session_line",
         _line_reader(
             [
-                '/context {"guarded_action":{"action_type":"outbound_email","payload":{"to_email":"lead@example.com"}}}',
-                "Create outreach plan",
+                '/context {"guarded_action":{"action_type":"ui_pack_build","payload":{"version":"v1"}}}',
+                "Create pack",
                 "/quit",
             ]
         ),
@@ -250,11 +213,11 @@ def test_run_agentic_tui_routes_approval_events_back_into_gate(
     )
     monkeypatch.setattr(tui, "Orchestrator", _ApprovalOrchestrator)
 
-    asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="growth"))
+    asyncio.run(tui.run_agentic_tui(config=ArchonConfig(), initial_mode="debate"))
 
     output = capsys.readouterr().out
     assert "Approval required" in output
-    assert "outbound_email requested (HIGH)" in output
+    assert "ui_pack_build requested (HIGH)" in output
     assert "approved approval-1" in output
     assert captured_gates[0].approved == ["approval-1"]
 
@@ -268,7 +231,7 @@ def test_run_agentic_tui_intercepts_shell_style_inputs(
     monkeypatch.setattr(
         tui,
         "_read_session_line",
-        _line_reader(["archon tui", "archon studio", "archon dashboard", "/quit"]),
+        _line_reader(["archon tui", "archon shell", "/quit"]),
     )
     monkeypatch.setattr(tui, "Orchestrator", _FakeOrchestrator)
 
@@ -276,7 +239,5 @@ def test_run_agentic_tui_intercepts_shell_style_inputs(
 
     output = capsys.readouterr().out
     assert "Already in TUI" in output
-    assert "archon studio open" in output
-    assert "archon dashboard" in output
-    assert "from your terminal" in output
+    assert "Shell command detected" in output
     assert _FakeOrchestrator.calls == []

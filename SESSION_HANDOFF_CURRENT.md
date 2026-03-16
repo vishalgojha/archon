@@ -1,39 +1,47 @@
 # SESSION_HANDOFF_CURRENT
 
 ## Snapshot
-- Date: 2026-03-14
+- Date: 2026-03-16
 - Repo: `C:\Users\visha\archon`
 - Branch: `main`
-- Scope: domain sector skills registry, federation auth gating fix, runtime installer profile read hardening, CI lint/test cleanup
-- Main handoff policy: full suite now passes; safe to refresh `SESSION_HANDOFF.md` if desired
+- Scope: self-evolving UI pack system (registry + shell) with approval-gated publish/activate
+- Main handoff policy: see `BUILD_LOG.md` for step-by-step build record
 
 ## This Session
-- Created `archon/agents/domain/` sector skill packages for 8 domains with `skill.py`, `workflows.json`, and per-package `__init__.py`.
-- Added master registry in `archon/agents/domain/__init__.py`.
-- Added `archon/elon.md` (master orchestrator profile).
-- Hardened federation endpoints to require auth before request body validation (avoids 422 when auth should return 401).
-- Fixed runtime installer profile handling on non-Windows by honoring `HOME` and tolerating UTF-16/latin-1 profile files.
-- Fixed domain namespace export test by re-exporting `CommunityAgent`, `SignalDetector`, `ContentAgent`, `SEOOptimizer` from `archon.agents.domain`.
-- Ran Ruff format on new skill files to satisfy CI.
+- Added UI pack storage + registry modules with integrity checks and optional HMAC signing.
+- Added approval-gated API endpoints to register and activate UI packs.
+- Added token-auth asset delivery for `/ui-packs/{version}/{asset_path}`.
+- Added the self-evolving shell UI (`/shell`) that loads active packs and exposes a bridge.
+- Documented the pack contract in `UI_PACK_SPEC.md`.
+- Logged all steps in `BUILD_LOG.md` for handoff continuity.
+- Added a guided onboarding wizard with natural-language intake and preview before activation.
+- Reran `archon/tests/` with known hanging tests excluded; collection failed due to an `IndentationError` in `archon/tests/test_cli_copy_guard.py` line 50.
+- Added `KNOWN_ISSUES.md` to track hanging test files.
+- Fixed `archon/tests/test_cli_copy_guard.py` indentation and reran the filtered `archon/tests/` command.
+- 70 tests passing, 0 failing (filtered `archon/tests/` run).
+- Hanging tests documented in `KNOWN_ISSUES.md`.
+- Cleanup complete: federation, finetune, marketplace, compliance, stripe, vision, vernacular, web_transform, studio, console all removed.
+- Dashboard rebuilt as 4-tab operator panel.
 
 ## Files Changed In This Session
-- `archon/agents/domain/**`
-- `archon/agents/domain/__init__.py`
+- `BUILD_LOG.md`
+- `KNOWN_ISSUES.md`
+- `SESSION_HANDOFF_CURRENT.md`
+- `UI_PACK_SPEC.md`
+- `archon/core/approval_gate.py`
 - `archon/interfaces/api/server.py`
-- `archon/runtime_installer.py`
-- `archon/elon.md`
+- `archon/interfaces/web/shell/index.html`
+- `archon/interfaces/web/shell/index.js`
+- `archon/ui_packs/__init__.py`
+- `archon/ui_packs/builder.py`
+- `archon/ui_packs/registry.py`
+- `archon/ui_packs/storage.py`
 
 ## Verification
-- `python -m pytest tests/test_federation_api.py tests/test_global_installer.py -q -x` -> `25 passed`
-- `python -m pytest archon/tests/test_namespace_exports.py -q` -> `6 passed`
-- `ruff check .` -> `All checks passed`
-- `ruff format --check .` -> `283 files already formatted`
-- `python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80`
-  - Result: `729 passed, 9 skipped`, coverage `80.81%`
-
-## Full Suite Check
-- Command used: `python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80`
-- Result: `729 passed, 9 skipped` (coverage `80.81%`)
+- `archon/tests/` (with hanging tests excluded): 70 passed, 0 failed, 1 skipped, 1 deselected.
+- `tests/`: failed during collection with `PydanticUndefinedAnnotation` (`TaskRequest` not defined) from `tests/test_api_server.py`.
 
 ## Recommended Next Step
-- Update `SESSION_HANDOFF.md` now that the full suite is green.
+- Run `python -m pytest tests/` and `python -m pytest tests archon/tests/test_integration.py` to validate cross-stack changes.
+- Build a sample UI pack in `ui_packs/{tenant}/{version}` to test `/shell` end-to-end.
+- Deploy Archon to Railway.

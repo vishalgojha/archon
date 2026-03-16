@@ -14,8 +14,7 @@ from archon.interfaces.api.auth import TierName
 
 DEFAULT_TIER_LIMITS: dict[TierName, str] = {
     "free": "30/minute",
-    "growth": "120/minute",
-    "business": "300/minute",
+    "pro": "120/minute",
     "enterprise": "600/minute",
 }
 

@@ -288,10 +288,7 @@ class TracingSetup:
         cls._instrument_provider_router(getattr(orchestrator, "provider_router", None))
         cls._instrument_approval_gate(getattr(orchestrator, "approval_gate", None))
         cls._instrument_swarm_builders(getattr(orchestrator, "swarm_router", None))
-        cls._instrument_swarm_builders(getattr(orchestrator, "growth_router", None))
-        cls._instrument_agent(getattr(orchestrator, "email_agent", None))
-        cls._instrument_agent(getattr(orchestrator, "webchat_agent", None))
-        cls._instrument_email_agent(getattr(orchestrator, "email_agent", None))
+        cls._instrument_agent(getattr(orchestrator, "cost_optimizer", None))
 
         original_execute = getattr(orchestrator, "execute")
 
@@ -479,7 +476,7 @@ class TracingSetup:
         if router is None or getattr(router, "_archon_tracing_builders", False):
             return
         setattr(router, "_archon_tracing_builders", True)
-        for attr_name in ("build_debate_swarm", "build_growth_swarm"):
+        for attr_name in ("build_debate_swarm",):
             if not hasattr(router, attr_name):
                 continue
             original = getattr(router, attr_name)

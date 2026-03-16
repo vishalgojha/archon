@@ -14,8 +14,8 @@ from starlette.responses import JSONResponse
 
 from archon.config import ArchonConfig, load_archon_config
 
-TierName = Literal["free", "growth", "business", "enterprise"]
-SUPPORTED_TIERS: set[str] = {"free", "growth", "business", "enterprise"}
+TierName = Literal["free", "pro", "enterprise"]
+SUPPORTED_TIERS: set[str] = {"free", "pro", "enterprise"}
 
 
 @dataclass(slots=True)

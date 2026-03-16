@@ -14,7 +14,7 @@ from archon.interfaces.cli import tui_onboarding
 
 
 def test_run_launcher_updates_mode_and_live_toggle() -> None:
-    choices = iter(["mode", "growth", "live", "start"])
+    choices = iter(["mode", "debate", "live", "start"])
 
     async def fake_choose_menu_option(**_: Any) -> str:
         return next(choices)
@@ -35,9 +35,9 @@ def test_run_launcher_updates_mode_and_live_toggle() -> None:
         tui_onboarding.choose_menu_option = original
 
     assert result.start is True
-    assert result.mode == "growth"
+    assert result.mode == "debate"
     assert result.live_provider_calls is True
-    assert any(note["body"] == "Default mode set to growth." for note in result.notes)
+    assert any(note["body"] == "Default mode set to debate." for note in result.notes)
     assert any(note["body"] == "Live providers enabled." for note in result.notes)
 
 

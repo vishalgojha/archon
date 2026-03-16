@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from archon.archon_cli import cli
 from archon.cli import drawers as drawer_package
-from archon.cli.copy import COMMAND_COPY, DRAWER_COPY, FLOW_COPY
+from archon.cli.copy import COMMAND_COPY, DRAWER_COPY
 from archon.cli.registry import get_drawers
 
 
@@ -48,27 +48,6 @@ def test_no_inline_prose_in_drawers() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 assert len(node.value) <= 60, f"{path.name}: {node.value!r}"
-
-
-def test_placeholder_commands_no_traceback() -> None:
-    runner = CliRunner()
-    cases = [
-        ["marketplace", "payouts"],
-        ["marketplace", "earnings"],
-    ]
-    for argv in cases:
-        result = runner.invoke(cli, argv)
-        assert result.exit_code == 0, argv
-        assert FLOW_COPY["placeholder"]["title"] in result.output
-        assert "not implemented yet" in result.output.lower()
-        assert "Traceback" not in result.output
-
-
-def test_live_drawer_explains_current_state() -> None:
-    result = CliRunner().invoke(cli, ["vision"])
-    assert result.exit_code == 0
-    assert "status: live" in result.output.lower()
-    assert "archon vision inspect" in result.output
 
 
 def test_bare_archon_prints_all_drawers() -> None:

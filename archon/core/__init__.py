@@ -15,8 +15,6 @@ __all__ = [
     "BudgetExceededError",
     "CostGovernor",
     "Orchestrator",
-    "GrowthSwarm",
-    "GrowthSwarmRouter",
 ]
 
 
@@ -48,8 +46,4 @@ def __getattr__(name: str) -> Any:
         from archon.core.orchestrator import Orchestrator
 
         return Orchestrator
-    if name in {"GrowthSwarm", "GrowthSwarmRouter"}:
-        from archon.core.growth_router import GrowthSwarm, GrowthSwarmRouter
-
-        return {"GrowthSwarm": GrowthSwarm, "GrowthSwarmRouter": GrowthSwarmRouter}[name]
     raise AttributeError(name)

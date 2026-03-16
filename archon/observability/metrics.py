@@ -215,12 +215,7 @@ class Metrics:
         if orchestrator is not None and hasattr(orchestrator, "approval_gate"):
             pending = getattr(orchestrator.approval_gate, "pending_actions", ())
             self.set_pending_approvals(len(tuple(pending)))
-        webchat_app = getattr(getattr(app, "state", None), "webchat_app", None)
-        runtime = getattr(getattr(webchat_app, "state", None), "runtime", None)
-        session_store = getattr(runtime, "session_store", None)
-        count = _count_sessions(session_store)
-        if count is not None:
-            self.set_active_sessions(count)
+        self.set_active_sessions(0)
 
     def render_prometheus_text(self) -> str:
         if self._prometheus_enabled and self._prometheus_registry is not None:

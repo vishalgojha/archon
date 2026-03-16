@@ -37,7 +37,7 @@ budget:
   alert_threshold: 0.8
 tenants:
   - tenant_id: tenant-a
-    tier: growth
+    tier: pro
 memory:
   backend: sqlite
   path: archon_memory.sqlite3

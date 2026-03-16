@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import click
@@ -12,6 +12,7 @@ from archon.cli import renderer
 from archon.cli.base_command import ArchonCommand, approval_prompt
 from archon.cli.copy import DRAWER_COPY
 from archon.core.approval_gate import ApprovalDeniedError, ApprovalGate, ApprovalTimeoutError
+from archon.core.orchestrator import Orchestrator
 from archon.evolution.audit_trail import AuditEntry, ImmutableAuditTrail
 from archon.evolution.engine import (
     SelfEvolutionEngine,
@@ -19,7 +20,6 @@ from archon.evolution.engine import (
     _workflow_from_dict,
     _workflow_to_dict,
 )
-from archon.studio.store import StudioWorkflowStore
 
 DRAWER_ID = "evolve"
 COMMAND_IDS = ("evolve.plan", "evolve.apply")
@@ -27,24 +27,18 @@ DRAWER_META = DRAWER_COPY[DRAWER_ID]
 COMMAND_HELP = DRAWER_META["commands"]
 
 
-def _studio_store_path() -> str:
-    return str(os.getenv("ARCHON_STUDIO_DB", "archon_studio.sqlite3"))
-
-
 def _audit_trail_path() -> str:
     return "archon_evolution_audit.sqlite3"
 
 
-def _load_workflow(
-    store: StudioWorkflowStore,
-    *,
-    tenant_id: str,
-    workflow_id: str,
-) -> WorkflowDefinition:
-    workflow = store.get(tenant_id, workflow_id)
-    if workflow is None:
-        raise click.ClickException(f"Workflow '{workflow_id}' not found for tenant '{tenant_id}'.")
-    return workflow
+def _load_workflow_file(path: str) -> WorkflowDefinition:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise click.ClickException(f"Workflow file '{path}' not found.")
+    payload = json.loads(file_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise click.ClickException("Workflow file must contain a JSON object.")
+    return _workflow_from_dict(payload)
 
 
 def _latest_staged_payload(
@@ -88,30 +82,26 @@ class _Plan(ArchonCommand):
         self,
         session,
         *,
-        workflow_id: str,
-        tenant_id: str,
+        workflow_file: str,
         live_providers: bool,
         config_path: str,
     ):
         config = session.run_step(0, self.bindings._load_config, config_path)
-        store = session.run_step(1, StudioWorkflowStore, _studio_store_path())
-        workflow = session.run_step(
-            2, _load_workflow, store, tenant_id=tenant_id, workflow_id=workflow_id
-        )
-        audit = session.run_step(3, ImmutableAuditTrail, _audit_trail_path())
+        workflow = session.run_step(1, _load_workflow_file, workflow_file)
+        audit = session.run_step(2, ImmutableAuditTrail, _audit_trail_path())
         orchestrator = session.run_step(
-            4,
-            self.bindings.Orchestrator,
+            3,
+            Orchestrator,
             config=config,
             live_provider_calls=live_providers,
         )
         engine = session.run_step(
-            5,
+            4,
             SelfEvolutionEngine,
             orchestrator,
             audit_trail=audit,
         )
-        session.update_step(6, "running")
+        session.update_step(5, "running")
         try:
             engine.create_workflow(workflow, actor="evolve.plan")
             optimization = await engine.optimize(workflow.workflow_id)
@@ -119,7 +109,7 @@ class _Plan(ArchonCommand):
         finally:
             await orchestrator.aclose()
             audit.close()
-        session.update_step(6, "success")
+        session.update_step(5, "success")
         payload = {
             "workflow_id": staged.workflow_id,
             "original_version": staged.original_version,
@@ -143,52 +133,47 @@ class _Apply(ArchonCommand):
         self,
         session,
         *,
-        workflow_id: str,
-        tenant_id: str,
+        workflow_file: str,
         config_path: str,
     ):
         session.run_step(0, self.bindings._load_config, config_path)
-        store = session.run_step(1, StudioWorkflowStore, _studio_store_path())
-        current = session.run_step(
-            2, _load_workflow, store, tenant_id=tenant_id, workflow_id=workflow_id
-        )
-        audit = session.run_step(3, ImmutableAuditTrail, _audit_trail_path())
+        current = session.run_step(1, _load_workflow_file, workflow_file)
+        audit = session.run_step(2, ImmutableAuditTrail, _audit_trail_path())
         candidate, previous, rationale = session.run_step(
-            4, _load_staged_workflows, audit, workflow_id=workflow_id
+            3, _load_staged_workflows, audit, workflow_id=current.workflow_id
         )
         gate = ApprovalGate(supervised_mode=True)
-        session.update_step(5, "running")
+        session.update_step(4, "running")
         try:
             await gate.check(
-                action="db_write",
+                action="file_write",
                 context={
                     "agent": "evolve.apply",
-                    "target": workflow_id,
+                    "target": workflow_file,
                     "preview": rationale or "Promote staged workflow candidate.",
                     "event_sink": _approval_event_sink(gate),
                 },
                 action_id=f"evolve-{uuid.uuid4().hex[:12]}",
             )
         except (ApprovalDeniedError, ApprovalTimeoutError):
-            engine = SelfEvolutionEngine(object(), audit_trail=audit)
-            restored = engine.rollback(workflow_id, actor="evolve.apply")
-            store.save(tenant_id, restored, workflow_id=workflow_id)
             audit.close()
-            session.update_step(5, "success")
-            session.run_step(6, lambda: None)
+            session.update_step(4, "success")
+            session.run_step(5, lambda: None)
             return {
                 "result_key": "denied",
-                "workflow_id": workflow_id,
-                "restored_version": restored.version,
+                "workflow_id": current.workflow_id,
+                "restored_version": current.version,
             }
 
-        store.save(tenant_id, candidate, workflow_id=workflow_id)
+        Path(workflow_file).write_text(
+            json.dumps(_workflow_to_dict(candidate), indent=2), encoding="utf-8"
+        )
         audit.append(
             AuditEntry(
                 entry_id=f"audit-{uuid.uuid4().hex[:12]}",
                 timestamp=time.time(),
                 event_type="workflow_promoted",
-                workflow_id=workflow_id,
+                workflow_id=current.workflow_id,
                 actor="evolve.apply",
                 payload={
                     "previous_workflow": _workflow_to_dict(previous),
@@ -200,10 +185,10 @@ class _Apply(ArchonCommand):
             )
         )
         audit.close()
-        session.update_step(5, "success")
-        session.run_step(6, lambda: None)
+        session.update_step(4, "success")
+        session.run_step(5, lambda: None)
         return {
-            "workflow_id": workflow_id,
+            "workflow_id": current.workflow_id,
             "from_version": current.version,
             "to_version": candidate.version,
         }
@@ -221,31 +206,26 @@ def build_group(bindings):
             renderer.emit(renderer.drawer_panel(DRAWER_ID))
 
     @group.command("plan", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
-    @click.argument("workflow_id")
-    @click.option("--tenant", "tenant_id", default="default")
+    @click.argument("workflow_file", type=click.Path(exists=True, dir_okay=False))
     @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def plan_command(
-        workflow_id: str,
-        tenant_id: str,
+        workflow_file: str,
         live_providers: bool,
         config_path: str,
     ) -> None:
         _Plan(bindings).invoke(
-            workflow_id=workflow_id,
-            tenant_id=tenant_id,
+            workflow_file=workflow_file,
             live_providers=live_providers,
             config_path=config_path,
         )
 
     @group.command("apply", help=str(COMMAND_HELP[COMMAND_IDS[1]]))
-    @click.argument("workflow_id")
-    @click.option("--tenant", "tenant_id", default="default")
+    @click.argument("workflow_file", type=click.Path(exists=True, dir_okay=False))
     @click.option("--config", "config_path", default="config.archon.yaml")
-    def apply_command(workflow_id: str, tenant_id: str, config_path: str) -> None:
+    def apply_command(workflow_file: str, config_path: str) -> None:
         _Apply(bindings).invoke(
-            workflow_id=workflow_id,
-            tenant_id=tenant_id,
+            workflow_file=workflow_file,
             config_path=config_path,
         )
 

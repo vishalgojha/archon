@@ -24,17 +24,9 @@ HIGH_RISK_ACTIONS: frozenset[str] = frozenset(
         "shell_exec",
         "email_send",
         "db_delete",
-        "studio_write",
-        "briefing_export",
-        "outbound_email",
-        "outbound_webchat",
-        "outbound_sms",
-        "outbound_whatsapp",
-        "outbound_linkedin",
-        "outbound_voice",
-        "partner_payout",
-        "price_override",
-        "contract_commit",
+        "ui_pack_publish",
+        "ui_pack_activate",
+        "ui_pack_build",
     }
 )
 MEDIUM_RISK_ACTIONS: frozenset[str] = frozenset({"db_write", "webhook_trigger"})

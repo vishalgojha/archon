@@ -12,7 +12,7 @@ from archon.interfaces.api.auth import AuthMiddleware, AuthSettings
 
 def _auth_headers(secret: str) -> dict[str, str]:
     token = jwt.encode(
-        {"sub": "tenant-http-auth", "tier": "business"},
+        {"sub": "tenant-http-auth", "tier": "pro"},
         secret,
         algorithm="HS256",
     )

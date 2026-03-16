@@ -16,7 +16,7 @@ from archon.observability.tracing import TracingSetup
 def test_worker_queue_claims_oldest_pending_task(tmp_path: Path) -> None:
     queue = WorkerQueue(tmp_path / "worker.sqlite3")
     first = queue.enqueue(goal="first task", mode="debate")
-    second = queue.enqueue(goal="second task", mode="growth")
+    second = queue.enqueue(goal="second task", mode="debate")
 
     claimed = queue.claim_next()
     pending = queue.list_pending()

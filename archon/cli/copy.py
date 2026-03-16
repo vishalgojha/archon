@@ -2,7 +2,7 @@ DRAWER_COPY = {
     "core": {
         "title": "Core Control",
         "icon": "[C]",
-        "tagline": "Bring ARCHON up, inspect runtime state, and enter chat.",
+        "tagline": "Bring ARCHON up, check status, and enter chat.",
         "availability": "live",
         "explanation": (
             "Core commands cover first-run setup, config validation, runtime status, "
@@ -14,71 +14,24 @@ DRAWER_COPY = {
             "core.init": "Create config, test providers, check Ollama, and set budgets.",
             "core.validate": "Validate config schema and ping configured providers live.",
             "core.status": "Read config and worker queue state from the active runtime.",
-            "core.chat": "Launch the existing ARCHON chat and TUI experience.",
+            "core.chat": "Launch the ARCHON chat and TUI experience.",
         },
     },
     "agents": {
         "title": "Agent Sessions",
         "icon": "[A]",
-        "tagline": "Run debate, direct tasks, and terminal sessions against live agents.",
+        "tagline": "Run tasks, local debate runs, and terminal sessions.",
         "availability": "live",
         "explanation": (
-            "Agent session commands expose the current orchestration entry points: a "
-            "single task call, a local debate or growth run, and the full interactive "
-            "terminal interface."
+            "Agent session commands expose the orchestration entry points: a single task "
+            "call against the API, a local debate run, and the full interactive terminal "
+            "session."
         ),
         "requires": ["validated config", "BYOK or Ollama access"],
         "commands": {
             "agents.task": "Send one goal through the API task surface.",
             "agents.debate": "Run a local orchestration pass without HTTP.",
             "agents.tui": "Open the interactive terminal session for ARCHON.",
-        },
-    },
-    "growth": {
-        "title": "Growth Swarm",
-        "icon": "[G]",
-        "tagline": "Drive the seven-agent revenue and distribution workflow.",
-        "availability": "live",
-        "explanation": (
-            "Growth commands route work through Prospector, ICP, Outreach, Nurture, "
-            "Revenue Intel, Partner, and Churn Defense so operators can inspect "
-            "distribution planning from the CLI control plane."
-        ),
-        "requires": ["growth-capable config", "budget headroom"],
-        "commands": {
-            "growth.run": "Execute a goal directly in growth mode.",
-        },
-    },
-    "vision": {
-        "title": "Vision Runtime",
-        "icon": "[V]",
-        "tagline": "Screen understanding, UI parsing, and action planning.",
-        "availability": "live",
-        "explanation": (
-            "The vision stack covers capture, UI parsing, action generation, recovery, "
-            "and audit traces for screen-driven automation. Use inspect to parse the "
-            "current screen and act to trigger approved UI interactions."
-        ),
-        "requires": ["desktop session", "vision provider routing"],
-        "commands": {
-            "vision.inspect": "Inspect the active screen and UI structure.",
-            "vision.act": "Plan or execute a vision-guided UI action.",
-        },
-    },
-    "web": {
-        "title": "Web Intelligence",
-        "icon": "[W]",
-        "tagline": "Crawl, classify, and optimize websites from one drawer.",
-        "availability": "live",
-        "explanation": (
-            "The web stack combines crawling, intent classification, injection "
-            "generation, and optimization helpers for research and site-level execution. "
-            "Crawl and optimization are live for rapid site tuning."
-        ),
-        "requires": ["network access", "config.archon.yaml"],
-        "commands": {
-            "web.crawl": "Crawl a target site and extract structured findings.",
-            "web.optimize": "Generate optimization actions from web intelligence.",
         },
     },
     "memory": {
@@ -88,8 +41,7 @@ DRAWER_COPY = {
         "availability": "partial",
         "explanation": (
             "Memory commands expose the tenant-safe store behind ARCHON recalls, letting "
-            "operators search persisted context today and reserve an export surface for "
-            "governed data movement."
+            "operators search persisted context and move memory in or out when needed."
         ),
         "requires": ["memory database", "tenant identifier for scoped reads"],
         "commands": {
@@ -101,44 +53,28 @@ DRAWER_COPY = {
     "evolve": {
         "title": "Evolution Engine",
         "icon": "[E]",
-        "tagline": "Stage experiments, compare candidates, and promote winners.",
+        "tagline": "Stage candidates, compare results, and promote winners.",
         "availability": "live",
         "explanation": (
-            "The evolution stack handles A/B staging, audit trails, and controlled "
-            "workflow promotion. Use plan to stage candidates and apply to promote with "
-            "human approval."
+            "The evolution stack handles staging, audit trails, and controlled workflow "
+            "promotion. Use plan to stage candidates and apply to promote with human "
+            "approval."
         ),
-        "requires": ["evolution policy", "audit trail storage"],
+        "requires": ["workflow JSON file", "audit trail storage"],
         "commands": {
             "evolve.plan": "Stage an evolution candidate and preview the experiment.",
-            "evolve.apply": "Promote or roll back an approved evolution result.",
-        },
-    },
-    "federation": {
-        "title": "Federation",
-        "icon": "[F]",
-        "tagline": "Discover peers and exchange patterns across ARCHON nodes.",
-        "availability": "staged",
-        "explanation": (
-            "Federation links ARCHON runtimes for peer discovery, collaborative solves, "
-            "and pattern sharing. This drawer exposes the future CLI surface while the "
-            "dedicated commands remain staged."
-        ),
-        "requires": ["peer registry", "network reachability"],
-        "commands": {
-            "federation.peers": "Inspect federation peers and capabilities.",
-            "federation.sync": "Sync shared patterns and federation state.",
+            "evolve.apply": "Promote an approved evolution result into the workflow file.",
         },
     },
     "providers": {
         "title": "Providers",
         "icon": "[P]",
-        "tagline": "Inspect BYOK routing and test provider health in place.",
+        "tagline": "Inspect BYOK routing and test provider health.",
         "availability": "live",
         "explanation": (
             "Provider commands read the active config and environment so operators can "
-            "see role assignments, confirm which providers are actually wired, and run "
-            "real health probes with measured latency."
+            "see role assignments, confirm which providers are wired, and run live "
+            "health probes with measured latency."
         ),
         "requires": ["config.archon.yaml", "provider keys in environment"],
         "commands": {
@@ -146,53 +82,20 @@ DRAWER_COPY = {
             "providers.test": "Run live provider health checks and latency probes.",
         },
     },
-    "marketplace": {
-        "title": "Marketplace",
-        "icon": "[K]",
-        "tagline": "Developer revenue, payouts, and partner operations.",
-        "availability": "staged",
-        "explanation": (
-            "Marketplace operations cover onboarding, revenue share, payout cycles, and "
-            "partner reporting. The drawer is visible so finance and partner operators "
-            "see the control plane before the dedicated CLI paths go live."
-        ),
-        "requires": ["marketplace databases", "approval gate for financial actions"],
-        "commands": {
-            "marketplace.payouts": "Inspect or run marketplace payout workflows.",
-            "marketplace.earnings": "Review marketplace earnings and revenue share.",
-        },
-    },
-    "studio": {
-        "title": "Studio",
-        "icon": "[S]",
-        "tagline": "Open the visual workflow surface and run saved workflows.",
-        "availability": "live",
-        "explanation": (
-            "Studio commands connect the CLI to the saved workflow system so operators "
-            "can open the browser-based editor or trigger an existing workflow run from "
-            "the same control plane."
-        ),
-        "requires": ["running API server", "studio workflow storage"],
-        "commands": {
-            "studio.open": "Open ARCHON Studio in the browser.",
-            "studio.run": "Run a saved workflow file through the runtime.",
-        },
-    },
     "ops": {
         "title": "Operations",
         "icon": "[O]",
-        "tagline": "Serve APIs, watch health, and manage background workers.",
+        "tagline": "Serve APIs, check health, and manage background workers.",
         "availability": "live",
         "explanation": (
-            "Operations commands cover the API server, health surfaces, observability, "
-            "and the SQLite-backed deployment worker that drains queued tasks from the "
-            "active runtime directory."
+            "Operations commands cover the API server, health checks, and the "
+            "SQLite-backed deployment worker that drains queued tasks from the "
+            "runtime directory."
         ),
         "requires": ["runtime directory", "worker queue database when enabled"],
         "commands": {
             "ops.serve": "Start the ARCHON API server.",
             "ops.health": "Check API health from the CLI.",
-            "ops.monitor": "Render a live metrics and traces monitor.",
             "ops.worker": "Start the deployment worker and stream its logs.",
             "ops.worker-status": "Read worker queue counts from the runtime database.",
         },
@@ -238,376 +141,187 @@ COMMAND_COPY = {
         ],
     },
     "core.status": {
-        "what": "Inspect the active ARCHON runtime by reading config, runtime directory, and worker queue state.",
+        "what": "Read runtime status for configured providers and the worker queue.",
         "steps": [
-            "Resolve the active config file and runtime directory.",
-            "Read version and provider role assignments.",
-            "Inspect the worker queue database for pending and active tasks.",
-            "Render the runtime summary for operators.",
+            "Load config.archon.yaml.",
+            "Resolve the runtime directory and worker queue database.",
+            "Summarize pending, running, completed, and failed tasks.",
         ],
         "results": {
-            "success": "ARCHON {version} using runtime {runtime_dir}. Queue depth: {queue_depth}. Active workers: {worker_count}.",
+            "success": "Status reported. Queue pending={pending} running={running} completed={completed} failed={failed}.",
         },
         "next_steps": [
-            "Run archon ops worker-status for queue detail.",
-            "Run archon providers test if provider health looks stale.",
-            "Run archon core chat to interact with the runtime.",
+            "Run archon ops health to confirm the API is reachable.",
+            "Run archon agents task to send a live prompt.",
         ],
     },
     "core.chat": {
-        "what": "Enter the existing ARCHON terminal chat path and route work through the live TUI session.",
+        "what": "Open the agentic terminal UI and start a live orchestration session.",
         "steps": [
-            "Load the active config and initial mode.",
-            "Prepare onboarding callbacks and session context.",
-            "Launch the current TUI or chat entry path.",
+            "Load config or onboarding defaults.",
+            "Enter the agentic TUI.",
         ],
         "results": {
-            "success": "Chat session exited cleanly for mode {mode}.",
+            "success": "Chat session closed.",
         },
         "next_steps": [
-            "Run archon core status to inspect runtime state after the session.",
-            "Run archon agents.task for one-off API tasks.",
+            "Run archon agents task for a single API call.",
+            "Run archon core status to review runtime health.",
         ],
     },
     "agents.task": {
-        "what": "Send one goal to the ARCHON API task endpoint with tenant auth and structured context.",
+        "what": "Send a goal to the running ARCHON API and return the final response.",
         "steps": [
-            "Resolve the task mode from the goal and requested mode.",
-            "Build tenant auth headers and task context.",
-            "Post the task to the running API.",
-            "Render the final answer, confidence, and budget usage.",
+            "Normalize the target API base URL.",
+            "Build the task payload and authorization headers.",
+            "Call the API and return the response payload.",
         ],
         "results": {
-            "success": "Task completed in {mode} mode with confidence {confidence}% and spend {spent_usd}.",
+            "success": "Task finished with confidence {confidence}% and spent {spent_usd}.",
         },
         "next_steps": [
-            "Run archon ops.monitor to watch runtime activity.",
-            "Run archon growth run for a growth-only local pass.",
+            "Run archon agents debate to compare local output.",
+            "Run archon core status for runtime status.",
         ],
     },
     "agents.debate": {
-        "what": "Run a local orchestration pass without HTTP and return the final answer directly in the terminal.",
+        "what": "Run a local debate pass without calling the HTTP API.",
         "steps": [
-            "Load config and resolve the effective mode.",
-            "Start the orchestrator with the selected provider mode.",
-            "Execute the goal locally and capture budget data.",
-            "Close shared provider resources cleanly.",
+            "Load config and initialize the orchestrator.",
+            "Run debate mode locally and stream live events.",
+            "Return the final synthesis output.",
         ],
         "results": {
-            "success": "Local run completed in {mode} mode with confidence {confidence}% and spend {spent_usd}.",
+            "success": "Debate completed with confidence {confidence}% and spent {spent_usd}.",
         },
         "next_steps": [
-            "Run archon core chat for an interactive session.",
-            "Run archon ops.monitor to inspect observability output.",
+            "Run archon agents task to compare API output.",
+            "Run archon core chat for a live session.",
         ],
     },
     "agents.tui": {
-        "what": "Open the interactive terminal session with launcher controls, context editing, approvals, and transcript output.",
+        "what": "Launch the interactive ARCHON terminal session.",
         "steps": [
-            "Load config or wizard defaults.",
-            "Resolve live provider mode and initial context.",
-            "Attach onboarding callbacks.",
-            "Launch the agentic TUI.",
+            "Load config and resolve budget overrides.",
+            "Open the agentic TUI session.",
         ],
         "results": {
-            "success": "TUI session closed cleanly with mode {mode}.",
+            "success": "TUI session closed.",
         },
         "next_steps": [
-            "Run archon core status to inspect runtime state.",
-            "Run archon ops.serve if you want HTTP access next.",
-        ],
-    },
-    "growth.run": {
-        "what": "Run a goal directly through the seven-agent growth swarm and return prioritized actions.",
-        "steps": [
-            "Load config and start the orchestrator.",
-            "Execute the goal in growth mode.",
-            "Collect action recommendations and budget usage.",
-            "Close the orchestrator cleanly.",
-        ],
-        "results": {
-            "success": "Growth swarm completed with confidence {confidence}% and {action_count} recommended actions.",
-        },
-        "next_steps": [
-            "Run archon agents.task with --mode growth for API execution.",
-            "Run archon ops.monitor to watch live system activity.",
-        ],
-    },
-    "vision.inspect": {
-        "what": "Inspect the active screen and extract UI structure through the vision runtime.",
-        "steps": [
-            "Capture a screenshot or load an image from file or clipboard.",
-            "Select the vision provider and model based on config and keys.",
-            "Parse visible UI elements into a structured layout.",
-            "Render the detected UI elements and metadata.",
-        ],
-        "results": {
-            "success": "Vision inspection parsed {element_count} elements using {provider}/{model}.",
-            "failure": "Vision inspection failed. {error}",
-        },
-        "next_steps": [
-            "Run archon vision act to interact with a UI element.",
-            "Save a screenshot and use --file for repeatable inspection.",
-        ],
-    },
-    "vision.act": {
-        "what": "Plan or execute a UI action through the vision action stack.",
-        "steps": [
-            "Capture a screenshot and parse the UI layout.",
-            "Identify the target element for the instruction.",
-            "Request approval before executing UI actions.",
-            "Execute the action and capture confirmation screenshots.",
-        ],
-        "results": {
-            "success": "Vision action '{action}' executed on {element_id} at ({x},{y}).",
-            "failure": "Vision action failed. {error}",
-        },
-        "next_steps": [
-            "Run archon vision inspect to confirm the UI state.",
-            "Review approval history if actions were denied.",
-        ],
-    },
-    "web.crawl": {
-        "what": "Crawl a site and convert the response into structured web intelligence findings.",
-        "steps": [
-            "Load config and validate the target URL.",
-            "Crawl the site and extract structured page content.",
-            "Classify site intent from the crawled pages.",
-            "Generate an embed snippet tailored to the site intent.",
-        ],
-        "results": {
-            "success": "Crawled {page_count} page(s). Primary intent: {primary_intent}. Suggested mode: {suggested_mode}.",
-            "failure": "Web crawl failed. {error}",
-        },
-        "next_steps": [
-            "Use --mode or --greeting to override embed defaults.",
-            "Run archon web optimize for conversion recommendations.",
-        ],
-    },
-    "web.optimize": {
-        "what": "Generate site optimization actions from the web intelligence stack.",
-        "steps": [
-            "Load config and validate the target URL.",
-            "Crawl the site and extract structured page content.",
-            "Classify site intent from the crawled pages.",
-            "Generate an embed configuration draft.",
-            "Stage a baseline/challenger experiment.",
-            "Generate an improved embed configuration.",
-            "Initialize the optimization orchestrator.",
-            "Generate conversion recommendations.",
-        ],
-        "results": {
-            "success": (
-                "Optimized {page_count} page(s). Primary intent: {primary_intent}. "
-                "Experiment: {experiment_id}. Confidence: {confidence}."
-            ),
-        },
-        "next_steps": [
-            "Use --mode or --greeting to override embed defaults.",
-            "Run archon web crawl for a lighter-weight scan.",
+            "Run archon agents task for a single API call.",
+            "Run archon core status for runtime status.",
         ],
     },
     "memory.search": {
-        "what": "Search the tenant-scoped memory store and render ranked results.",
+        "what": "Search the tenant memory store by similarity.",
         "steps": [
-            "Load the config and open the memory store.",
-            "Run similarity search for the requested tenant namespace.",
-            "Render the result table and close the store.",
+            "Load config and initialize the memory store.",
+            "Search for the query within the tenant namespace.",
+            "Render the top results.",
         ],
         "results": {
-            "success": "Memory search returned {result_count} result(s) for tenant {tenant_id}.",
-            "empty": "Memory search returned no results for tenant {tenant_id}.",
+            "success": "Found {result_count} result(s) for tenant {tenant_id}.",
+            "empty": "No memory results for tenant {tenant_id}.",
         },
         "next_steps": [
-            "Refine the query or raise --top-k for broader recall.",
-            "Run archon memory export when the governed export path is live.",
+            "Run archon memory export to back up stored context.",
+            "Run archon agents task to generate new memory entries.",
         ],
     },
     "memory.export": {
-        "what": "Export a tenant memory namespace for review, transfer, or compliance workflows.",
+        "what": "Export a tenant memory namespace to a JSONL file.",
         "steps": [
-            "Load the config and open the memory store.",
-            "Export tenant episodic memory rows to JSONL.",
-            "Render the output path and close the store.",
+            "Load config and initialize the memory store.",
+            "Write the export file to disk.",
+            "Report rows exported.",
         ],
         "results": {
-            "success": "Exported {row_count} memory row(s) for tenant {tenant_id}.",
+            "success": "Exported {row_count} memory entries to {output_path}.",
         },
         "next_steps": [
-            "Transfer the JSONL file to another instance for import when available.",
+            "Store the export in a secure archive.",
+            "Use archon memory import to restore into a new tenant.",
         ],
     },
     "memory.import": {
-        "what": "Import a tenant memory namespace from a JSONL export (transfer/restore).",
+        "what": "Import a tenant memory namespace from a JSONL export.",
         "steps": [
-            "Load the config and open the memory store.",
-            "Parse JSONL payloads from the input file.",
-            "Insert new rows and update the vector index.",
+            "Load config and initialize the memory store.",
+            "Read the import file and apply changes.",
+            "Summarize imported, replaced, and skipped records.",
         ],
         "results": {
-            "success": "Imported {imported} memory row(s) for tenant {tenant_id}.",
+            "success": "Imported {imported} entries (replaced={replaced}, skipped={skipped}).",
         },
         "next_steps": [
-            "Run archon memory search to spot-check imported results.",
+            "Run archon memory search to verify the import.",
+            "Run archon agents task to build on the imported context.",
         ],
     },
     "evolve.plan": {
-        "what": "Stage an evolution candidate and prepare it for controlled A/B evaluation.",
+        "what": "Stage an evolution candidate from a workflow JSON file.",
         "steps": [
-            "Load config for evolution planning.",
-            "Open the Studio workflow store.",
-            "Load the workflow definition for the tenant.",
-            "Initialize the evolution audit trail.",
-            "Initialize the evolution engine and orchestrator.",
-            "Generate a candidate workflow proposal.",
-            "Stage the candidate for controlled evaluation.",
+            "Load the workflow JSON file.",
+            "Run debate optimization to propose a candidate.",
+            "Stage the candidate in the audit trail.",
         ],
         "results": {
-            "success": "Staged {workflow_id} candidate v{candidate_version} ({status}).",
+            "success": "Staged candidate version {candidate_version} for workflow {workflow_id}.",
         },
         "next_steps": [
-            "Run archon evolve apply to promote after review.",
+            "Review the staged candidate JSON output.",
+            "Run archon evolve apply to promote the candidate.",
         ],
     },
     "evolve.apply": {
-        "what": "Promote or roll back an evolved workflow after review.",
+        "what": "Promote a staged evolution candidate into the workflow file.",
         "steps": [
-            "Load config for evolution promotion.",
-            "Open the Studio workflow store.",
-            "Load the current workflow definition.",
-            "Open the evolution audit trail.",
-            "Load the staged candidate workflow.",
-            "Request approval to promote the candidate.",
-            "Finalize promotion or rollback.",
+            "Load the workflow file and staged candidate.",
+            "Request approval for the file write.",
+            "Write the promoted workflow to disk.",
         ],
         "results": {
-            "success": "Promoted {workflow_id} from v{from_version} to v{to_version}.",
-            "denied": "Promotion denied. Restored {workflow_id} to v{restored_version}.",
+            "success": "Promoted workflow to version {to_version}.",
+            "denied": "Promotion denied. Workflow remains at version {restored_version}.",
         },
         "next_steps": [
-            "Run archon evolve plan to stage a new candidate.",
-        ],
-    },
-    "federation.peers": {
-        "what": "Inspect peer state and capabilities across the federation layer.",
-        "steps": [
-            "Load the active config file.",
-            "Read configured federation peers.",
-            "Query the local federation peer registry (if available).",
-            "Render peer identity, capabilities, and last-seen metadata.",
-        ],
-        "results": {
-            "success": "Rendered {configured_peers} configured peers and {runtime_peers} runtime peers.",
-        },
-        "next_steps": [
-            "Run archon federation to review the planned control surface.",
-        ],
-    },
-    "federation.sync": {
-        "what": "Sync patterns and shared state across connected ARCHON peers.",
-        "steps": [
-            "Load the active config file.",
-            "Resolve federation peer targets.",
-            "Announce local instance to configured peers.",
-            "Push any stored workflow patterns to peers.",
-        ],
-        "results": {
-            "success": "Synced federation state to {target_count} peer targets.",
-        },
-        "next_steps": [
-            "Run archon federation to review the planned control surface.",
+            "Run archon evolve plan to stage another candidate.",
+            "Run archon core chat to validate outputs manually.",
         ],
     },
     "providers.list": {
-        "what": "Read the active config and environment to show how provider roles are currently assigned.",
+        "what": "List BYOK provider role assignments and key status.",
         "steps": [
-            "Load the active config file.",
-            "Resolve each BYOK role to its configured provider.",
-            "Check whether the required environment key is present.",
-            "Render the provider role table.",
+            "Load config and resolve provider roles.",
+            "Check environment keys for each provider.",
+            "Render the role-to-provider table.",
         ],
         "results": {
-            "success": "Rendered {provider_count} provider role assignments from the active config.",
+            "success": "Reported {provider_count} provider role assignments.",
         },
         "next_steps": [
-            "Run archon providers test to probe live health and latency.",
-            "Run archon core validate after changing provider roles.",
+            "Run archon providers test to verify connectivity.",
+            "Run archon core validate after updating keys.",
         ],
     },
     "providers.test": {
-        "what": "Run real health probes for the configured providers and report response latency.",
+        "what": "Run live provider health checks and measure latency.",
         "steps": [
-            "Load config and determine which providers require probes.",
-            "Ping each configured provider endpoint.",
-            "Measure latency and collect health status.",
-            "Render the provider health table.",
+            "Load config and list configured providers.",
+            "Run provider checks with a timeout.",
+            "Render pass/fail status with latency.",
         ],
         "results": {
-            "success": "Provider tests completed for {provider_count} provider(s). Passing: {pass_count}.",
-            "failure": "Provider tests completed for {provider_count} provider(s). Passing: {pass_count}.",
+            "success": "Checked {provider_count} providers; {pass_count} passed.",
         },
         "next_steps": [
-            "Fix unreachable or auth-failed providers before production use.",
-            "Run archon core status to confirm runtime context.",
-        ],
-    },
-    "marketplace.payouts": {
-        "what": "Inspect or execute marketplace payout workflows for developers and partners.",
-        "steps": [
-            "Reserve the command surface for the marketplace payout path.",
-        ],
-        "results": {
-            "success": "{command} is reserved for the {module} module.",
-        },
-        "next_steps": [
-            "Run archon marketplace to review the planned control surface.",
-        ],
-    },
-    "marketplace.earnings": {
-        "what": "Review revenue share and earnings output from the marketplace ledger.",
-        "steps": [
-            "Reserve the command surface for the marketplace earnings path.",
-        ],
-        "results": {
-            "success": "{command} is reserved for the {module} module.",
-        },
-        "next_steps": [
-            "Run archon marketplace to review the planned control surface.",
-        ],
-    },
-    "studio.open": {
-        "what": "Open the Studio browser surface after confirming the ARCHON API is reachable.",
-        "steps": [
-            "Check the API health endpoint.",
-            "Open the Studio route in the default browser.",
-        ],
-        "results": {
-            "success": "Studio opened at {url}.",
-        },
-        "next_steps": [
-            "Run archon studio run to execute a saved workflow file.",
-            "Run archon ops.health if the browser surface does not load.",
-        ],
-    },
-    "studio.run": {
-        "what": "Execute a workflow file through the existing runtime path and print the outcome.",
-        "steps": [
-            "Load config and parse the workflow file.",
-            "Decide between dry-run preview and live execution.",
-            "Run the workflow through the orchestrator when live execution is requested.",
-            "Render the workflow result.",
-        ],
-        "results": {
-            "success": "Workflow {workflow_name} completed in {mode} mode.",
-            "dry_run": "Workflow {workflow_name} contains {step_count} step(s).",
-        },
-        "next_steps": [
-            "Open Studio if you want to edit the workflow visually.",
-            "Run archon ops.monitor while executing longer workflows.",
+            "Fix failed keys and rerun providers test.",
+            "Run archon agents task to confirm outputs.",
         ],
     },
     "ops.serve": {
-        "what": "Start the ARCHON API server with the active config and runtime environment.",
+        "what": "Start the ARCHON API server from the CLI.",
         "steps": [
             "Ensure a config file exists, onboarding if needed.",
             "Load environment variables and config.",
@@ -617,37 +331,22 @@ COMMAND_COPY = {
             "success": "ARCHON API server started on {host}:{port}.",
         },
         "next_steps": [
-            "Run archon ops.health to verify the server.",
-            "Run archon studio open or archon agents.task once the server is live.",
+            "Run archon ops health to verify the server.",
+            "Run archon agents task once the server is live.",
         ],
     },
     "ops.health": {
         "what": "Check the health endpoint for the running ARCHON API and summarize the response.",
         "steps": [
             "Request the API health endpoint.",
-            "Render server status, version, git SHA, database state, and uptime.",
+            "Render server status, version, git SHA, and uptime.",
         ],
         "results": {
-            "success": "Server status is {status}. Version: {version}. Database: {db_status}.",
+            "success": "Server status is {status}. Version: {version}.",
         },
         "next_steps": [
-            "Run archon ops.monitor for a continuous view.",
-            "Run archon ops.serve if the server is down.",
-        ],
-    },
-    "ops.monitor": {
-        "what": "Render a live terminal monitor from health, metrics, and trace endpoints.",
-        "steps": [
-            "Poll health, metrics, and trace endpoints.",
-            "Summarize request rate, error rate, sessions, approvals, and recent spans.",
-            "Refresh the live monitor until the operator stops it.",
-        ],
-        "results": {
-            "success": "Monitor session stopped after {iteration_count} refresh cycle(s).",
-        },
-        "next_steps": [
-            "Run archon ops.health for a single-shot status check.",
-            "Run archon core.chat to drive new workload through the runtime.",
+            "Run archon ops serve if the server is down.",
+            "Run archon core status for runtime detail.",
         ],
     },
     "ops.worker": {
@@ -661,8 +360,8 @@ COMMAND_COPY = {
             "success": "Worker exited with code {return_code}.",
         },
         "next_steps": [
-            "Run archon ops.worker-status to inspect queue progress.",
-            "Run archon ops.monitor to inspect API-side activity.",
+            "Run archon ops worker-status to inspect queue progress.",
+            "Run archon core status for runtime summary.",
         ],
     },
     "ops.worker-status": {
@@ -676,8 +375,8 @@ COMMAND_COPY = {
             "success": "Queue pending={pending} running={running} completed={completed} failed={failed}.",
         },
         "next_steps": [
-            "Run archon ops.worker to start or restart the worker.",
-            "Run archon core.status for the broader runtime summary.",
+            "Run archon ops worker to start or restart the worker.",
+            "Run archon core status for the broader runtime summary.",
         ],
     },
 }

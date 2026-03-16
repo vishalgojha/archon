@@ -35,8 +35,6 @@ def build_cli(bindings: Any) -> click.Group:
         for name, command in legacy.commands.items():
             if name in drawer_groups:
                 continue
-            if name == "studio":
-                continue
             app.add_command(command, name)
 
     return app

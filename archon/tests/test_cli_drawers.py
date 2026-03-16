@@ -23,18 +23,6 @@ def test_agents_drawer() -> None:
     _assert_drawer("agents")
 
 
-def test_growth_drawer() -> None:
-    _assert_drawer("growth")
-
-
-def test_vision_drawer() -> None:
-    _assert_drawer("vision")
-
-
-def test_web_drawer() -> None:
-    _assert_drawer("web")
-
-
 def test_memory_drawer() -> None:
     _assert_drawer("memory")
 
@@ -43,20 +31,8 @@ def test_evolve_drawer() -> None:
     _assert_drawer("evolve")
 
 
-def test_federation_drawer() -> None:
-    _assert_drawer("federation")
-
-
 def test_providers_drawer() -> None:
     _assert_drawer("providers")
-
-
-def test_marketplace_drawer() -> None:
-    _assert_drawer("marketplace")
-
-
-def test_studio_drawer() -> None:
-    _assert_drawer("studio")
 
 
 def test_ops_drawer() -> None:

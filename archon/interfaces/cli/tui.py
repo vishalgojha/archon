@@ -32,9 +32,7 @@ class _SessionState:
 def _resolve_mode(mode: str, goal: str) -> str:
     if mode != "auto":
         return mode
-    lowered = goal.lower()
-    growth_hints = ("lead", "pipeline", "outreach", "growth", "revenue", "churn", "prospect")
-    return "growth" if any(hint in lowered for hint in growth_hints) else "debate"
+    return "debate"
 
 
 def _render(state: _SessionState) -> None:
@@ -95,27 +93,6 @@ def _format_result(result: OrchestrationResult) -> str:
             lines.append("Dissent:")
             for item in dissent[:2]:
                 lines.append(f"- {preview(str(item))}")
-    if result.growth:
-        reports = list(result.growth.get("agent_reports", []))
-        if reports:
-            lines.extend(["", "Growth agent reports:"])
-            for report in reports:
-                lines.append(
-                    f"- {report.get('agent', 'unknown')} "
-                    f"{int(report.get('confidence', 0) or 0)}% :: "
-                    f"{preview(str(report.get('output', '')))}"
-                )
-        actions = sorted(
-            list(result.growth.get("recommended_actions", [])),
-            key=lambda item: int(item.get("priority", 99)),
-        )
-        if actions:
-            lines.append("Top actions:")
-            for action in actions[:5]:
-                lines.append(
-                    f"- P{int(action.get('priority', 99))} "
-                    f"{str(action.get('objective', 'Untitled action')).strip()}"
-                )
     return "\n".join(lines)
 
 
@@ -130,28 +107,6 @@ def _consume_shell_style_input(state: _SessionState, raw_value: str) -> bool:
             body=(
                 "You are already inside the ARCHON terminal session. "
                 "Use /help for in-session commands or /quit to return to the shell."
-            ),
-            tone="system",
-        )
-        return True
-    if normalized in {"archon studio", "archon studio open"}:
-        _append_message(
-            state,
-            title="Shell command detected",
-            body=(
-                "Studio is a shell command, not a TUI prompt. "
-                "Use /quit, then run `archon studio open` from your terminal."
-            ),
-            tone="system",
-        )
-        return True
-    if normalized == "archon dashboard":
-        _append_message(
-            state,
-            title="Shell command detected",
-            body=(
-                "Dashboard is a shell command, not a TUI prompt. "
-                "Use /quit, then run `archon dashboard` from your terminal."
             ),
             tone="system",
         )
@@ -214,15 +169,6 @@ async def _handle_event(
                 f"Confidence: {int(event.get('confidence', 0) or 0)}%\n"
                 f"{event.get('output_preview', '')}"
             ),
-            tone="event",
-        )
-        _render(state)
-        return
-    if event_type == "growth_agent_completed":
-        _append_message(
-            state,
-            title=f"{event.get('agent', 'unknown')} | growth",
-            body=f"Confidence: {int(event.get('confidence', 0) or 0)}%",
             tone="event",
         )
         _render(state)
@@ -315,7 +261,7 @@ async def _handle_command(
             title="Commands",
             body="\n".join(
                 [
-                    "/mode <debate|growth|auto>",
+                    "/mode <debate>",
                     "/context <json-object>",
                     "/context",
                     "/clear-context",
@@ -331,11 +277,11 @@ async def _handle_command(
         )
         return True
     if command == "mode":
-        if arg_text not in {"debate", "growth", "auto"}:
+        if arg_text not in {"debate"}:
             _append_message(
                 state,
                 title="Mode update failed",
-                body="Mode must be debate, growth, or auto.",
+                body="Mode must be debate.",
                 tone="error",
             )
             return True

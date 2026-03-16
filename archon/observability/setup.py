@@ -24,9 +24,6 @@ def configure_observability(app: Any) -> None:
         otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or None,
     )
     TracingSetup.instrument_fastapi(app)
-    webchat_app = getattr(getattr(app, "state", None), "webchat_app", None)
-    if webchat_app is not None:
-        TracingSetup.instrument_fastapi(webchat_app)
     orchestrator = getattr(getattr(app, "state", None), "orchestrator", None)
     if orchestrator is not None:
         TracingSetup.instrument_orchestrator(orchestrator)
