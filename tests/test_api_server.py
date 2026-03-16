@@ -7,7 +7,7 @@ import pytest
 
 from archon.interfaces.api.rate_limit import InMemoryTierRateLimitStore, set_rate_limit_store
 from archon.interfaces.api.server import app
-from archon.testing.asgi import lifespan, request
+from archon.testing import lifespan, request
 from archon.versioning import resolve_git_sha
 
 pytestmark = pytest.mark.asyncio

@@ -100,6 +100,20 @@ DRAWER_COPY = {
             "ops.worker-status": "Read worker queue counts from the runtime database.",
         },
     },
+    "redteam": {
+        "title": "Red-Team",
+        "icon": "[R]",
+        "tagline": "Run regression scans and export red-team reports.",
+        "availability": "live",
+        "explanation": (
+            "Red-team commands generate regression artifacts that summarize adversarial "
+            "coverage by attack vector and capture any detected regressions."
+        ),
+        "requires": ["output directory"],
+        "commands": {
+            "redteam.regression": "Run the automated red-team regression scan.",
+        },
+    },
 }
 
 
@@ -377,6 +391,21 @@ COMMAND_COPY = {
         "next_steps": [
             "Run archon ops worker to start or restart the worker.",
             "Run archon core status for the broader runtime summary.",
+        ],
+    },
+    "redteam.regression": {
+        "what": "Generate a red-team regression report for the current build.",
+        "steps": [
+            "Resolve the output directory for red-team artifacts.",
+            "Request approval to write the regression report.",
+            "Write regression report files to disk.",
+        ],
+        "results": {
+            "success": "Red-team regression scan complete. Scan id {scan_id}.",
+        },
+        "next_steps": [
+            "Review the generated markdown report.",
+            "Archive the JSON output for comparisons.",
         ],
     },
 }
