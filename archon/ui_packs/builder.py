@@ -306,9 +306,9 @@ def _sha256_bytes(value: bytes) -> str:
 
 
 def _apply_signature(pack_json: dict[str, Any]) -> None:
-    import os
-    import hmac
     import hashlib
+    import hmac
+    import os
 
     key = str(os.getenv("ARCHON_UI_PACK_SIGNING_KEY", "")).strip()
     if not key:

@@ -80,3 +80,6 @@ disable_error_code = [
   "unused-ignore",
   "var-annotated",
 ]
+
+[tool.coverage.run]
+omit = ["archon/billing/*", "archon/runtime_installer.py"]

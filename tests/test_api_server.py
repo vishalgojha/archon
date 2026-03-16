@@ -160,3 +160,117 @@ async def test_ui_pack_build_register_activate_flow(monkeypatch: pytest.MonkeyPa
     assert active.status_code == 200
     assert active.json()["active"]["version"] == "v1"
     assert asset.status_code == 200
+
+
+async def test_issue_session_token_rejects_when_auth_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/v1/auth/session-token",
+            json_body={"tenant_id": "session-user", "tier": "pro"},
+            base_url="http://127.0.0.1",
+        )
+
+    assert response.status_code == 403
+
+
+async def test_issue_session_token_requires_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ARCHON_JWT_SECRET", raising=False)
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/v1/auth/session-token",
+            json_body={"tenant_id": "session-user", "tier": "pro"},
+            base_url="http://example.com",
+        )
+
+    assert response.status_code == 403
+
+
+async def test_issue_session_token_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ARCHON_JWT_SECRET", raising=False)
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/v1/auth/session-token",
+            json_body={"tenant_id": "session-user", "tier": "pro"},
+            base_url="http://127.0.0.1",
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tenant_id"] == "session-user"
+    assert payload["tier"] == "pro"
+    assert payload["ephemeral"] is True
+    assert isinstance(payload["token"], str)
+
+
+async def test_list_pending_approvals_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "GET",
+            "/v1/approvals",
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"approvals": []}
+
+
+async def test_approve_and_deny_unknown_request_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    token = _auth_token()
+
+    async with lifespan(app):
+        approve = await request(
+            app,
+            "POST",
+            "/v1/approvals/unknown/approve",
+            json_body={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        deny = await request(
+            app,
+            "POST",
+            "/v1/approvals/unknown/deny",
+            json_body={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert approve.status_code == 404
+    assert deny.status_code == 404
+
+
+async def test_ui_pack_versions_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    token = _auth_token(tenant="tenant-ui-empty", tier="pro")
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "GET",
+            "/v1/ui-packs/versions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"versions": []}
+
+
+async def test_ui_pack_asset_requires_token() -> None:
+    async with lifespan(app):
+        response = await request(app, "GET", "/ui-packs/v1/index.js")
+
+    assert response.status_code == 401

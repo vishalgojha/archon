@@ -75,7 +75,6 @@ class Orchestrator:
         """
 
         effective_task_id = task_id or f"task-{uuid.uuid4().hex[:12]}"
-        effective_context = context or {}
         self.cost_governor.start_task(effective_task_id)
 
         await self._emit(
