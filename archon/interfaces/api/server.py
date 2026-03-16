@@ -21,6 +21,15 @@ from archon.analytics import AnalyticsCollector
 from archon.api.auth import TenantTokenError, create_tenant_token
 from archon.config import load_archon_config
 from archon.core.approval_gate import ApprovalRequiredError
+from archon.core.brain import (
+    BrainArtifactError,
+    BrainSchemaViolation,
+    BrainService,
+    BrainUnauthorizedError,
+    BrainVersionMismatchError,
+    load_brain_config,
+    resolve_brain_root,
+)
 from archon.core.orchestrator import OrchestrationResult, Orchestrator
 from archon.interfaces.api.auth import (
     AuthMiddleware,
@@ -118,6 +127,22 @@ class SessionTokenRequest(BaseModel):
     expires_in: int = Field(default=3600, ge=60, le=7 * 24 * 3600)
 
 
+class BrainWriteRequest(BaseModel):
+    """Request payload for authoritative brain writes."""
+
+    artifact: Literal["module_registry", "architecture"]
+    schema_version: str
+    agent_id: str
+    payload: dict[str, Any]
+
+
+class BrainSnapshotRequest(BaseModel):
+    """Request payload for non-authoritative brain snapshots."""
+
+    artifact: Literal["reality_snapshot", "delta"]
+    payload: dict[str, Any]
+
+
 def _to_response(result: OrchestrationResult) -> TaskResponse:
     return TaskResponse(
         task_id=result.task_id,
@@ -172,6 +197,8 @@ async def lifespan(app: FastAPI):
         path=_db_path("ARCHON_UI_PACK_DB", "archon_ui_packs.sqlite3")
     )
     app.state.ui_pack_storage = UIPackStorage(root=os.getenv("ARCHON_UI_PACK_ROOT", "ui_packs"))
+    brain_config = load_brain_config()
+    app.state.brain_service = BrainService(brain_config, resolve_brain_root())
     app.state.started_monotonic = time.monotonic()
     try:
         yield
@@ -257,6 +284,57 @@ async def healthcheck() -> dict[str, str]:
     """Simple readiness probe endpoint."""
 
     return {"status": "ok"}
+
+
+@app.post("/brain/write")
+async def brain_write(payload: BrainWriteRequest, request: Request) -> Response:
+    """Write an authoritative brain artifact after schema and ownership checks."""
+
+    service: BrainService = request.app.state.brain_service
+    try:
+        path = service.write(
+            artifact=payload.artifact,
+            schema_version=payload.schema_version,
+            agent_id=payload.agent_id,
+            payload=payload.payload,
+        )
+    except BrainVersionMismatchError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.to_error()})
+    except BrainUnauthorizedError as exc:
+        return JSONResponse(status_code=403, content={"error": exc.to_error()})
+    except BrainArtifactError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.to_error()})
+    except BrainSchemaViolation as exc:
+        return JSONResponse(status_code=422, content={"error": exc.to_error()})
+
+    return JSONResponse(
+        {
+            "artifact": payload.artifact,
+            "schema_version": payload.schema_version,
+            "authoritative": True,
+            "path": str(path),
+        }
+    )
+
+
+@app.post("/brain/snapshot")
+async def brain_snapshot(payload: BrainSnapshotRequest, request: Request) -> Response:
+    """Write a non-authoritative snapshot artifact (no schema or ownership checks)."""
+
+    service: BrainService = request.app.state.brain_service
+    try:
+        path = service.snapshot(artifact=payload.artifact, payload=payload.payload)
+    except BrainArtifactError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.to_error()})
+
+    return JSONResponse(
+        {
+            "artifact": payload.artifact,
+            "authoritative": False,
+            "note": "Snapshot artifacts are non-authoritative and require planner review.",
+            "path": str(path),
+        }
+    )
 
 
 @app.post("/v1/auth/session-token")

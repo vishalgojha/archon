@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import jwt
 import pytest
 
@@ -275,3 +277,117 @@ async def test_ui_pack_asset_requires_token() -> None:
         response = await request(app, "GET", "/ui-packs/v1/index.js")
 
     assert response.status_code == 401
+
+
+async def test_brain_write_accepts_valid_module_registry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    monkeypatch.setenv("ARCHON_BRAIN_ROOT", str(tmp_path))
+    payload = {
+        "artifact": "module_registry",
+        "schema_version": "v1",
+        "agent_id": "planner_agent",
+        "payload": {
+            "version": "2026.03.17",
+            "modules": [
+                {
+                    "id": "core.brain",
+                    "name": "Brain Core",
+                    "owner": "planner_agent",
+                    "status": "active",
+                    "dependencies": ["core.orchestrator"],
+                }
+            ],
+        },
+    }
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/brain/write",
+            json_body=payload,
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authoritative"] is True
+    assert Path(body["path"]).exists()
+
+
+async def test_brain_write_rejects_unauthorized_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    monkeypatch.setenv("ARCHON_BRAIN_ROOT", str(tmp_path))
+    payload = {
+        "artifact": "module_registry",
+        "schema_version": "v1",
+        "agent_id": "random_agent",
+        "payload": {"modules": []},
+    }
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/brain/write",
+            json_body=payload,
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["error"]["code"] == "unauthorized_agent"
+
+
+async def test_brain_write_rejects_schema_violation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    monkeypatch.setenv("ARCHON_BRAIN_ROOT", str(tmp_path))
+    payload = {
+        "artifact": "module_registry",
+        "schema_version": "v1",
+        "agent_id": "planner_agent",
+        "payload": {"version": "2026.03.17"},
+    }
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/brain/write",
+            json_body=payload,
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "schema_validation_error"
+    assert body["error"]["errors"]
+
+
+async def test_brain_snapshot_writes_delta(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ARCHON_JWT_SECRET", "archon-dev-secret-change-me-32-bytes")
+    monkeypatch.setenv("ARCHON_BRAIN_ROOT", str(tmp_path))
+    payload = {
+        "artifact": "delta",
+        "payload": {"diff": ["added core.brain"]},
+    }
+
+    async with lifespan(app):
+        response = await request(
+            app,
+            "POST",
+            "/brain/snapshot",
+            json_body=payload,
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authoritative"] is False
+    assert Path(body["path"]).exists()
