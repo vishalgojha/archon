@@ -1,7 +1,5 @@
 """FastAPI server entrypoint for ARCHON runtime APIs."""
 
-from __future__ import annotations
-
 import asyncio
 import os
 import secrets

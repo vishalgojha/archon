@@ -1,0 +1,6 @@
+{
+  "python.testing.autoTestDiscoverOnSaveEnabled": false,
+  "python.testing.autoRun": "off",
+  "debug.autoAttach": "disabled",
+  "python.testing.pytestEnabled": true
+}
