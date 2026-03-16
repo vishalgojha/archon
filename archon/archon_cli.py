@@ -17,8 +17,8 @@ import yaml
 
 from archon.api.auth import create_tenant_token
 from archon.config import ArchonConfig, load_archon_config
-from archon.validate_config import main as validate_config_main
 from archon.deploy.cli import deploy_group
+from archon.validate_config import main as validate_config_main
 from archon.versioning import resolve_git_sha, resolve_version
 
 DEFAULT_CONFIG_PATH = "config.archon.yaml"

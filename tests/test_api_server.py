@@ -174,6 +174,7 @@ async def test_issue_session_token_rejects_when_auth_configured(
             "/v1/auth/session-token",
             json_body={"tenant_id": "session-user", "tier": "pro"},
             base_url="http://127.0.0.1",
+            headers=_auth_headers(),
         )
 
     assert response.status_code == 403
