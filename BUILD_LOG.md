@@ -74,3 +74,27 @@ It is intended as a handoff artifact for any next agent.
 ### Step 7 - 2026-03-16
 - Ran `python -m pytest tests/` before commit.
 - Result: failed during collection with `PydanticUndefinedAnnotation` (`TaskRequest` not defined) originating from `tests/test_api_server.py`.
+
+### Step 8 - 2026-03-16
+- Scaffolded `mobile/` Android project with Kotlin DSL Gradle, manifest, resources, and core config.
+- Why: establish the Archon Mobile execution node with SDK 26/34 and required dependencies.
+- Note: build/install not executed yet per explicit instruction to avoid building.
+- Note: Gradle wrapper jar not generated yet; run `./gradlew wrapper` when ready to build.
+
+### Step 9 - 2026-03-16
+- Implemented `ArchonForegroundService` + `ArchonRuntime` + `GatewaySession` with foreground notification, WebSocket connection, and reconnect scheduling.
+- Why: keep a persistent background node connected to Archon with exponential backoff and exact idle-safe alarms.
+- Decision: WebSocket gateway path set to `/v1/mobile/gateway`; base URL stored in encrypted prefs with default `http://10.0.2.2:8000`.
+
+### Step 10 - 2026-03-16
+- Added `InvokeDispatcher`, `ContextCollector`, and `AuditLogStore` for function routing and SQLite audit trail.
+- Why: execute backend-triggered functions and log all invocations locally for evolution audit.
+
+### Step 11 - 2026-03-16
+- Added `WhatsAppObserver` using `NotificationListenerService` to capture WhatsApp notifications and forward approved context.
+- Why: support ambient WhatsApp context without Accessibility service.
+
+### Step 12 - 2026-03-16
+- Added `OnboardingActivity` with connect, permissions, test, and done flow plus encrypted API key storage.
+- Why: ensure first-run setup and runtime permissions before the service runs silently.
+- Decision: health check uses `GET /health` with bearer auth to validate connectivity.
