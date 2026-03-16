@@ -18,6 +18,7 @@ import yaml
 from archon.api.auth import create_tenant_token
 from archon.config import ArchonConfig, load_archon_config
 from archon.validate_config import main as validate_config_main
+from archon.deploy.cli import deploy_group
 from archon.versioning import resolve_git_sha, resolve_version
 
 DEFAULT_CONFIG_PATH = "config.archon.yaml"
@@ -310,6 +311,9 @@ def _run_api_server_with_env(*, host: str, port: int) -> None:
 @click.group()
 def legacy_cli() -> None:
     """Compatibility commands that live outside drawers."""
+
+
+legacy_cli.add_command(deploy_group)
 
 
 @legacy_cli.command("version")

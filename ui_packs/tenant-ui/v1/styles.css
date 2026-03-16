@@ -1,0 +1,54 @@
+.archon-pack-root {
+  --pack-bg: #0f1115;
+  --pack-panel: #171c2b;
+  --pack-text: #f8fafc;
+  --pack-muted: #9aa3b2;
+  --pack-accent: #ff6b35;
+  --pack-accent-soft: #f7b267;
+  font-family: Sora, system-ui, -apple-system, sans-serif;
+  color: var(--pack-text);
+}
+
+.archon-pack-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.archon-pack-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: var(--pack-panel);
+  padding: 12px;
+}
+
+.archon-pack-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+}
+
+.archon-pack-card p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pack-muted);
+}
+
+.archon-pack-pill {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.archon-pack-items {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.archon-pack-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+}

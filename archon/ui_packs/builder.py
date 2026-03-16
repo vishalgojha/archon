@@ -47,20 +47,22 @@ def build_pack(
     normalized = _normalize_blueprint(blueprint)
     styles_css = _render_styles_css(normalized)
     index_js = _render_pack_js()
+    styles_bytes = styles_css.encode("utf-8")
+    index_bytes = index_js.encode("utf-8")
 
     assets = {
         "index.js": {
-            "sha256": _sha256_text(index_js),
+            "sha256": _sha256_bytes(index_bytes),
             "content_type": "text/javascript",
         },
         "styles.css": {
-            "sha256": _sha256_text(styles_css),
+            "sha256": _sha256_bytes(styles_bytes),
             "content_type": "text/css",
         },
     }
 
-    (pack_dir / "index.js").write_text(index_js, encoding="utf-8")
-    (pack_dir / "styles.css").write_text(styles_css, encoding="utf-8")
+    (pack_dir / "index.js").write_bytes(index_bytes)
+    (pack_dir / "styles.css").write_bytes(styles_bytes)
 
     pack_json = {
         "schema_version": 1,
@@ -297,6 +299,10 @@ def _slugify(value: str) -> str:
 
 def _sha256_text(text: str) -> str:
     return __import__("hashlib").sha256(text.encode("utf-8")).hexdigest()
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return __import__("hashlib").sha256(value).hexdigest()
 
 
 def _apply_signature(pack_json: dict[str, Any]) -> None:
