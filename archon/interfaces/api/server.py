@@ -174,17 +174,20 @@ async def lifespan(app: FastAPI):
 
     config_path = os.getenv("ARCHON_CONFIG", "config.archon.yaml")
     config = load_archon_config(config_path)
-    secret = str(os.getenv("ARCHON_JWT_SECRET", "")).strip()
-    if not secret:
-        secret = str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
-    if not secret and os.getenv("PYTEST_CURRENT_TEST"):
-        secret = "archon-dev-secret-change-me-32-bytes"
-    if not secret:
-        secret = secrets.token_urlsafe(48)
-        os.environ["ARCHON_JWT_SECRET"] = secret
-        app.state.ephemeral_auth = True
-    else:
+    env_secret = str(os.getenv("ARCHON_JWT_SECRET", "")).strip()
+    config_secret = ""
+    if not env_secret:
+        config_secret = str(getattr(getattr(config, "auth", None), "jwt_secret", "") or "").strip()
+    configured_secret = env_secret or config_secret
+    if configured_secret:
         app.state.ephemeral_auth = False
+    else:
+        app.state.ephemeral_auth = True
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            runtime_secret = "archon-dev-secret-change-me-32-bytes"
+        else:
+            runtime_secret = secrets.token_urlsafe(48)
+        os.environ["ARCHON_JWT_SECRET"] = runtime_secret
     app.state.orchestrator = Orchestrator(config)
     app.state.auth_settings = AuthSettings.from_env(config)
     app.state.analytics_collector = AnalyticsCollector(
@@ -220,6 +223,7 @@ _exempt_paths = {
     "/healthz",
     "/shell",
     "/shell/",
+    "/v1/auth/session-token",
 }
 _exempt_path_prefixes = {
     "/shell/assets",
@@ -351,8 +355,8 @@ async def issue_session_token(payload: SessionTokenRequest, request: Request) ->
             status_code=403,
             detail="Session token issuance is disabled when JWT secret is configured.",
         )
-    client_host = request.client.host if request.client else ""
-    if client_host not in {"127.0.0.1", "::1"}:
+    client_host = request.url.hostname or ""
+    if client_host not in {"127.0.0.1", "::1", "localhost"}:
         raise HTTPException(status_code=403, detail="Session token endpoint is localhost-only.")
 
     tenant_id = str(payload.tenant_id or "").strip() or f"session-{uuid.uuid4().hex[:10]}"

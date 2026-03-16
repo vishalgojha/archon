@@ -33,10 +33,12 @@ def _path_module_for_platform(platform_name: str):
 
 def _normalize_path_for_platform(value: str, *, platform_name: str) -> str:
     path_module = _path_module_for_platform(platform_name)
-    normalized = path_module.normpath(path_module.expandvars(str(value).strip()))
+    raw = str(value).strip()
     if _is_windows_platform(platform_name):
-        normalized = path_module.normcase(normalized)
-    return normalized
+        expanded = path_module.expandvars(raw)
+        normalized = path_module.normpath(expanded.replace("/", "\\"))
+        return path_module.normcase(normalized)
+    return path_module.normpath(path_module.expandvars(raw))
 
 
 def _default_windows_home() -> PureWindowsPath:
@@ -71,8 +73,10 @@ def default_install_root(platform_name: str | None = None) -> Path:
     if _is_windows_platform(platform_name):
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         if local_appdata:
-            return Path(str(PureWindowsPath(local_appdata) / "Programs" / "Archon"))
-        return Path(str(_default_windows_home() / "AppData" / "Local" / "Programs" / "Archon"))
+            root = PureWindowsPath(local_appdata) / "Programs" / "Archon"
+        else:
+            root = _default_windows_home() / "AppData" / "Local" / "Programs" / "Archon"
+        return Path(ntpath.normpath(str(root)))
     if platform_name == "darwin":
         return Path.home() / "Library" / "Application Support" / "Archon"
     return Path.home() / ".local" / "share" / "archon"
