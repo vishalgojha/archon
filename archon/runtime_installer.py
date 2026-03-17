@@ -195,7 +195,7 @@ def render_windows_ps1_shim(*python_args: str) -> str:
     """Render the ``archon.ps1`` shim contents.
 
     Example:
-        Input: ``("-m", "archon.archon_cli", "serve")``
+        Input: ``("-m", "archon.archon_cli", "ops", "serve")``
         Output: a PowerShell launcher for the dedicated ARCHON runtime.
     """
 
@@ -212,7 +212,7 @@ def render_posix_shim(*python_args: str) -> str:
     """Render the Unix shell shim contents.
 
     Example:
-        Input: ``("-m", "archon.archon_cli", "serve")``
+        Input: ``("-m", "archon.archon_cli", "ops", "serve")``
         Output: a POSIX shell launcher for the dedicated ARCHON runtime.
     """
 
@@ -335,12 +335,12 @@ def _write_windows_shims(bin_dir: Path, *, dry_run: bool = False) -> None:
     )
     _write_text(
         bin_dir / "archon-server.cmd",
-        render_windows_cmd_shim("-m", "archon.archon_cli", "serve"),
+        render_windows_cmd_shim("-m", "archon.archon_cli", "ops", "serve"),
         dry_run=dry_run,
     )
     _write_text(
         bin_dir / "archon-server.ps1",
-        render_windows_ps1_shim("-m", "archon.archon_cli", "serve"),
+        render_windows_ps1_shim("-m", "archon.archon_cli", "ops", "serve"),
         dry_run=dry_run,
     )
 
@@ -353,7 +353,7 @@ def _write_posix_shims(bin_dir: Path, *, dry_run: bool = False) -> None:
     )
     _write_executable_text(
         bin_dir / "archon-server",
-        render_posix_shim("-m", "archon.archon_cli", "serve"),
+        render_posix_shim("-m", "archon.archon_cli", "ops", "serve"),
         dry_run=dry_run,
     )
 
@@ -728,8 +728,8 @@ def install(
     else:
         print("Open a new shell or source your shell profile, then run:")
     print("  archon version")
-    print("  archon onboard")
-    print("  archon serve")
+    print("  archon init")
+    print("  archon ops serve")
     return 0
 
 

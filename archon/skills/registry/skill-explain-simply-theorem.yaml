@@ -1,0 +1,11 @@
+name: skill-explain-simply-theorem
+description: Handle tasks about explain, simply, theorem.
+trigger_patterns:
+- explain
+- simply
+- theorem
+provider_preference: openrouter
+cost_tier: standard
+state: ACTIVE
+version: 2
+created_at: 1773712934.9770892

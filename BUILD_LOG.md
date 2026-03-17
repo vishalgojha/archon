@@ -98,3 +98,16 @@ It is intended as a handoff artifact for any next agent.
 - Added `OnboardingActivity` with connect, permissions, test, and done flow plus encrypted API key storage.
 - Why: ensure first-run setup and runtime permissions before the service runs silently.
 - Decision: health check uses `GET /health` with bearer auth to validate connectivity.
+
+### Step 13 - 2026-03-17
+- Replaced the legacy agentic chat menu loop with a Textual-based 4-tab operator dashboard.
+- Added System Status, Active Tasks, Cost Summary, and Evolution Log tabs plus a bottom goal input bar.
+- Wired live refresh every 2 seconds for tasks and cost summaries.
+- Added Textual dependency to `requirements.txt` and `pyproject.toml`.
+- Updated `tests/test_tui.py` to validate the new Textual launch path and state handling.
+
+### Step 14 - 2026-03-17
+- Added `archon/skills/` with a skill registry and creator tied to the evolution audit trail.
+- Implemented approval-gated skill proposal and promotion with A/B testing via `ab_tester.py`.
+- Wired skill routing into the orchestrator and tracked task audits for gap analysis.
+- Added CLI drawer `archon skills` (list/propose/apply) and updated validation/config for skills.

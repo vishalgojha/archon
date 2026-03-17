@@ -32,6 +32,8 @@ def _load_config(path: str = DEFAULT_CONFIG_PATH) -> ArchonConfig:
 def write_env(key: str, value: str, env_path: str | Path = ".env") -> None:
     """Upsert a key=value line in .env file."""
 
+    if key and value:
+        os.environ[key] = value
     path = Path(env_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
@@ -59,6 +61,23 @@ def _read_env_value(key: str, env_path: str | Path = ".env") -> str | None:
         if line.startswith(prefix):
             return line[len(prefix) :].strip()
     return None
+
+
+def _load_env_file(env_path: str | Path = ".env") -> None:
+    path = Path(env_path)
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def _default_byok_config() -> dict[str, Any]:
@@ -172,6 +191,13 @@ def _validation_payload(config_data: dict[str, Any]) -> dict[str, Any]:
         "tenants": [],
         "memory": {"backend": "sqlite"},
         "evolution": {"enabled": False, "max_experiments_per_day": 0},
+        "skills": {
+            "enabled": bool((config_data.get("skills") or {}).get("enabled", True)),
+            "auto_propose": bool((config_data.get("skills") or {}).get("auto_propose", False)),
+            "staging_threshold": float(
+                (config_data.get("skills") or {}).get("staging_threshold", 0.75)
+            ),
+        },
     }
 
 
@@ -335,6 +361,7 @@ cli = _build_root_cli()
 def main() -> None:
     """Entry point for `python -m archon.archon_cli`."""
 
+    _load_env_file()
     cli(prog_name="archon")
 
 

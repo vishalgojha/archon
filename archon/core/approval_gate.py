@@ -28,6 +28,8 @@ HIGH_RISK_ACTIONS: frozenset[str] = frozenset(
         "outbound_whatsapp",
         "outbound_voice",
         "db_delete",
+        "skill_propose",
+        "skill_promote",
         "ui_pack_publish",
         "ui_pack_activate",
         "ui_pack_build",

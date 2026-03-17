@@ -66,6 +66,22 @@ DRAWER_COPY = {
             "evolve.apply": "Promote an approved evolution result into the workflow file.",
         },
     },
+    "skills": {
+        "title": "Skill Studio",
+        "icon": "[S]",
+        "tagline": "Propose, test, and promote skill definitions.",
+        "availability": "live",
+        "explanation": (
+            "Skill commands analyze execution gaps, stage new skill YAML definitions, "
+            "run A/B trials, and promote approved skills into active routing."
+        ),
+        "requires": ["audit trail database", "skills registry directory"],
+        "commands": {
+            "skills.list": "Show all registered skill definitions.",
+            "skills.propose": "Analyze gaps and stage a new skill definition.",
+            "skills.apply": "Run A/B trials and promote a staged skill.",
+        },
+    },
     "providers": {
         "title": "Providers",
         "icon": "[P]",
@@ -225,6 +241,53 @@ COMMAND_COPY = {
         "next_steps": [
             "Run archon agents task for a single API call.",
             "Run archon core status for runtime status.",
+        ],
+    },
+    "skills.list": {
+        "what": "List all registered skills and their routing status.",
+        "steps": [
+            "Resolve the config path.",
+            "Load skills from the registry.",
+            "Render the registry list.",
+        ],
+        "results": {
+            "success": "Loaded {count} skill(s).",
+        },
+        "next_steps": [
+            "Run archon skills propose to stage a new skill.",
+            "Run archon skills apply <name> to promote a staged skill.",
+        ],
+    },
+    "skills.propose": {
+        "what": "Analyze recent gaps and stage a new skill proposal.",
+        "steps": [
+            "Load config and initialize the skill creator.",
+            "Analyze failed or low-confidence tasks for gaps.",
+            "Request approval and write the staged skill definition.",
+        ],
+        "results": {
+            "success": "Staged skill {skill}.",
+            "empty": "No gaps found for proposal.",
+            "denied": "Skill proposal denied.",
+        },
+        "next_steps": [
+            "Run archon skills apply <name> to test the staged skill.",
+            "Run archon skills list to review registry status.",
+        ],
+    },
+    "skills.apply": {
+        "what": "Run A/B testing for a staged skill and promote on success.",
+        "steps": [
+            "Load config and initialize the skill creator.",
+            "Run A/B tests and request approval for promotion.",
+        ],
+        "results": {
+            "success": "Skill {skill} promoted with success rate {success_rate}.",
+            "rejected": "Skill {skill} did not meet the promotion threshold.",
+            "denied": "Skill promotion denied.",
+        },
+        "next_steps": [
+            "Run archon skills list to confirm the active skill status.",
         ],
     },
     "memory.search": {

@@ -139,6 +139,8 @@ class ProviderRouter:
         self._live_mode = live_mode
         self._http = httpx.AsyncClient(timeout=timeout_seconds)
         self._cost_optimizer: CostOptimizerAgent | None = None
+        self._task_overrides: dict[str, dict[str, str | None]] = {}
+        self._task_routing: dict[str, dict[str, Any]] = {}
 
     async def aclose(self) -> None:
         """Close network resources used by the router."""
@@ -153,6 +155,29 @@ class ProviderRouter:
         """
 
         self._cost_optimizer = optimizer
+
+    def set_task_override(self, task_id: str, *, provider: str | None = None) -> None:
+        if not provider:
+            self._task_overrides.pop(task_id, None)
+            return
+        self._task_overrides[task_id] = {"provider": provider}
+
+    def clear_task_override(self, task_id: str) -> None:
+        self._task_overrides.pop(task_id, None)
+
+    def clear_task_routing(self, task_id: str) -> None:
+        self._task_routing.pop(task_id, None)
+
+    def task_routing_snapshot(self, task_id: str) -> dict[str, Any]:
+        entry = self._task_routing.get(task_id, {})
+        providers = entry.get("providers") or set()
+        if not isinstance(providers, set):
+            providers = set(providers)
+        return {
+            "providers": sorted(providers),
+            "fallback_used": bool(entry.get("fallback_used", False)),
+            "preferred_provider": entry.get("preferred_provider"),
+        }
 
     def resolve_provider(
         self,
@@ -206,10 +231,20 @@ class ProviderRouter:
             True
         """
 
+        effective_provider_override = provider_override
+        if task_id and effective_provider_override is None:
+            override = self._task_overrides.get(task_id) or {}
+            effective_provider_override = override.get("provider")
         selection = self.resolve_provider(
             role=role,
             model_override=model_override,
-            provider_override=provider_override,
+            provider_override=effective_provider_override,
+        )
+        self._record_task_routing(
+            task_id=task_id,
+            role=role,
+            selection=selection,
+            provider_override=effective_provider_override,
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
 
@@ -239,6 +274,35 @@ class ProviderRouter:
             )
         return response
 
+    def _record_task_routing(
+        self,
+        *,
+        task_id: str | None,
+        role: str,
+        selection: ProviderSelection,
+        provider_override: str | None,
+    ) -> None:
+        if not task_id:
+            return
+        entry = self._task_routing.setdefault(
+            task_id,
+            {"providers": set(), "fallback_used": False, "preferred_provider": None},
+        )
+        providers = entry.get("providers")
+        if not isinstance(providers, set):
+            providers = set(providers or [])
+            entry["providers"] = providers
+        providers.add(selection.provider)
+        preferred = entry.get("preferred_provider")
+        if preferred is None:
+            preferred = provider_override or getattr(
+                self._config.byok, role, self._config.byok.primary
+            )
+            entry["preferred_provider"] = preferred
+        expected = provider_override or preferred
+        if expected and selection.provider != expected:
+            entry["fallback_used"] = True
+
     async def invoke_multimodal(
         self,
         *,
@@ -257,10 +321,20 @@ class ProviderRouter:
             True
         """
 
+        effective_provider_override = provider_override
+        if task_id and effective_provider_override is None:
+            override = self._task_overrides.get(task_id) or {}
+            effective_provider_override = override.get("provider")
         selection = self.resolve_provider(
             role=role,
             model_override=model_override,
-            provider_override=provider_override,
+            provider_override=effective_provider_override,
+        )
+        self._record_task_routing(
+            task_id=task_id,
+            role=role,
+            selection=selection,
+            provider_override=effective_provider_override,
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
 

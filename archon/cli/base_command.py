@@ -26,11 +26,12 @@ class CommandOutcome:
 
 
 class CommandSession:
-    def __init__(self, command_id: str) -> None:
+    def __init__(self, command_id: str, *, allow_live: bool = True) -> None:
         self.command_id = command_id
         self._console = Console() if Console is not None else None
         self._states = ["pending"] * len(COMMAND_COPY[command_id]["steps"])
         self._live = None
+        self._allow_live = allow_live
 
     def print(self, renderable: Any) -> None:
         if self._console is not None and not isinstance(renderable, str):
@@ -41,7 +42,7 @@ class CommandSession:
     def start(self) -> None:
         self.print(renderer.what_panel(self.command_id))
         panel = renderer.steps_table(self.command_id, self._states)
-        if Live is None or self._console is None or isinstance(panel, str):
+        if not self._allow_live or Live is None or self._console is None or isinstance(panel, str):
             self.print(panel)
             return
         self._live = Live(panel, console=self._console, refresh_per_second=4)
@@ -93,6 +94,7 @@ class CommandSession:
 
 class ArchonCommand:
     command_id: str = ""
+    allow_live: bool = True
 
     def __init__(self, bindings: Any) -> None:
         self.bindings = bindings
@@ -101,7 +103,7 @@ class ArchonCommand:
         raise NotImplementedError
 
     def invoke(self, **kwargs) -> CommandOutcome:
-        session = CommandSession(self.command_id)
+        session = CommandSession(self.command_id, allow_live=self.allow_live)
         session.start()
         try:
             result = self.run(session=session, **kwargs)

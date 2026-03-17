@@ -78,6 +78,16 @@ class AuthConfig(BaseModel):
     jwt_secret: str | None = None
 
 
+class SkillsConfig(BaseModel):
+    """Skill routing and auto-proposal configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    auto_propose: bool = False
+    staging_threshold: float = 0.75
+
+
 class ArchonConfig(BaseModel):
     """Top-level ARCHON runtime configuration."""
 
@@ -85,6 +95,7 @@ class ArchonConfig(BaseModel):
 
     byok: ByokConfig = Field(default_factory=ByokConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
 
 
 def resolve_config_path(path: str | Path = "config.archon.yaml") -> Path:

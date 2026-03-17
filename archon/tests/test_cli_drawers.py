@@ -31,6 +31,10 @@ def test_evolve_drawer() -> None:
     _assert_drawer("evolve")
 
 
+def test_skills_drawer() -> None:
+    _assert_drawer("skills")
+
+
 def test_providers_drawer() -> None:
     _assert_drawer("providers")
 

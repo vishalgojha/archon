@@ -138,6 +138,16 @@ class EvolutionSection(BaseModel):
     max_experiments_per_day: int = Field(default=0, ge=0)
 
 
+class SkillsSection(BaseModel):
+    """Skill routing config constraints used by validator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    auto_propose: bool = False
+    staging_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+
+
 class RuntimeValidationConfig(BaseModel):
     """Schema used by `archon.validate_config` CLI checks."""
 
@@ -148,6 +158,7 @@ class RuntimeValidationConfig(BaseModel):
     tenants: list[TenantSection]
     memory: MemorySection
     evolution: EvolutionSection
+    skills: SkillsSection
     supervised_mode: bool = False
     deployment_mode: str | None = None
     default_tier: str | None = None
@@ -517,6 +528,10 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("tenants", [])
     normalized.setdefault("memory", {"backend": "sqlite"})
     normalized.setdefault("evolution", {"enabled": False, "max_experiments_per_day": 0})
+    normalized.setdefault(
+        "skills",
+        {"enabled": True, "auto_propose": False, "staging_threshold": 0.75},
+    )
     normalized.pop("byok", None)
     return normalized
 

@@ -1,392 +1,450 @@
-"""Interactive terminal UI for ARCHON orchestration sessions."""
+"""Textual-based terminal UI for ARCHON orchestration sessions."""
 
 from __future__ import annotations
 
 import asyncio
-import json
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-import click
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Input, RichLog, Static, TabbedContent, TabPane
 
 from archon.config import ArchonConfig
-from archon.core.orchestrator import OrchestrationResult, Orchestrator
-from archon.interfaces.cli.tui_onboarding import (
-    OnboardingCallbacks,
-    run_launcher,
-    run_setup_wizard,
-)
-from archon.interfaces.cli.tui_render import preview, render_screen
+from archon.core.orchestrator import Orchestrator
+from archon.versioning import resolve_version
 
 
 @dataclass(slots=True)
-class _SessionState:
+class TaskHistory:
+    task_id: str
+    goal: str
+    mode: str
+    confidence: int
+    spent_usd: float
+    budget_usd: float
+
+
+@dataclass(slots=True)
+class ActiveTask:
+    task_id: str
+    goal: str
+    mode: str
+    status: str = "running"
+    agent: str = "-"
+    confidence: int | None = None
+    spent_usd: float = 0.0
+    budget_usd: float = 0.0
+    updated_at: float = field(default_factory=time.time)
+
+
+@dataclass(slots=True)
+class TuiState:
     mode: str
     live_provider_calls: bool
     context: dict[str, Any]
-    history: list[dict[str, Any]] = field(default_factory=list)
-    transcript: list[dict[str, str]] = field(default_factory=list)
-    running: bool = False
+    active_tasks: dict[str, ActiveTask] = field(default_factory=dict)
+    history: list[TaskHistory] = field(default_factory=list)
+    pending_approvals: dict[str, dict[str, Any]] = field(default_factory=dict)
+    audit_log: list[str] = field(default_factory=list)
+
+    def log(self, message: str) -> None:
+        timestamp = time.strftime("%H:%M:%S")
+        self.audit_log.append(f"[{timestamp}] {message}")
+
+    def apply_event(self, event: dict[str, Any]) -> None:
+        event_type = str(event.get("type", "")).strip().lower()
+        if event_type == "task_started":
+            task_id = str(event.get("task_id", "task")).strip()
+            self.active_tasks[task_id] = ActiveTask(
+                task_id=task_id,
+                goal=str(event.get("goal", "unknown")),
+                mode=str(event.get("mode", self.mode)),
+                status="running",
+            )
+            self.log(f"Task started {task_id} ({self.active_tasks[task_id].mode}).")
+            return
+
+        if event_type in {"agent_start", "agent_end", "debate_round_completed"}:
+            task_id = str(event.get("task_id", "")).strip()
+            task = self.active_tasks.get(task_id)
+            if task is not None:
+                task.agent = str(event.get("agent", "unknown"))
+                if "confidence" in event:
+                    task.confidence = int(event.get("confidence", 0) or 0)
+                task.updated_at = time.time()
+            if event_type == "debate_round_completed":
+                round_num = int(event.get("round", 0) or 0)
+                total = int(event.get("total_rounds", 0) or 0)
+                self.log(f"{event.get('agent', 'unknown')} round {round_num}/{total} complete.")
+            return
+
+        if event_type == "cost_update":
+            task_id = str(event.get("task_id", "")).strip()
+            task = self.active_tasks.get(task_id)
+            if task is not None:
+                task.spent_usd = float(event.get("spent", 0.0) or 0.0)
+                task.budget_usd = float(event.get("budget", 0.0) or 0.0)
+                task.updated_at = time.time()
+            return
+
+        if event_type == "task_completed":
+            task_id = str(event.get("task_id", "")).strip()
+            budget = event.get("budget", {}) or {}
+            spent = float(budget.get("spent_usd", 0.0) or 0.0)
+            limit = float(budget.get("limit_usd", 0.0) or 0.0)
+            confidence = int(event.get("confidence", 0) or 0)
+            task = self.active_tasks.pop(task_id, None)
+            if task is not None:
+                if spent == 0.0 and task.spent_usd:
+                    spent = task.spent_usd
+                if limit == 0.0 and task.budget_usd:
+                    limit = task.budget_usd
+            goal = task.goal if task else str(event.get("goal", "unknown"))
+            mode = task.mode if task else str(event.get("mode", self.mode))
+            self.history.append(
+                TaskHistory(
+                    task_id=task_id,
+                    goal=goal,
+                    mode=mode,
+                    confidence=confidence,
+                    spent_usd=spent,
+                    budget_usd=limit,
+                )
+            )
+            self.log(f"Task completed {task_id} ({confidence}%).")
+            return
+
+        if event_type == "approval_required":
+            request_id = str(event.get("request_id", "")).strip()
+            self.pending_approvals[request_id] = dict(event)
+            self.log(
+                "Approval required "
+                f"{event.get('action_type', 'action')} "
+                f"({event.get('risk_level', 'unknown')})."
+            )
+            return
+
+        if event_type == "approval_resolved":
+            request_id = str(event.get("request_id", "")).strip()
+            approved = bool(event.get("approved", False))
+            self.pending_approvals.pop(request_id, None)
+            self.log(f"Approval resolved {request_id} approved={approved}.")
+            return
 
 
-def _resolve_mode(mode: str, goal: str) -> str:
+class ApprovalScreen(ModalScreen[bool]):
+    BINDINGS = [
+        Binding("escape", "deny", "Deny"),
+    ]
+
+    def __init__(self, *, request_id: str, action: str, risk: str, context: dict[str, Any]):
+        super().__init__()
+        self._request_id = request_id
+        self._action = action
+        self._risk = risk
+        self._context = context
+
+    def compose(self) -> ComposeResult:
+        summary = (
+            f"Approval required: {self._action}\n"
+            f"Risk: {self._risk}\n"
+            f"Request: {self._request_id}\n"
+            f"Context: {self._context}"
+        )
+        yield Container(
+            Static(summary, id="approval-summary"),
+            Horizontal(
+                Button("Approve", id="approve"),
+                Button("Deny", id="deny"),
+                id="approval-buttons",
+            ),
+            id="approval-modal",
+        )
+
+    def action_deny(self) -> None:
+        self.dismiss(False)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "approve")
+
+
+class ArchonTuiApp(App[None]):
+    CSS = """
+    Screen {
+        background: #0f1116;
+        color: #e6e6e6;
+    }
+
+    #root {
+        height: 100%;
+    }
+
+    TabbedContent {
+        height: 1fr;
+    }
+
+    #system-status {
+        padding: 1 2;
+    }
+
+    #input-bar {
+        height: 3;
+        padding: 0 1;
+        background: #151a22;
+    }
+
+    #goal-input {
+        border: round #2d3642;
+        background: #0f1116;
+    }
+
+    DataTable {
+        border: round #2d3642;
+        background: #0f1116;
+    }
+
+    RichLog {
+        border: round #2d3642;
+        background: #0f1116;
+    }
+
+    #approval-modal {
+        width: 70%;
+        height: auto;
+        padding: 1 2;
+        border: round #3c4656;
+        background: #121620;
+    }
+
+    #approval-buttons {
+        margin-top: 1;
+        height: 3;
+    }
+
+    #approval-summary {
+        padding-bottom: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("tab", "next_tab", "Next Tab"),
+        Binding("shift+tab", "prev_tab", "Previous Tab"),
+        Binding("ctrl+q", "quit", "Quit"),
+    ]
+
+    TAB_IDS = ("system", "tasks", "cost", "evolution")
+
+    def __init__(
+        self,
+        *,
+        config: ArchonConfig,
+        initial_mode: str,
+        live_provider_calls: bool,
+        initial_context: dict[str, Any],
+        config_path: str,
+    ) -> None:
+        super().__init__()
+        self._config = config
+        self._config_path = config_path
+        self._state = TuiState(
+            mode=initial_mode,
+            live_provider_calls=live_provider_calls,
+            context=dict(initial_context),
+        )
+        self._log_cursor = 0
+        self._pending_tasks: set[asyncio.Task[None]] = set()
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="root"):
+            with TabbedContent(id="tabs"):
+                with TabPane("System Status", id="system"):
+                    yield Static(id="system-status")
+                with TabPane("Active Tasks", id="tasks"):
+                    yield DataTable(id="tasks-table")
+                with TabPane("Cost Summary", id="cost"):
+                    yield DataTable(id="cost-table")
+                with TabPane("Evolution Log", id="evolution"):
+                    yield RichLog(id="evolution-log", wrap=True)
+            with Container(id="input-bar"):
+                yield Input(placeholder="Send a goal to ARCHON...", id="goal-input")
+
+    def on_mount(self) -> None:
+        self._init_tables()
+        self._state.log("ARCHON online. Provide a goal to start orchestration.")
+        self._flush_audit_log()
+        self._refresh_system_status()
+        self._refresh_live_views()
+        self.set_interval(2.0, self._refresh_live_views)
+        self.query_one("#goal-input", Input).focus()
+
+    def _init_tables(self) -> None:
+        tasks_table = self.query_one("#tasks-table", DataTable)
+        tasks_table.add_columns("Task", "Goal", "Mode", "Status", "Agent", "Conf", "Spent")
+        costs_table = self.query_one("#cost-table", DataTable)
+        costs_table.add_columns("Task", "Budget", "Spent", "Remaining")
+
+    def action_next_tab(self) -> None:
+        tabs = self.query_one(TabbedContent)
+        current = getattr(tabs, "active", self.TAB_IDS[0])
+        if current not in self.TAB_IDS:
+            tabs.active = self.TAB_IDS[0]
+            return
+        index = (self.TAB_IDS.index(current) + 1) % len(self.TAB_IDS)
+        tabs.active = self.TAB_IDS[index]
+
+    def action_prev_tab(self) -> None:
+        tabs = self.query_one(TabbedContent)
+        current = getattr(tabs, "active", self.TAB_IDS[0])
+        if current not in self.TAB_IDS:
+            tabs.active = self.TAB_IDS[0]
+            return
+        index = (self.TAB_IDS.index(current) - 1) % len(self.TAB_IDS)
+        tabs.active = self.TAB_IDS[index]
+
+    def _flush_audit_log(self) -> None:
+        log = self.query_one("#evolution-log", RichLog)
+        while self._log_cursor < len(self._state.audit_log):
+            log.write(self._state.audit_log[self._log_cursor])
+            self._log_cursor += 1
+
+    def _refresh_system_status(self) -> None:
+        status = self.query_one("#system-status", Static)
+        config_exists = Path(self._config_path).exists()
+        provider_lines = [
+            f"primary: {self._config.byok.primary}",
+            f"coding: {self._config.byok.coding}",
+            f"vision: {self._config.byok.vision}",
+            f"fast: {self._config.byok.fast}",
+            f"embedding: {self._config.byok.embedding}",
+            f"fallback: {self._config.byok.fallback}",
+        ]
+        lines = [
+            f"Config: {self._config_path} ({'found' if config_exists else 'missing'})",
+            f"Mode: {self._state.mode}",
+            f"Live providers: {'on' if self._state.live_provider_calls else 'off'}",
+            f"Version: {resolve_version()}",
+            f"Context keys: {', '.join(sorted(self._state.context)) or 'none'}",
+            "Providers:",
+            *[f"- {line}" for line in provider_lines],
+        ]
+        status.update("\n".join(lines))
+
+    def _refresh_tasks_table(self) -> None:
+        table = self.query_one("#tasks-table", DataTable)
+        table.clear()
+        for task in self._state.active_tasks.values():
+            table.add_row(
+                task.task_id,
+                task.goal,
+                task.mode,
+                task.status,
+                task.agent,
+                "-" if task.confidence is None else f"{task.confidence}%",
+                f"${task.spent_usd:.4f}",
+            )
+
+    def _refresh_cost_table(self) -> None:
+        table = self.query_one("#cost-table", DataTable)
+        table.clear()
+        rows: list[tuple[str, float, float, float]] = []
+        for task in self._state.active_tasks.values():
+            remaining = max(task.budget_usd - task.spent_usd, 0.0)
+            rows.append((task.task_id, task.budget_usd, task.spent_usd, remaining))
+        for task in self._state.history:
+            remaining = max(task.budget_usd - task.spent_usd, 0.0)
+            rows.append((task.task_id, task.budget_usd, task.spent_usd, remaining))
+        for task_id, budget, spent, remaining in rows:
+            table.add_row(
+                task_id,
+                f"${budget:.4f}" if budget else "-",
+                f"${spent:.4f}",
+                f"${remaining:.4f}" if budget else "-",
+            )
+
+    def _refresh_live_views(self) -> None:
+        self._refresh_tasks_table()
+        self._refresh_cost_table()
+
+    async def _handle_event(self, orchestrator: Orchestrator, event: dict[str, Any]) -> None:
+        self._state.apply_event(event)
+        self._flush_audit_log()
+        self._refresh_live_views()
+        if str(event.get("type", "")).strip().lower() == "approval_required":
+            self._present_approval(orchestrator, event)
+
+    def _present_approval(self, orchestrator: Orchestrator, event: dict[str, Any]) -> None:
+        request_id = str(event.get("request_id", "")).strip()
+        action = str(event.get("action_type", "action"))
+        risk = str(event.get("risk_level", "unknown"))
+        context = dict(event.get("context", {}) or {})
+
+        def _resolve(approved: bool) -> None:
+            if approved:
+                orchestrator.approval_gate.approve(
+                    request_id, approver="tui-user", notes="approved_in_textual"
+                )
+                self._state.log(f"Approved {request_id}.")
+            else:
+                orchestrator.approval_gate.deny(
+                    request_id, reason="denied_in_textual", approver="tui-user"
+                )
+                self._state.log(f"Denied {request_id}.")
+            self._flush_audit_log()
+            self._refresh_live_views()
+
+        self.push_screen(
+            ApprovalScreen(
+                request_id=request_id,
+                action=action,
+                risk=risk,
+                context=context,
+            ),
+            _resolve,
+        )
+
+    async def _run_goal(self, goal: str) -> None:
+        orchestrator = Orchestrator(
+            config=self._config,
+            live_provider_calls=self._state.live_provider_calls,
+        )
+        try:
+            result = await orchestrator.execute(
+                goal=goal,
+                mode=_resolve_mode(self._state.mode),
+                context=dict(self._state.context),
+                event_sink=lambda event: self._handle_event(orchestrator, event),
+            )
+        except Exception as exc:
+            self._state.log(f"Task failed: {exc}")
+            self._flush_audit_log()
+        else:
+            self._state.log(f"Result ({result.task_id}): {result.final_answer}")
+            self._flush_audit_log()
+        finally:
+            await orchestrator.aclose()
+            self._refresh_live_views()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        goal = event.value.strip()
+        if not goal:
+            return
+        event.input.value = ""
+        self._state.log(f"Goal received: {goal}")
+        self._flush_audit_log()
+        task = asyncio.create_task(self._run_goal(goal))
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._pending_tasks.discard)
+
+
+def _resolve_mode(mode: str) -> str:
     if mode != "auto":
         return mode
     return "debate"
-
-
-def _render(state: _SessionState) -> None:
-    click.echo(
-        render_screen(
-            mode=state.mode,
-            live_provider_calls=state.live_provider_calls,
-            context=state.context,
-            transcript=state.transcript,
-            history=state.history,
-            running=state.running,
-        ),
-        nl=False,
-    )
-
-
-def _append_message(state: _SessionState, *, title: str, body: str, tone: str) -> None:
-    state.transcript.append({"title": title, "body": body, "tone": tone})
-
-
-def _format_status(state: _SessionState) -> str:
-    context_keys = ", ".join(sorted(state.context)) if state.context else "none"
-    return (
-        f"Mode={state.mode} | live_providers={'on' if state.live_provider_calls else 'off'} | "
-        f"context_keys={context_keys} | history={len(state.history)}"
-    )
-
-
-def _format_history(state: _SessionState) -> str:
-    if not state.history:
-        return "No completed tasks yet."
-    return "\n".join(
-        f"{index}. [{item['mode']}] {item['goal']} -> "
-        f"{item['confidence']}% (${item['spent_usd']:.4f})"
-        for index, item in enumerate(state.history, start=1)
-    )
-
-
-def _format_result(result: OrchestrationResult) -> str:
-    lines = [
-        f"Task: {result.task_id}",
-        f"Mode: {result.mode}",
-        f"Confidence: {result.confidence}%",
-        f"Budget spent: ${float(result.budget.get('spent_usd', 0.0) or 0.0):.4f}",
-        "",
-        result.final_answer,
-    ]
-    if result.debate:
-        lines.extend(["", "Debate rounds:"])
-        for index, round_payload in enumerate(result.debate.get("rounds", []), start=1):
-            lines.append(
-                f"{index}. {round_payload.get('agent', 'unknown')} "
-                f"{int(round_payload.get('confidence', 0) or 0)}% :: "
-                f"{preview(str(round_payload.get('output', '')))}"
-            )
-        dissent = result.debate.get("dissent", [])
-        if dissent:
-            lines.append("Dissent:")
-            for item in dissent[:2]:
-                lines.append(f"- {preview(str(item))}")
-    return "\n".join(lines)
-
-
-def _consume_shell_style_input(state: _SessionState, raw_value: str) -> bool:
-    normalized = " ".join(str(raw_value or "").strip().split()).lower()
-    if not normalized.startswith("archon"):
-        return False
-    if normalized == "archon tui":
-        _append_message(
-            state,
-            title="Already in TUI",
-            body=(
-                "You are already inside the ARCHON terminal session. "
-                "Use /help for in-session commands or /quit to return to the shell."
-            ),
-            tone="system",
-        )
-        return True
-    _append_message(
-        state,
-        title="Shell command detected",
-        body=(
-            "Commands that start with `archon` must be run from your terminal, not inside the "
-            "ARCHON chat prompt. Use /help for in-session controls or /quit to leave the TUI."
-        ),
-        tone="system",
-    )
-    return True
-
-
-async def _read_session_line(prompt: str) -> str:
-    return await asyncio.to_thread(_sync_read_session_line, prompt)
-
-
-def _sync_read_session_line(prompt: str) -> str:
-    click.echo(prompt, nl=False)
-    return click.get_text_stream("stdin").readline().rstrip("\r\n")
-
-
-async def _prompt_approval_decision(event: dict[str, Any]) -> bool:
-    return await asyncio.to_thread(_sync_prompt_approval_decision, event)
-
-
-def _sync_prompt_approval_decision(event: dict[str, Any]) -> bool:
-    context_blob = json.dumps(event.get("context", {}), sort_keys=True)
-    click.echo(f"Approve {event.get('action_type', 'action')}? context={context_blob}")
-    return bool(click.confirm("Approve", default=False))
-
-
-async def _handle_event(
-    state: _SessionState,
-    orchestrator: Orchestrator,
-    event: dict[str, Any],
-) -> None:
-    event_type = str(event.get("type", "")).strip().lower()
-    if event_type == "task_started":
-        _append_message(
-            state,
-            title="Task started",
-            body=f"{event.get('mode', 'unknown')} | {event.get('task_id', 'task')}",
-            tone="system",
-        )
-        _render(state)
-        return
-    if event_type == "debate_round_completed":
-        _append_message(
-            state,
-            title=(
-                f"{event.get('agent', 'unknown')} | "
-                f"round {int(event.get('round', 0) or 0)}/"
-                f"{int(event.get('total_rounds', 0) or 0)}"
-            ),
-            body=(
-                f"Confidence: {int(event.get('confidence', 0) or 0)}%\n"
-                f"{event.get('output_preview', '')}"
-            ),
-            tone="event",
-        )
-        _render(state)
-        return
-    if event_type == "approval_required":
-        request_id = str(event.get("request_id", "")).strip()
-        _append_message(
-            state,
-            title="Approval required",
-            body=(
-                f"{event.get('action_type', 'action')} requested "
-                f"({event.get('risk_level', 'unknown')})"
-            ),
-            tone="system",
-        )
-        _render(state)
-        approved = await _prompt_approval_decision(event)
-        if approved:
-            orchestrator.approval_gate.approve(
-                request_id,
-                approver="tui-user",
-                notes="approved_in_agentic_tui",
-            )
-            _append_message(
-                state,
-                title="Approval resolved",
-                body=f"approved {request_id}",
-                tone="system",
-            )
-            _render(state)
-            return
-        orchestrator.approval_gate.deny(
-            request_id,
-            reason="denied_in_agentic_tui",
-            approver="tui-user",
-        )
-        _append_message(
-            state,
-            title="Approval resolved",
-            body=f"denied {request_id}",
-            tone="error",
-        )
-        _render(state)
-        return
-    if event_type == "approval_resolved":
-        _append_message(
-            state,
-            title="Approval event",
-            body=(
-                f"resolved {event.get('request_id', '')} "
-                f"approved={bool(event.get('approved', False))}"
-            ),
-            tone="system",
-        )
-        _render(state)
-        return
-    if event_type == "task_completed":
-        budget = event.get("budget", {})
-        _append_message(
-            state,
-            title="Run complete",
-            body=(
-                f"{event.get('mode', 'unknown')} | "
-                f"confidence={int(event.get('confidence', 0) or 0)}% | "
-                f"spent=${float(budget.get('spent_usd', 0.0) or 0.0):.4f}"
-            ),
-            tone="system",
-        )
-        _render(state)
-
-
-async def _handle_command(
-    state: _SessionState,
-    raw_value: str,
-    *,
-    config_path: str,
-    onboarding: OnboardingCallbacks | None,
-    config_ref: dict[str, ArchonConfig],
-) -> bool:
-    command, _, arg_text = raw_value[1:].partition(" ")
-    command = command.strip().lower()
-    arg_text = arg_text.strip()
-
-    if command in {"quit", "exit"}:
-        _append_message(state, title="Session", body="Closing ARCHON Agentic TUI.", tone="system")
-        return False
-    if command == "help":
-        _append_message(
-            state,
-            title="Commands",
-            body="\n".join(
-                [
-                    "/mode <debate>",
-                    "/context <json-object>",
-                    "/context",
-                    "/clear-context",
-                    "/live <on|off>",
-                    "/status",
-                    "/history",
-                    "/setup",
-                    "/reset",
-                    "/quit",
-                ]
-            ),
-            tone="system",
-        )
-        return True
-    if command == "mode":
-        if arg_text not in {"debate"}:
-            _append_message(
-                state,
-                title="Mode update failed",
-                body="Mode must be debate.",
-                tone="error",
-            )
-            return True
-        state.mode = arg_text
-        _append_message(
-            state,
-            title="Mode updated",
-            body=f"Mode set to {state.mode}.",
-            tone="system",
-        )
-        return True
-    if command == "context":
-        if not arg_text:
-            _append_message(
-                state,
-                title="Session context",
-                body=json.dumps(state.context, indent=2, sort_keys=True),
-                tone="system",
-            )
-            return True
-        try:
-            payload = json.loads(arg_text)
-        except json.JSONDecodeError as exc:
-            _append_message(
-                state,
-                title="Context update failed",
-                body=f"Context must be valid JSON: {exc}",
-                tone="error",
-            )
-            return True
-        if not isinstance(payload, dict):
-            _append_message(
-                state,
-                title="Context update failed",
-                body="Context must decode to a JSON object.",
-                tone="error",
-            )
-            return True
-        state.context = payload
-        _append_message(
-            state,
-            title="Context updated",
-            body=f"Context updated with {len(state.context)} keys.",
-            tone="system",
-        )
-        return True
-    if command == "clear-context":
-        state.context = {}
-        _append_message(state, title="Context updated", body="Context cleared.", tone="system")
-        return True
-    if command == "live":
-        if arg_text not in {"on", "off"}:
-            _append_message(
-                state,
-                title="Live mode update failed",
-                body="Live mode must be 'on' or 'off'.",
-                tone="error",
-            )
-            return True
-        state.live_provider_calls = arg_text == "on"
-        _append_message(
-            state,
-            title="Live mode updated",
-            body=f"Live providers {'enabled' if state.live_provider_calls else 'disabled'}.",
-            tone="system",
-        )
-        return True
-    if command == "status":
-        _append_message(state, title="Session status", body=_format_status(state), tone="system")
-        return True
-    if command == "history":
-        _append_message(state, title="Run history", body=_format_history(state), tone="system")
-        return True
-    if command == "setup":
-        if onboarding is None:
-            _append_message(
-                state,
-                title="Setup unavailable",
-                body="This session was not given onboarding callbacks.",
-                tone="error",
-            )
-            return True
-        config_ref["config"], summary = await run_setup_wizard(
-            config_path=config_path,
-            onboarding=onboarding,
-            current_config=config_ref["config"],
-        )
-        _append_message(state, title="Setup complete", body=summary, tone="system")
-        return True
-    if command == "reset":
-        state.transcript = []
-        _append_message(
-            state,
-            title="Session reset",
-            body="Transcript cleared. Session settings were preserved.",
-            tone="system",
-        )
-        return True
-    _append_message(
-        state,
-        title="Unknown command",
-        body="Unknown command. Type /help for available commands.",
-        tone="error",
-    )
-    return True
 
 
 async def run_agentic_tui(
@@ -396,104 +454,17 @@ async def run_agentic_tui(
     live_provider_calls: bool = False,
     initial_context: dict[str, Any] | None = None,
     config_path: str = "config.archon.yaml",
-    onboarding: OnboardingCallbacks | None = None,
+    onboarding: object | None = None,
     show_launcher: bool = False,
 ) -> None:
-    """Run the interactive ARCHON terminal UI.
+    """Run the Textual-based ARCHON operator dashboard."""
 
-    Example:
-        >>> await run_agentic_tui(config=ArchonConfig(), initial_mode="debate")
-        >>> True
-        True
-    """
-
-    state = _SessionState(
-        mode=initial_mode,
+    del onboarding, show_launcher
+    app = ArchonTuiApp(
+        config=config,
+        initial_mode=initial_mode,
         live_provider_calls=live_provider_calls,
-        context=dict(initial_context or {}),
+        initial_context=dict(initial_context or {}),
+        config_path=config_path,
     )
-    config_ref = {"config": config}
-    if show_launcher:
-        launcher_result = await run_launcher(
-            config=config_ref["config"],
-            config_path=config_path,
-            mode=state.mode,
-            live_provider_calls=state.live_provider_calls,
-            onboarding=onboarding,
-        )
-        if not launcher_result.start:
-            return
-        config_ref["config"] = launcher_result.config
-        state.mode = launcher_result.mode
-        state.live_provider_calls = launcher_result.live_provider_calls
-        for note in launcher_result.notes:
-            _append_message(
-                state,
-                title=note["title"],
-                body=note["body"],
-                tone=note["tone"],
-            )
-    _append_message(
-        state,
-        title="ARCHON",
-        body=(
-            "ARCHON just came online. Give me a goal, a workflow, or a revenue problem and "
-            "I will route the right swarm."
-        ),
-        tone="assistant",
-    )
-
-    while True:
-        _render(state)
-        raw_value = (await _read_session_line("> ")).strip()
-        if not raw_value:
-            continue
-        if raw_value.startswith("/"):
-            if not await _handle_command(
-                state,
-                raw_value,
-                config_path=config_path,
-                onboarding=onboarding,
-                config_ref=config_ref,
-            ):
-                _render(state)
-                return
-            continue
-        if _consume_shell_style_input(state, raw_value):
-            continue
-
-        effective_mode = _resolve_mode(state.mode, raw_value)
-        _append_message(state, title="You", body=raw_value, tone="user")
-        state.running = True
-        _render(state)
-        orchestrator = Orchestrator(
-            config=config_ref["config"],
-            live_provider_calls=state.live_provider_calls,
-        )
-        try:
-            result = await orchestrator.execute(
-                goal=raw_value,
-                mode=effective_mode,  # type: ignore[arg-type]
-                context=dict(state.context),
-                event_sink=lambda event: _handle_event(state, orchestrator, event),
-            )
-        except Exception as exc:
-            _append_message(state, title="Task failed", body=str(exc), tone="error")
-        else:
-            state.history.append(
-                {
-                    "goal": raw_value,
-                    "mode": result.mode,
-                    "confidence": result.confidence,
-                    "spent_usd": float(result.budget.get("spent_usd", 0.0) or 0.0),
-                }
-            )
-            _append_message(
-                state,
-                title="ARCHON",
-                body=_format_result(result),
-                tone="assistant",
-            )
-        finally:
-            state.running = False
-            await orchestrator.aclose()
+    await app.run_async()

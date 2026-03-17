@@ -91,6 +91,7 @@ def _build_onboarding_callbacks(bindings):
 
 class _Init(ArchonCommand):
     command_id = COMMAND_IDS[0]
+    allow_live = False
 
     def run(self, session, *, config_path: str):  # type: ignore[no-untyped-def,override]
         byok = session.run_step(0, self.bindings._default_byok_config)
