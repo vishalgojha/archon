@@ -40,11 +40,11 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded-2xl border border-stroke bg-panel/90 shadow-panel backdrop-blur;
+    @apply rounded-2xl border border-stroke bg-panel shadow-panel backdrop-blur;
   }
 
   .panel-soft {
-    @apply rounded-2xl border border-stroke bg-panelSoft/90 shadow-glow-soft;
+    @apply rounded-2xl border border-stroke bg-panelSoft shadow-glow-soft;
   }
 
   .chip {

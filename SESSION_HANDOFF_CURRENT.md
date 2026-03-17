@@ -1,41 +1,28 @@
 # SESSION_HANDOFF_CURRENT
 
 ## Snapshot
-- Date: 2026-03-16
+- Date: 2026-03-17
 - Repo: `C:\Users\visha\archon`
 - Branch: `mobile-node`
-- Scope: Archon Mobile execution node (Android foreground service + gateway)
-- Main handoff policy: see `BUILD_LOG.md` for step-by-step build record
+- Scope: Archon Studio dev UX + CLI entrypoint
 
 ## What Works
-- `mobile/` Android project scaffolded (Kotlin, SDK 26/34, Gradle Kotlin DSL).
-- Foreground service, runtime, gateway session, and reconnect scheduling are implemented.
-- Invoke dispatcher supports `read_whatsapp`, `get_calendar`, `get_location`, `send_notification`, `get_contacts`.
-- SQLite audit logging for all invokes; WhatsApp notification capture via `NotificationListenerService`.
-- Onboarding flow with backend URL + API key, permission prompts, and connectivity test.
-- EncryptedSharedPreferences used for API key storage.
+- `archon core studio` command + `archon studio` alias exist and were pushed.
+- Studio CSS now avoids Tailwind `bg-panel/90` apply error.
 
 ## Files Changed In This Session
-- `BUILD_LOG.md`
-- `KNOWN_ISSUES.md`
+- `archon/studio/src/styles.css`
 - `SESSION_HANDOFF_CURRENT.md`
-- `mobile/**`
 
 ## Verification
-- `archon/tests/` (with hanging tests excluded): 70 passed, 0 failed, 1 skipped, 1 deselected.
-- `tests/`: failed during collection with `PydanticUndefinedAnnotation` (`TaskRequest` not defined) from `tests/test_api_server.py`.
-- Mobile build/install not run (explicitly deferred).
+- `pytest tests/`
 
 ## What's Broken
-- Mobile build/install not verified yet.
-- `tests/test_api_server.py` collection error (`TaskRequest` not defined) remains a pre-existing issue.
+- Studio Chat shows "Failed to fetch" because the API server has no CORS headers for `http://localhost:5173`.
+
+## Pending / Local Only
+- Uncommitted change: `ui_packs/tenant-ui/v1/pack.json` (timestamp bump only).
+- Untracked: `archon/studio/package-lock.json`, `archon/studio/node_modules/`.
 
 ## Next Task
-- Build and install Archon Mobile on an emulator, then verify boot start + foreground notification + WebSocket connection.
-
-## Definition Of Done
-- `mobile/` exists with a valid Android project.
-- Builds and installs on emulator or physical device.
-- `ArchonForegroundService` starts on boot.
-- Persistent notification visible.
-- WebSocket connects to `http://10.0.2.2:8000` and logs \"connected\".
+- Add CORS middleware in `archon/interfaces/api/server.py` to allow Studio origin(s), then retest Chat.
