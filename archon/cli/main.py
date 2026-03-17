@@ -29,6 +29,9 @@ def build_cli(bindings: Any) -> click.Group:
         init_alias = core_group.commands.get("init")
         if init_alias is not None:
             app.add_command(init_alias, "init")
+        studio_alias = core_group.commands.get("studio")
+        if studio_alias is not None:
+            app.add_command(studio_alias, "studio")
 
     legacy = getattr(bindings, "legacy_cli", None)
     if legacy is not None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -7,12 +9,19 @@ from pathlib import Path
 import click
 
 from archon.cli import renderer
-from archon.cli.base_command import ArchonCommand
+from archon.cli.base_command import ArchonCommand, approval_prompt
 from archon.cli.copy import DRAWER_COPY, FLOW_COPY
+from archon.core.approval_gate import ApprovalDeniedError, ApprovalGate, ApprovalTimeoutError
 from archon.interfaces.cli.tui import run_agentic_tui
 
 DRAWER_ID = "core"
-COMMAND_IDS = ("core.init", "core.validate", "core.status", "core.chat")
+COMMAND_IDS = (
+    "core.init",
+    "core.validate",
+    "core.status",
+    "core.chat",
+    "core.studio",
+)
 DRAWER_META = DRAWER_COPY[DRAWER_ID]
 COMMAND_HELP = DRAWER_META["commands"]
 _PROVIDERS = ("anthropic", "openai", "openrouter", "ollama")
@@ -27,6 +36,16 @@ _VALIDATORS = {
     "openai": "_validate_openai_key",
     "openrouter": "_validate_openrouter_key",
 }
+_STUDIO_HOST = "127.0.0.1"
+_STUDIO_PORT = 5173
+
+
+def _approval_event_sink(gate: ApprovalGate):  # type: ignore[no-untyped-def]
+    async def sink(event):
+        if str(event.get("type", "")).strip().lower() == "approval_required":
+            approval_prompt(gate=gate, event=event)
+
+    return sink
 
 
 def _counts(path: Path) -> dict[str, int]:
@@ -70,6 +89,11 @@ def _worker_paths():
     from archon.deploy.worker import _runtime_dir, _worker_db_path
 
     return _runtime_dir, _worker_db_path
+
+
+def _studio_dir() -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    return repo_root / "archon" / "studio"
 
 
 def _build_onboarding_callbacks(bindings):
@@ -236,6 +260,71 @@ class _Chat(ArchonCommand):
         return {"mode": mode}
 
 
+class _Studio(ArchonCommand):
+    command_id = COMMAND_IDS[4]
+    allow_live = False
+
+    def run(  # type: ignore[no-untyped-def,override]
+        self,
+        session,
+        *,
+        api_base: str,
+        host: str,
+        port: int,
+        dev: bool,
+    ):
+        studio_dir = session.run_step(0, _studio_dir)
+        if not studio_dir.exists():
+            raise click.ClickException("Studio path missing.")
+        url = f"http://{host}:{port}"
+        session.run_step(1, lambda: None)
+        if not dev:
+            session.run_step(2, lambda: None)
+            session.print(
+                renderer.detail_panel(
+                    self.command_id,
+                    [
+                        f"path {studio_dir}",
+                        f"api {api_base}",
+                        f"dev {url}",
+                        "run: cd archon/studio",
+                        "run: npm install",
+                        "run: npm run dev",
+                    ],
+                )
+            )
+            return {"path": str(studio_dir), "dev_url": url, "status": "ready"}
+
+        gate = ApprovalGate(supervised_mode=True)
+        session.update_step(2, "running")
+        try:
+            asyncio.run(
+                gate.guard(
+                    action_type="shell_exec",
+                    payload={
+                        "agent": "archon-cli",
+                        "target": str(studio_dir),
+                        "preview": f"npm run dev -- --host {host} --port {port}",
+                    },
+                    event_sink=_approval_event_sink(gate),
+                    timeout_seconds=30.0,
+                )
+            )
+        except (ApprovalDeniedError, ApprovalTimeoutError):
+            session.update_step(2, "success")
+            return {"result_key": "denied", "status": "denied"}
+        env = dict(os.environ)
+        env["VITE_ARCHON_API_BASE"] = api_base
+        subprocess.run(
+            ["npm", "run", "dev", "--", "--host", host, "--port", str(port)],
+            check=False,
+            cwd=studio_dir,
+            env=env,
+        )
+        session.update_step(2, "success")
+        return {"path": str(studio_dir), "dev_url": url, "status": "running"}
+
+
 def build_group(bindings):
     @click.group(
         name=DRAWER_ID,
@@ -268,5 +357,13 @@ def build_group(bindings):
     @click.option("--config", "config_path", default="config.archon.yaml")
     def chat_command(mode: str, config_path: str) -> None:
         _Chat(bindings).invoke(mode=mode, config_path=config_path)
+
+    @group.command("studio", help=str(COMMAND_HELP[COMMAND_IDS[4]]))
+    @click.option("--api-base", default="http://localhost:8000")
+    @click.option("--host", default=_STUDIO_HOST)
+    @click.option("--port", default=_STUDIO_PORT, type=int)
+    @click.option("--dev", is_flag=True, default=False)
+    def studio_command(api_base: str, host: str, port: int, dev: bool) -> None:
+        _Studio(bindings).invoke(api_base=api_base, host=host, port=port, dev=dev)
 
     return group

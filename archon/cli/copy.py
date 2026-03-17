@@ -15,6 +15,7 @@ DRAWER_COPY = {
             "core.validate": "Validate config schema and ping configured providers live.",
             "core.status": "Read config and worker queue state from the active runtime.",
             "core.chat": "Launch the ARCHON chat and TUI experience.",
+            "core.studio": "Print Studio launch steps or run the dev server.",
         },
     },
     "agents": {
@@ -197,6 +198,22 @@ COMMAND_COPY = {
         "next_steps": [
             "Run archon agents task for a single API call.",
             "Run archon core status to review runtime health.",
+        ],
+    },
+    "core.studio": {
+        "what": "Open Archon Studio or print the steps to launch the UI.",
+        "steps": [
+            "Resolve the Studio workspace path.",
+            "Prepare the API base and dev server target.",
+            "Request approval if launching the dev server.",
+        ],
+        "results": {
+            "success": "Studio details ready. Path {path}. Dev URL {dev_url}.",
+            "denied": "Studio launch cancelled by approval gate.",
+        },
+        "next_steps": [
+            "Run archon ops serve to start the API.",
+            "Use archon core studio --dev to run the UI.",
         ],
     },
     "agents.task": {

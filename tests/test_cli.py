@@ -153,6 +153,15 @@ def test_core_chat_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> 
     assert captured["onboarding"] is not None
 
 
+def test_core_studio_prints_launch_steps() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["core", "studio"])
+
+    assert result.exit_code == 0
+    assert "core.studio" in result.output
+    assert "npm run dev" in result.output
+
+
 def test_version_command_outputs_version() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["version"])
