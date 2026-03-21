@@ -1,4 +1,4 @@
-"""India-specific skill implementations for ARCHON - Next 5 skills."""
+"""India-specific skill implementations for ARCHON - Skills 11-15."""
 
 from __future__ import annotations
 
@@ -11,474 +11,470 @@ from archon.providers import ProviderRouter
 from archon.skills.skill_registry import SkillDefinition, SkillRegistry
 
 
-class ONDCSellerAgent(BaseAgent):
-    """ONDC seller onboarding and operations agent."""
+class ExportComplianceAgent(BaseAgent):
+    """Export compliance and documentation agent."""
 
-    role = "ondc-seller-assistant"
+    role = "export-compliance"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.onboarding_steps = [
-            "1. Udyam Registration (MSME)",
-            "2. GST Registration",
-            "3. Choose ONDC Seller App",
-            "4. Complete KYC",
-            "5. Product Catalog Upload",
-            "6. Logistics Partner Selection",
-            "7. Go Live",
+        self.export_schemes = [
+            "RoDTEP (Remission of Duties and Taxes on Exported Products)",
+            "EPCG (Export Promotion Capital Goods)",
+            "Advance Authorization",
+            "Drawback Scheme",
+            "MEIS (if applicable)",
         ]
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute ONDC seller assistance."""
-        business_type = context.get("business_type", "kirana")
-        state = context.get("state", "unknown")
-        gst = context.get("gst_number", "not provided")
+        """Execute export compliance assistance."""
+        product = context.get("product_type", "unknown")
+        destination = context.get("destination_country", "unknown")
+        value = context.get("export_value", 0)
+        iec = context.get("iec_code", "not provided")
         
-        prompt = self._build_onboarding_prompt(business_type, state, gst, context)
+        prompt = self._build_export_prompt(product, destination, value, iec, context)
         
-        # Use pipeline mode for structured onboarding
+        # Use debate mode for multi-regulation analysis
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_onboarding_system_prompt(),
+            system_prompt=self._get_export_system_prompt(),
         )
         
-        return self._format_onboarding_response(response.content, context)
+        return self._format_export_response(response.content, context)
 
-    def _build_onboarding_prompt(
+    def _build_export_prompt(
         self,
-        business_type: str,
-        state: str,
-        gst: str,
+        product: str,
+        destination: str,
+        value: float,
+        iec: str,
         context: dict[str, Any],
     ) -> str:
-        """Build ONDC onboarding prompt."""
-        category = context.get("product_category", "general")
-        pin_code = context.get("pin_code", "unknown")
+        """Build export compliance prompt."""
+        state = context.get("state", "unknown")
+        incoterms = context.get("incoterms", "FOB")
         
-        return f"""ONDC Seller Assistant
+        return f"""Export Compliance Assistant
 
-Business Type: {business_type}
+Product: {product}
+Destination: {destination}
+Export Value: ₹{value:,}
+IEC Code: {iec}
 State: {state}
-GST Number: {gst}
-Product Category: {category}
-Pin Code: {pin_code}
+Incoterms: {incoterms}
 
 Provide:
-1. ONDC onboarding steps
-2. Document checklist (Udyam, GST, bank)
-3. Seller app recommendations for {state}
-4. Product listing optimization tips
-5. Logistics partner options
-6. Commission structure
-7. Customer support templates
-8. GST invoice generation guide
+1. Export eligibility check
+2. Document checklist (IEC, shipping bill, COO)
+3. HS code classification
+4. Customs procedures
+5. Export incentive schemes (RoDTEP, EPCG, drawback)
+6. Destination country requirements
+7. Timeline estimate
+8. Cost breakdown (customs, freight, documentation)
 
-Include links to ONDC resources."""
+Include tables for duty calculations."""
 
-    def _get_onboarding_system_prompt(self) -> str:
-        """Get ONDC system prompt."""
-        return """You are an ONDC seller assistant for Indian businesses.
-Provide practical, actionable guidance. Link to official ONDC resources.
-Help small sellers and kirana stores go digital."""
+    def _get_export_system_prompt(self) -> str:
+        """Get export system prompt."""
+        return """You are an export compliance assistant for Indian businesses.
+Provide accurate DGFT and customs guidance. Recommend customs broker for complex shipments.
+Include incentive scheme details."""
 
-    def _format_onboarding_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format ONDC response."""
-        business = context.get("business_type", "business")
-        state = context.get("state", "state")
-        return f"""🛒 ONDC Seller Assistant - {business} ({state})
+    def _format_export_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format export response."""
+        product = context.get("product_type", "product")
+        destination = context.get("destination_country", "destination")
+        return f"""📦 Export Compliance - {product} to {destination}
 
 {content}
 
-🔗 ONDC Network: https://ondc.org
-📞 Seller App Support: Check your chosen app
-⚠️ Commission rates vary by platform"""
+🔗 DGFT: https://dgft.gov.in
+🔗 Icegate: https://icegate.gov.in
+⚠️ Consult customs broker for shipment > ₹50L"""
 
 
-class GSTComplianceAgent(BaseAgent):
-    """GST compliance and filing assistance agent."""
+class FSSAIComplianceAgent(BaseAgent):
+    """FSSAI food safety compliance agent."""
 
-    role = "gst-compliance"
+    role = "fssai-compliance"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.return_types = {
-            "GSTR-1": "Outward supplies (monthly/quarterly)",
-            "GSTR-3B": "Summary return (monthly)",
-            "GSTR-9": "Annual return",
-            "GSTR-4": "Composition scheme annual",
+        self.license_types = {
+            "Basic": "Turnover < 12L, small manufacturers",
+            "State": "Turnover 12L-20Cr, medium businesses",
+            "Central": "Turnover > 20Cr, large manufacturers, importers",
         }
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute GST compliance assistance."""
-        gstin = context.get("gstin", "not provided")
-        return_type = context.get("return_type", "GSTR-3B")
-        period = context.get("tax_period", "current")
-        scheme = context.get("scheme_type", "regular")
+        """Execute FSSAI compliance assistance."""
+        business_type = context.get("business_type", "unknown")
+        food_category = context.get("food_category", "general")
+        state = context.get("state", "unknown")
+        turnover = context.get("annual_turnover", "not specified")
         
-        prompt = self._build_gst_prompt(gstin, return_type, period, scheme, context)
+        prompt = self._build_fssai_prompt(business_type, food_category, state, turnover, context)
         
         # Use pipeline mode for structured compliance
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_gst_system_prompt(),
+            system_prompt=self._get_fssai_system_prompt(),
         )
         
-        return self._format_gst_response(response.content, context)
+        return self._format_fssai_response(response.content, context)
 
-    def _build_gst_prompt(
+    def _build_fssai_prompt(
         self,
-        gstin: str,
-        return_type: str,
-        period: str,
-        scheme: str,
+        business_type: str,
+        food_category: str,
+        state: str,
+        turnover: str,
         context: dict[str, Any],
     ) -> str:
-        """Build GST compliance prompt."""
-        turnover = context.get("turnover", "not specified")
-        sector = context.get("sector", "general")
+        """Build FSSAI compliance prompt."""
+        product_count = context.get("product_count", "not specified")
         
-        return f"""GST Compliance Assistant
+        return f"""FSSAI Compliance Assistant
 
-GSTIN: {gstin}
-Return Type: {return_type}
-Tax Period: {period}
-Scheme: {scheme}
-Turnover: {turnover}
-Sector: {sector}
+Business Type: {business_type}
+Food Category: {food_category}
+State: {state}
+Annual Turnover: {turnover}
+Product Count: {product_count}
 
 Provide:
-1. Eligibility check for {return_type}
-2. Form selection guidance
-3. Calculation worksheet (CGST, SGST, IGST)
-4. Document checklist
-5. Filing steps on GST portal
-6. Due dates and penalties
-7. ITC reconciliation guide
-8. HSN classification tips
+1. License type required (Basic/State/Central)
+2. Application process (FoSCoS portal)
+3. Document checklist
+4. Hygiene standards (FSSAI guidelines)
+5. Labeling requirements (ingredients, expiry, FSSAI logo)
+6. Testing requirements (NABL labs)
+7. Renewal process
+8. Penalty information
+9. Recall procedures
 
-Include tables for calculations."""
+Include checklists and templates."""
 
-    def _get_gst_system_prompt(self) -> str:
-        """Get GST system prompt."""
-        return """You are a GST compliance assistant for Indian businesses.
-Provide accurate filing guidance. Always recommend CA consultation for complex cases.
-Include penalty information for delays."""
+    def _get_fssai_system_prompt(self) -> str:
+        """Get FSSAI system prompt."""
+        return """You are an FSSAI compliance assistant for Indian food businesses.
+Provide accurate licensing guidance. Include food safety standards.
+Recommend food safety officer consultation for complex cases."""
 
-    def _format_gst_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format GST response."""
-        return_type = context.get("return_type", "return")
-        period = context.get("tax_period", "period")
-        return f"""📊 GST Compliance - {return_type} ({period})
+    def _format_fssai_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format FSSAI response."""
+        business = context.get("business_type", "business")
+        state = context.get("state", "state")
+        return f"""🍽️ FSSAI Compliance - {business} ({state})
 
 {content}
 
-🔗 GST Portal: https://www.gst.gov.in
-📞 GST Helpdesk: 0124-4688999
-⚠️ Consult CA for complex transactions"""
+🔗 FoSCoS Portal: https://foscos.fssai.gov.in
+📞 FSSAI Helpline: 1800-112-100
+⚠️ Verify license requirements on FSSAI portal"""
 
 
-class PropertyVerificationAgent(BaseAgent):
-    """Property verification and real estate assistance agent."""
+class StartupIndiaAgent(BaseAgent):
+    """Startup India registration and benefits agent."""
 
-    role = "property-verification"
+    role = "startup-india"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.doc_checklist = [
-            "Title Deed",
-            "Encumbrance Certificate (13 years)",
-            "Property Tax Receipts",
-            "Approved Building Plan",
-            "Occupancy Certificate",
-            "RERA Registration",
-            "Sale Agreement",
-            "Mother Deed",
+        self.benefits = [
+            "Tax holiday (80IAC deduction)",
+            "Angel tax exemption",
+            "IPR fast-track filing",
+            "Government tenders exemption",
+            "Funding support (FOne)",
+            "Incubator support",
+            "Compliance exemptions",
         ]
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute property verification assistance."""
-        property_type = context.get("property_type", "residential")
-        location = context.get("location", "unknown")
-        transaction = context.get("transaction_type", "buy")
-        value = context.get("property_value", "not specified")
+        """Execute Startup India assistance."""
+        business_type = context.get("business_type", "tech")
+        incorporation = context.get("incorporation_date", "unknown")
+        state = context.get("state", "unknown")
+        turnover = context.get("turnover", "not specified")
         
-        prompt = self._build_property_prompt(property_type, location, transaction, value, context)
+        prompt = self._build_startup_prompt(business_type, incorporation, state, turnover, context)
         
-        # Use debate mode for multi-source verification
+        # Use pipeline mode for multi-stage guidance
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_property_system_prompt(),
+            system_prompt=self._get_startup_system_prompt(),
         )
         
-        return self._format_property_response(response.content, context)
+        return self._format_startup_response(response.content, context)
 
-    def _build_property_prompt(
+    def _build_startup_prompt(
         self,
-        property_type: str,
-        location: str,
-        transaction: str,
-        value: str,
+        business_type: str,
+        incorporation: str,
+        state: str,
+        turnover: str,
         context: dict[str, Any],
     ) -> str:
-        """Build property verification prompt."""
-        state = context.get("state", "unknown")
+        """Build Startup India prompt."""
+        sector = context.get("sector", "technology")
+        team_size = context.get("team_size", "not specified")
         
-        return f"""Property Verification Assistant
+        return f"""Startup India Assistant
 
-Property Type: {property_type}
-Location: {location}
-Transaction: {transaction}
-Value: ₹{value}
+Business Type: {business_type}
+Incorporation Date: {incorporation}
 State: {state}
+Turnover: {turnover}
+Sector: {sector}
+Team Size: {team_size}
 
 Provide:
-1. Title verification steps
-2. RERA compliance check
+1. Eligibility check (10 years, 100Cr turnover, innovative)
+2. DPIIT registration steps
 3. Document checklist
-4. Encumbrance certificate guide
-5. Agreement template key clauses
-6. Home loan comparison
-7. Registration process
-8. Stamp duty & registration fee
-9. Property tax calculation
-10. Red flags to watch
+4. Tax benefits (80IAC, angel tax)
+5. IPR support (patent filing)
+6. Funding options (VC, angel, government)
+7. Incubator recommendations
+8. Compliance requirements
+9. Timeline estimate
 
-Include state-specific requirements."""
+Include links to Startup India portal."""
 
-    def _get_property_system_prompt(self) -> str:
-        """Get property system prompt."""
-        return """You are a property verification assistant for Indian real estate.
-Always recommend legal verification. Highlight red flags.
-Include RERA and land record portal links."""
+    def _get_startup_system_prompt(self) -> str:
+        """Get Startup India system prompt."""
+        return """You are a Startup India assistant for Indian entrepreneurs.
+Provide accurate DPIIT recognition guidance. Include tax and funding benefits.
+Recommend CA consultation for tax planning."""
 
-    def _format_property_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format property response."""
-        location = context.get("location", "location")
-        prop_type = context.get("property_type", "property")
-        return f"""🏠 Property Verification - {prop_type} ({location})
+    def _format_startup_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format Startup India response."""
+        sector = context.get("sector", "sector")
+        state = context.get("state", "state")
+        return f"""🚀 Startup India - {sector} ({state})
 
 {content}
 
-🔗 RERA Portal: Check state RERA website
-📞 Legal Consultation: Recommended before transaction
-⚠️ Verify with registered lawyer"""
+🔗 Startup India: https://startupindia.gov.in
+📞 DPIIT Helpline: 1800-111-111
+⚠️ Turnover limit: ₹100Cr for 10 years from incorporation"""
 
 
-class HRRecruitmentAgent(BaseAgent):
-    """HR recruitment and compliance assistance agent."""
+class SolarAdoptionAgent(BaseAgent):
+    """Solar energy adoption and subsidy agent."""
 
-    role = "hr-recruitment"
+    role = "solar-adoption"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.salary_benchmarks = {
-            "entry_level": "₹3-6 LPA",
-            "mid_level": "₹6-15 LPA",
-            "senior_level": "₹15-40 LPA",
-            "leadership": "₹40L+ LPA",
+        self.subsidy_schemes = {
+            "Residential": "Rooftop Solar Subsidy (40% for <3kW, 20% for 3-10kW)",
+            "Commercial": "PM-KUSUM Component C",
+            "Agricultural": "PM-KUSUM Component B (solar pumps)",
         }
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute HR recruitment assistance."""
-        job_role = context.get("job_role", "unknown")
-        location = context.get("location", "pan-India")
-        experience = context.get("experience_range", "0-2 years")
-        industry = context.get("industry", "IT")
+        """Execute solar adoption assistance."""
+        install_type = context.get("installation_type", "residential")
+        state = context.get("state", "unknown")
+        roof_area = context.get("roof_area_sqft", 0)
+        consumption = context.get("monthly_consumption_units", "not specified")
         
-        prompt = self._build_hr_prompt(job_role, location, experience, industry, context)
+        prompt = self._build_solar_prompt(install_type, state, roof_area, consumption, context)
         
-        # Use pipeline mode for structured recruitment
+        # Use pipeline mode for technical→financial→installation
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_hr_system_prompt(),
+            system_prompt=self._get_solar_system_prompt(),
         )
         
-        return self._format_hr_response(response.content, context)
+        return self._format_solar_response(response.content, context)
 
-    def _build_hr_prompt(
+    def _build_solar_prompt(
         self,
-        job_role: str,
-        location: str,
-        experience: str,
-        industry: str,
+        install_type: str,
+        state: str,
+        roof_area: float,
+        consumption: str,
         context: dict[str, Any],
     ) -> str:
-        """Build HR recruitment prompt."""
-        salary_range = context.get("salary_range", "not specified")
-        company_size = context.get("company_size", "SMB")
+        """Build solar adoption prompt."""
+        budget = context.get("budget_range", "not specified")
         
-        return f"""HR Recruitment Assistant
+        return f"""Solar Adoption Assistant
 
-Job Role: {job_role}
-Location: {location}
-Experience: {experience}
-Industry: {industry}
-Salary Range: {salary_range}
-Company Size: {company_size}
+Installation Type: {install_type}
+State: {state}
+Roof Area: {roof_area} sqft
+Monthly Consumption: {consumption} units
+Budget: {budget}
 
 Provide:
-1. Candidate match scoring criteria
-2. Education equivalence (Indian universities)
-3. Experience validation tips
-4. Salary benchmark for {location}
-5. Notice period expectations
-6. Compliance checklist (PF, ESI, labor laws)
-7. Offer letter template
-8. Background verification steps
-9. Onboarding checklist
+1. System size recommendation (kW)
+2. Subsidy eligibility (state scheme)
+3. Cost breakdown (panels, inverter, installation)
+4. ROI analysis (payback period)
+5. Installation steps
+6. DISCOM net-metering procedures
+7. Vendor recommendations
+8. Loan options
+9. Maintenance guide
 
-Include state-specific labor law compliance."""
+Include calculations and tables."""
 
-    def _get_hr_system_prompt(self) -> str:
-        """Get HR system prompt."""
-        return """You are an HR recruitment assistant for Indian companies.
-Provide fair, compliant hiring guidance. Include labor law compliance.
-Recommend background verification for all hires."""
+    def _get_solar_system_prompt(self) -> str:
+        """Get solar system prompt."""
+        return """You are a solar energy adoption assistant for Indian users.
+Provide accurate system sizing and subsidy guidance. Include ROI calculations.
+Recommend site survey for large installations."""
 
-    def _format_hr_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format HR response."""
-        role = context.get("job_role", "role")
-        location = context.get("location", "location")
-        return f"""💼 HR Recruitment - {role} ({location})
+    def _format_solar_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format solar response."""
+        install_type = context.get("installation_type", "installation")
+        state = context.get("state", "state")
+        return f"""☀️ Solar Adoption - {install_type} ({state})
 
 {content}
 
-🔗 Job Portals: Naukri, LinkedIn, Indeed
-📞 Labor Dept: Check state regulations
-⚠️ Verify education and employment history"""
+🔗 MNRE: https://mnre.gov.in
+🔗 State DISCOM: Check your DISCOM portal
+⚠️ Site survey recommended for systems > 10kW"""
 
 
-class UPIFraudDetectionAgent(BaseAgent):
-    """UPI fraud detection and prevention agent."""
+class CustomsImportAgent(BaseAgent):
+    """Customs import clearance and duty agent."""
 
-    role = "upi-fraud-detection"
+    role = "customs-import"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.fraud_indicators = [
-            "Multiple small transactions in short time",
-            "New merchant with large amount",
-            "Unusual time (late night) transactions",
-            "Phishing link clicks",
-            "OTP sharing requests",
-            "Refund scams",
-            "Fake customer care numbers",
+        self.duty_components = [
+            "Basic Customs Duty (BCD)",
+            "Social Welfare Surcharge (SWS)",
+            "IGST",
+            "Cess (if applicable)",
         ]
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute UPI fraud detection assistance."""
-        tx_count = context.get("transaction_count", 0)
-        amount_range = context.get("amount_range", "unknown")
-        period = context.get("time_period", "24 hours")
-        merchant_vpa = context.get("merchant_vpa", "not provided")
+        """Execute customs import assistance."""
+        product = context.get("product_type", "unknown")
+        origin = context.get("origin_country", "unknown")
+        value = context.get("import_value", 0)
+        port = context.get("port_of_entry", "unknown")
+        iec = context.get("iec_code", "not provided")
         
-        prompt = self._build_fraud_prompt(tx_count, amount_range, period, merchant_vpa, context)
+        prompt = self._build_import_prompt(product, origin, value, port, iec, context)
         
-        # Use debate mode for multi-perspective analysis
+        # Use debate mode for multi-regulation analysis
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_fraud_system_prompt(),
+            system_prompt=self._get_import_system_prompt(),
         )
         
-        return self._format_fraud_response(response.content, context)
+        return self._format_import_response(response.content, context)
 
-    def _build_fraud_prompt(
+    def _build_import_prompt(
         self,
-        tx_count: int,
-        amount_range: str,
-        period: str,
-        merchant_vpa: str,
+        product: str,
+        origin: str,
+        value: float,
+        port: str,
+        iec: str,
         context: dict[str, Any],
     ) -> str:
-        """Build fraud detection prompt."""
-        bank = context.get("bank_name", "unknown")
-        tx_type = context.get("transaction_type", "P2M")
+        """Build customs import prompt."""
+        state = context.get("state", "unknown")
+        incoterms = context.get("incoterms", "CIF")
         
-        return f"""UPI Fraud Detection Assistant
+        return f"""Customs Import Assistant
 
-Transaction Count: {tx_count}
-Amount Range: {amount_range}
-Time Period: {period}
-Merchant VPA: {merchant_vpa}
-Bank: {bank}
-Transaction Type: {tx_type}
+Product: {product}
+Origin: {origin}
+Import Value: ₹{value:,}
+Port: {port}
+IEC Code: {iec}
+State: {state}
+Incoterms: {incoterms}
 
 Provide:
-1. Fraud risk score (0-100)
-2. Risk indicators detected
-3. Merchant verification status
-4. Immediate actions required
-5. Reporting steps (bank, cybercrime)
-6. Prevention tips
-7. Bank fraud helpline
-8. Cybercrime portal link
+1. Import eligibility check
+2. Document checklist (IEC, Bill of Entry, invoices)
+3. HS code classification
+4. Duty calculation (BCD, SWS, IGST, cess)
+5. Restricted item check (DGFT ITC-HS)
+6. Clearance procedures
+7. Timeline estimate
+8. Cost breakdown (duty, port charges, freight)
+9. Port-specific requirements
 
-Be conservative in risk assessment."""
+Include tables for duty calculations."""
 
-    def _get_fraud_system_prompt(self) -> str:
-        """Get fraud detection system prompt."""
-        return """You are a UPI fraud detection assistant for Indian users.
-Prioritize user safety. When in doubt, recommend reporting to bank.
-Include emergency contact numbers."""
+    def _get_import_system_prompt(self) -> str:
+        """Get import system prompt."""
+        return """You are a customs import assistant for Indian businesses.
+Provide accurate customs duty guidance. Recommend customs broker for complex imports.
+Include restricted item warnings."""
 
-    def _format_fraud_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format fraud response."""
-        risk_level = "HIGH" if context.get("transaction_count", 0) > 10 else "MEDIUM"
-        return f"""⚠️ UPI Fraud Alert - Risk Level: {risk_level}
+    def _format_import_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format import response."""
+        product = context.get("product_type", "product")
+        origin = context.get("origin_country", "origin")
+        port = context.get("port_of_entry", "port")
+        return f"""📦 Customs Import - {product} from {origin} ({port})
 
 {content}
 
-🚨 Immediate Actions:
-- Contact bank: {context.get('bank_name', 'your bank')}
-- Cybercrime Portal: https://cybercrime.gov.in
-- National Helpline: 1930
-
-⚠️ Report immediately for unauthorized transactions"""
+🔗 Icegate: https://icegate.gov.in
+🔗 DGFT ITC-HS: https://dgft.gov.in
+⚠️ Consult customs broker for shipment > ₹50L"""
 
 
-def register_india_skills_batch2(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
-    """Register India-specific skills batch 2 (skills 6-10)."""
+def register_india_skills_batch3(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    """Register India-specific skills batch 3 (skills 11-15)."""
     skills = [
         SkillDefinition(
-            name="ondc-seller-assistant",
+            name="export-compliance",
+            version="1.0.0",
+            provider_preference="anthropic",
+            cost_tier="standard",
+            state="active",
+        ),
+        SkillDefinition(
+            name="fssai-compliance",
+            version="1.0.0",
+            provider_preference="anthropic",
+            cost_tier="standard",
+            state="active",
+        ),
+        SkillDefinition(
+            name="startup-india",
             version="1.0.0",
             provider_preference="openai",
             cost_tier="low",
             state="active",
         ),
         SkillDefinition(
-            name="gst-compliance",
-            version="1.0.0",
-            provider_preference="anthropic",
-            cost_tier="standard",
-            state="active",
-        ),
-        SkillDefinition(
-            name="property-verification",
-            version="1.0.0",
-            provider_preference="anthropic",
-            cost_tier="standard",
-            state="active",
-        ),
-        SkillDefinition(
-            name="hr-recruitment",
+            name="solar-adoption",
             version="1.0.0",
             provider_preference="openai",
             cost_tier="standard",
             state="active",
         ),
         SkillDefinition(
-            name="upi-fraud-detection",
+            name="customs-import",
             version="1.0.0",
             provider_preference="anthropic",
             cost_tier="standard",
