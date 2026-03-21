@@ -37,16 +37,16 @@ class InsuranceAdvisorAgent(BaseAgent):
         age = context.get("age", 30)
         state = context.get("state", "unknown")
         sum_assured = context.get("sum_assured", "not specified")
-        
+
         prompt = self._build_insurance_prompt(insurance_type, age, state, sum_assured, context)
-        
+
         # Use pipeline mode for needs→comparison→recommendation
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
             system_prompt=self._get_insurance_system_prompt(),
         )
-        
+
         return self._format_insurance_response(response.content, context)
 
     def _build_insurance_prompt(
@@ -60,7 +60,7 @@ class InsuranceAdvisorAgent(BaseAgent):
         """Build insurance advisory prompt."""
         family_size = context.get("family_size", "not specified")
         budget = context.get("budget_range", "not specified")
-        
+
         return f"""Insurance Advisor
 
 Insurance Type: {insurance_type}
@@ -125,16 +125,16 @@ class VehicleRTOAgent(BaseAgent):
         service_type = context.get("service_type", "RC")
         state = context.get("state", "unknown")
         reg_number = context.get("registration_number", "not provided")
-        
+
         prompt = self._build_rto_prompt(vehicle_type, service_type, state, reg_number, context)
-        
+
         # Use single mode for quick service guidance
         response = await self.provider_router.invoke(
             role="fast",
             prompt=prompt,
             system_prompt=self._get_rto_system_prompt(),
         )
-        
+
         return self._format_rto_response(response.content, context)
 
     def _build_rto_prompt(
@@ -148,7 +148,7 @@ class VehicleRTOAgent(BaseAgent):
         """Build RTO services prompt."""
         rto_location = context.get("rto_location", "not specified")
         age_of_vehicle = context.get("age_of_vehicle", "not specified")
-        
+
         return f"""Vehicle RTO Services
 
 Vehicle Type: {vehicle_type}
@@ -199,7 +199,14 @@ class TelecomAssistantAgent(BaseAgent):
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.operators = ["Jio", "Airtel", "Vi (Vodafone Idea)", "BSNL", "JioFiber", "Airtel Xstream"]
+        self.operators = [
+            "Jio",
+            "Airtel",
+            "Vi (Vodafone Idea)",
+            "BSNL",
+            "JioFiber",
+            "Airtel Xstream",
+        ]
         self.trao_guidelines = [
             "Tariff transparency",
             "No hidden charges",
@@ -214,16 +221,16 @@ class TelecomAssistantAgent(BaseAgent):
         operator = context.get("current_operator", "unknown")
         state = context.get("state", "unknown")
         usage = context.get("monthly_usage", "not specified")
-        
+
         prompt = self._build_telecom_prompt(service_type, operator, state, usage, context)
-        
+
         # Use single mode for quick consumer guidance
         response = await self.provider_router.invoke(
             role="fast",
             prompt=prompt,
             system_prompt=self._get_telecom_system_prompt(),
         )
-        
+
         return self._format_telecom_response(response.content, context)
 
     def _build_telecom_prompt(
@@ -237,7 +244,7 @@ class TelecomAssistantAgent(BaseAgent):
         """Build telecom services prompt."""
         budget = context.get("budget_range", "not specified")
         complaint_type = context.get("complaint_type", "not applicable")
-        
+
         return f"""Telecom Services Assistant
 
 Service Type: {service_type}
@@ -305,16 +312,16 @@ class LegalAidAgent(BaseAgent):
         state = context.get("state", "unknown")
         urgency = context.get("urgency", "normal")
         case_value = context.get("case_value", "not specified")
-        
+
         prompt = self._build_legal_prompt(matter_type, state, urgency, case_value, context)
-        
+
         # Use pipeline mode for structured legal guidance
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
             system_prompt=self._get_legal_system_prompt(),
         )
-        
+
         return self._format_legal_response(response.content, context)
 
     def _build_legal_prompt(
@@ -327,7 +334,7 @@ class LegalAidAgent(BaseAgent):
     ) -> str:
         """Build legal aid prompt."""
         court_level = context.get("court_level", "district")
-        
+
         return f"""Legal Aid Assistant
 
 Legal Matter Type: {matter_type}
@@ -393,16 +400,18 @@ class WaterUtilityAgent(BaseAgent):
         state = context.get("state", "unknown")
         city = context.get("city", "unknown")
         consumer_number = context.get("consumer_number", "not provided")
-        
-        prompt = self._build_utility_prompt(utility_type, service_request, state, city, consumer_number, context)
-        
+
+        prompt = self._build_utility_prompt(
+            utility_type, service_request, state, city, consumer_number, context
+        )
+
         # Use single mode for quick service guidance
         response = await self.provider_router.invoke(
             role="fast",
             prompt=prompt,
             system_prompt=self._get_utility_system_prompt(),
         )
-        
+
         return self._format_utility_response(response.content, context)
 
     def _build_utility_prompt(
@@ -416,7 +425,7 @@ class WaterUtilityAgent(BaseAgent):
     ) -> str:
         """Build utility services prompt."""
         connection_type = context.get("connection_type", "domestic")
-        
+
         return f"""Water & Utility Services
 
 Utility Type: {utility_type}
@@ -460,7 +469,9 @@ Guide on CPGRAMS for unresolved issues."""
 ⚠️ Escalate if unresolved > 7 days"""
 
 
-def register_india_skills_batch4(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+def register_india_skills_batch4(
+    registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+) -> None:
     """Register India-specific skills batch 4 (skills 16-20)."""
     skills = [
         SkillDefinition(
@@ -499,6 +510,6 @@ def register_india_skills_batch4(registry: SkillRegistry, config: ArchonConfig, 
             state="active",
         ),
     ]
-    
+
     for skill in skills:
         registry.register(skill)

@@ -84,7 +84,7 @@ class TuiState:
 
     def apply_event(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type", "")).strip().lower()
-        
+
         if event_type == "task_started":
             task_id = str(event.get("task_id", "task")).strip()
             self.active_tasks[task_id] = ActiveTask(
@@ -110,7 +110,9 @@ class TuiState:
                     round_num = int(event.get("round", 0) or 0)
                     total = int(event.get("total_rounds", 6) or 6)
                     task.progress = min(round_num / total, 0.9)
-                    self.log(f"🔄 {event.get('agent', 'unknown')} round {round_num}/{total} complete")
+                    self.log(
+                        f"🔄 {event.get('agent', 'unknown')} round {round_num}/{total} complete"
+                    )
             return
 
         if event_type == "cost_update":
@@ -155,7 +157,9 @@ class TuiState:
         if event_type == "approval_required":
             request_id = str(event.get("request_id", "")).strip()
             self.pending_approvals[request_id] = dict(event)
-            self.log(f"⚠️ Confirmation needed: {event.get('action_type', 'action')} ({event.get('risk_level', 'unknown')})")
+            self.log(
+                f"⚠️ Confirmation needed: {event.get('action_type', 'action')} ({event.get('risk_level', 'unknown')})"
+            )
             return
 
         if event_type == "approval_resolved":
@@ -180,7 +184,13 @@ class ApprovalScreen(ModalScreen[bool]):
         self._context = context
 
     def compose(self) -> ComposeResult:
-        risk_color = "#ff6b6b" if self._risk == "high" else "#ffd93d" if self._risk == "medium" else "#6bcb77"
+        risk_color = (
+            "#ff6b6b"
+            if self._risk == "high"
+            else "#ffd93d"
+            if self._risk == "medium"
+            else "#6bcb77"
+        )
         summary = (
             f"[bold]Confirmation Required[/bold]\n\n"
             f"[bold]Action:[/bold] {self._action}\n"
@@ -235,7 +245,7 @@ class TaskProgressPanel(Static):
     def render(self) -> str:
         if not self.tasks:
             return "[dim]No active tasks[/]"
-        
+
         lines = ["[bold]Active Tasks[/bold]"]
         for task in self.tasks.values():
             progress_bar = self._render_progress(task.progress)
@@ -556,7 +566,7 @@ class ArchonTuiApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        
+
         with Vertical(id="root"):
             yield Tabs(
                 Tab("📊 Overview", id="tab-overview"),
@@ -565,26 +575,26 @@ class ArchonTuiApp(App[None]):
                 Tab("📝 Log", id="tab-log"),
                 id="tabs-container",
             )
-            
+
             with Container(id="content-area"):
                 with ScrollableContainer(id="overview-panel"):
                     yield Markdown(id="overview-markdown")
-                
+
                 with ScrollableContainer(id="tasks-panel"):
                     yield DataTable(id="tasks-table")
-                
+
                 with ScrollableContainer(id="history-panel"):
                     yield DataTable(id="history-table")
-                
+
                 with ScrollableContainer(id="log-panel"):
                     yield RichLog(id="evolution-log", wrap=True, highlight=True, markup=True)
-            
+
             with Container(id="input-bar"):
                 yield Static(id="budget-display")
                 with Horizontal(id="input-container"):
                     yield Input(placeholder="Enter goal and press Enter...", id="goal-input")
                     yield Button("Send", id="submit-btn", variant="primary")
-            
+
             yield Static(id="status-bar")
 
     def on_mount(self) -> None:
@@ -599,8 +609,10 @@ class ArchonTuiApp(App[None]):
 
     def _setup_data_tables(self) -> None:
         tasks_table = self.query_one("#tasks-table", DataTable)
-        tasks_table.add_columns("Task ID", "Goal", "Mode", "Status", "Agent", "Progress", "Confidence", "Spent")
-        
+        tasks_table.add_columns(
+            "Task ID", "Goal", "Mode", "Status", "Agent", "Progress", "Confidence", "Spent"
+        )
+
         history_table = self.query_one("#history-table", DataTable)
         history_table.add_columns("Task ID", "Goal", "Mode", "Confidence", "Spent", "Completed")
 
@@ -614,7 +626,7 @@ class ArchonTuiApp(App[None]):
     def _build_overview_markdown(self) -> str:
         config_exists = Path(self._config_path).exists()
         version = resolve_version()
-        
+
         lines = [
             "# 🤖 ARCHON Control Panel",
             "",
@@ -632,23 +644,25 @@ class ArchonTuiApp(App[None]):
             "## 🔌 Provider Status",
             "",
         ]
-        
+
         for name, status in self._state.providers.items():
             icon = "🟢" if status.available else "🔴"
             lines.append(f"- {icon} **{name}**: {status.model}")
-        
-        lines.extend([
-            "",
-            "## ⚙️ Context",
-            "",
-        ])
-        
+
+        lines.extend(
+            [
+                "",
+                "## ⚙️ Context",
+                "",
+            ]
+        )
+
         if self._state.context:
             for key, value in self._state.context.items():
                 lines.append(f"- **{key}**: {value}")
         else:
             lines.append("_No context configured_")
-        
+
         return "\n".join(lines)
 
     def _refresh_overview(self) -> None:
@@ -658,7 +672,7 @@ class ArchonTuiApp(App[None]):
     def _refresh_tasks_table(self) -> None:
         table = self.query_one("#tasks-table", DataTable)
         table.clear()
-        
+
         for task in self._state.active_tasks.values():
             progress_str = f"{int(task.progress * 100)}%"
             table.add_row(
@@ -675,7 +689,7 @@ class ArchonTuiApp(App[None]):
     def _refresh_history_table(self) -> None:
         table = self.query_one("#history-table", DataTable)
         table.clear()
-        
+
         for task in reversed(self._state.history[-20:]):
             completed = time.strftime("%H:%M:%S", time.localtime(task.completed_at))
             table.add_row(
@@ -690,14 +704,14 @@ class ArchonTuiApp(App[None]):
     def _refresh_budget_display(self) -> None:
         spent = self._state.total_spent_usd
         limit = self._state.total_budget_usd
-        
+
         if limit > 0:
             remaining = max(limit - spent, 0.0)
             percentage = (spent / limit) * 100
             text = f"💰 Budget: ${spent:.2f} / ${limit:.2f} ({percentage:.1f}%) - ${remaining:.2f} remaining"
         else:
             text = f"💰 Budget: ${spent:.2f} used"
-        
+
         self.query_one("#budget-display", Static).update(text)
 
     def _refresh_status_bar(self) -> None:
@@ -730,7 +744,7 @@ class ArchonTuiApp(App[None]):
     def _switch_tab(self, panel_id: str) -> None:
         for panel in ["overview-panel", "tasks-panel", "history-panel", "log-panel"]:
             widget = self.query_one(f"#{panel}", ScrollableContainer)
-            widget.display = (panel == panel_id)
+            widget.display = panel == panel_id
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
         tab_id = event.tab.id
@@ -780,7 +794,7 @@ class ArchonTuiApp(App[None]):
         self._state.apply_event(event)
         self._flush_audit_log()
         self._auto_refresh()
-        
+
         if str(event.get("type", "")).strip().lower() == "approval_required":
             self._present_approval(orchestrator, event)
 
@@ -830,7 +844,12 @@ class ArchonTuiApp(App[None]):
             self._flush_audit_log()
         else:
             self._state.log(f"✅ Result ({result.task_id}): {result.final_answer[:100]}...")
-            self.notify(f"Task completed: {result.final_answer[:50]}...", title="Success", timeout=3, severity="information")
+            self.notify(
+                f"Task completed: {result.final_answer[:50]}...",
+                title="Success",
+                timeout=3,
+                severity="information",
+            )
             self._flush_audit_log()
         finally:
             await orchestrator.aclose()

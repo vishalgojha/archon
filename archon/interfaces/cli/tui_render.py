@@ -192,10 +192,7 @@ def _status_line(
     ansi: bool,
 ) -> str:
     status = "busy" if running else "idle"
-    text = (
-        f"agent main | session main (archon-tui) | mode {mode} | "
-        f"runs {len(history)} | {status}"
-    )
+    text = f"agent main | session main (archon-tui) | mode {mode} | runs {len(history)} | {status}"
     return _paint(text, color="cyan", ansi=ansi, dim=True)
 
 

@@ -96,7 +96,7 @@ def _normalize_blueprint(blueprint: dict[str, Any]) -> dict[str, Any]:
             name = str(raw.get("title") or f"Drawer {idx + 1}").strip()
             drawers.append(
                 {
-                    "id": _slugify(str(raw.get("id") or name or f"drawer-{idx+1}")),
+                    "id": _slugify(str(raw.get("id") or name or f"drawer-{idx + 1}")),
                     "title": name,
                     "type": str(raw.get("type") or "list").strip(),
                     "description": str(raw.get("description") or "").strip(),

@@ -23,6 +23,7 @@ def mount_webchat(app: FastAPI) -> FastAPI:
     if static_root.exists():
         webchat_app.mount("/", StaticFiles(directory=str(static_root), html=True), name="webchat")
     else:
+
         @webchat_app.get("/", response_class=HTMLResponse)
         async def webchat_placeholder() -> str:
             return (

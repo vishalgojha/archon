@@ -97,9 +97,7 @@ def _await_login(bindings, provider: str) -> None:  # type: ignore[no-untyped-de
     env_name = _ENV_KEYS.get(provider, "")
     existing = ""
     if env_name:
-        existing = str(
-            os.getenv(env_name) or bindings._read_env_value(env_name) or ""
-        ).strip()
+        existing = str(os.getenv(env_name) or bindings._read_env_value(env_name) or "").strip()
     click.echo(f"Key portal: {url}")
     if existing:
         return
