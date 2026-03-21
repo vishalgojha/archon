@@ -10,25 +10,21 @@ from typing import Any
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
+    DataTable,
+    Header,
     Input,
     Markdown,
     RichLog,
-    Static,
-    Header,
-    Footer,
-    ProgressBar,
-    Tabs,
-    Tab,
-    DataTable,
-    Label,
     Rule,
+    Static,
+    Tab,
+    Tabs,
 )
-from textual.screen import ModalScreen
-from textual.reactive import reactive
-from textual.timer import Timer
 
 from archon.config import ArchonConfig
 from archon.core.orchestrator import Orchestrator
@@ -303,7 +299,7 @@ class ArchonTuiApp(App[None]):
         background: #3a3a4e;
     }
 
-    Tabs > Tab --active {
+    Tabs > Tab.-active {
         background: #f5b86c;
         color: #0b0b0b;
     }
@@ -698,7 +694,6 @@ class ArchonTuiApp(App[None]):
         if limit > 0:
             remaining = max(limit - spent, 0.0)
             percentage = (spent / limit) * 100
-            color = "#6bcb77" if percentage < 50 else "#ffd93d" if percentage < 80 else "#ff6b6b"
             text = f"💰 Budget: ${spent:.2f} / ${limit:.2f} ({percentage:.1f}%) - ${remaining:.2f} remaining"
         else:
             text = f"💰 Budget: ${spent:.2f} used"

@@ -2,7 +2,7 @@
 # Insurance recommendation, claims assistance, and policy guidance for India
 
 name: insurance-advisor
-version: 1.0.0
+version: 1
 description: >
   Assists Indians in selecting insurance policies (health, life, motor, crop),
   claims filing, premium comparison, and government scheme enrollment

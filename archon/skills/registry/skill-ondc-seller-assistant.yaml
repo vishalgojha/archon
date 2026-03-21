@@ -2,7 +2,7 @@
 # E-commerce onboarding and operations for Indian sellers (ONDC network)
 
 name: ondc-seller-assistant
-version: 1.0.0
+version: 1
 description: >
   Assists Indian sellers in onboarding to ONDC (Open Network for Digital Commerce),
   product listing optimization, order management, and customer support automation.

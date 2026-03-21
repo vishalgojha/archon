@@ -11,7 +11,6 @@ from archon.core.memory_store import MemoryStore
 from archon.core.types import OrchestrationResult
 from archon.evolution.audit_trail import ImmutableAuditTrail
 from archon.providers import ProviderRouter
-from archon.providers.types import ProviderResponse
 
 
 class SingleModeExecutor:

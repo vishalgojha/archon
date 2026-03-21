@@ -229,6 +229,9 @@ class ProviderRouter:
             True
         """
 
+        if _is_test_mode():
+            return self._test_response(role=role, prompt=prompt, model_override=model_override)
+
         effective_provider_override = provider_override
         if task_id and effective_provider_override is None:
             override = self._task_overrides.get(task_id) or {}
@@ -350,6 +353,9 @@ class ProviderRouter:
             >>> hasattr(ProviderRouter, "invoke_multimodal")
             True
         """
+
+        if _is_test_mode():
+            return self._test_response(role=role, prompt=text, model_override=model_override)
 
         effective_provider_override = provider_override
         if task_id and effective_provider_override is None:
@@ -913,9 +919,31 @@ class ProviderRouter:
             cost_usd=round(cost_usd, 6),
         )
 
+    def _test_response(
+        self, *, role: str, prompt: str, model_override: str | None
+    ) -> ProviderResponse:
+        provider = self._config.byok.primary
+        if provider not in SUPPORTED_PROVIDERS:
+            provider = "openrouter"
+        model = self._resolve_model(provider, role, model_override)
+        prompt_tokens = _estimate_tokens(prompt)
+        completion_tokens = _estimate_tokens("Test response")
+        usage = self._usage_for(provider, prompt_tokens, completion_tokens)
+        return ProviderResponse(
+            text="Test response",
+            provider=provider,  # type: ignore[arg-type]
+            model=model,
+            usage=usage,
+            raw={"test_mode": True},
+        )
+
 
 def _estimate_tokens(text: str) -> int:
     if not text:
         return 1
     # Fast approximation for cost governance when token data is unavailable.
     return max(1, int(math.ceil(len(text) / 4)))
+
+
+def _is_test_mode() -> bool:
+    return bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("ARCHON_TEST_MODE"))

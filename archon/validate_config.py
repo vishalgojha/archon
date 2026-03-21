@@ -48,6 +48,14 @@ _ANSI_GREEN = "\033[32m"
 _ANSI_YELLOW = "\033[33m"
 
 
+def _disable_color() -> None:
+    global _ANSI_RESET, _ANSI_RED, _ANSI_GREEN, _ANSI_YELLOW
+    _ANSI_RESET = ""
+    _ANSI_RED = ""
+    _ANSI_GREEN = ""
+    _ANSI_YELLOW = ""
+
+
 class CustomEndpointSchema(BaseModel):
     """Custom OpenAI-compatible provider endpoint."""
 
@@ -212,6 +220,7 @@ def validate_config(
     *,
     provider: str | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    dry_run: bool = False,
 ) -> ValidationReport:
     """Validate schema and run provider-level async health checks.
 
@@ -260,6 +269,17 @@ def validate_config(
                 )
             )
         checks = {target_provider}
+
+    if dry_run:
+        for provider_name in sorted(checks):
+            report.provider_health.append(
+                ProviderHealth(
+                    provider=provider_name,
+                    status="SKIPPED",
+                    detail="Dry run (provider checks skipped).",
+                )
+            )
+        return report
 
     health_rows = _ping_configured_providers(
         validated.providers, checks, timeout_seconds=timeout_seconds
@@ -539,6 +559,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Validate one provider only (e.g. openai, openrouter, ollama).",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate schema only; skip provider health checks.",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color output.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     return parser
 
@@ -548,9 +578,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.no_color:
+        _disable_color()
     report = validate_config(
         path=args.config,
         provider=args.provider,
+        dry_run=args.dry_run,
     )
 
     if args.json:

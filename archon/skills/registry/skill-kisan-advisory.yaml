@@ -2,7 +2,7 @@
 # Agriculture advisory for Indian farmers with regional language support
 
 name: kisan-advisory
-version: 1.0.0
+version: 1
 description: >
   Provides crop recommendations, weather advisories, and mandi price analysis
   for Indian farmers in 22+ regional languages. Supports pipeline mode for

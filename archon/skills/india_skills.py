@@ -6,7 +6,6 @@ from typing import Any
 
 from archon.agents.base_agent import BaseAgent
 from archon.config import ArchonConfig
-from archon.core.types import TaskMode
 from archon.providers import ProviderRouter
 from archon.skills.skill_registry import SkillDefinition, SkillRegistry
 
@@ -37,7 +36,7 @@ class InsuranceAdvisorAgent(BaseAgent):
         insurance_type = context.get("insurance_type", "health")
         age = context.get("age", 30)
         state = context.get("state", "unknown")
-        sum_assured = context.get("sum_assured, "not specified")
+        sum_assured = context.get("sum_assured", "not specified")
         
         prompt = self._build_insurance_prompt(insurance_type, age, state, sum_assured, context)
         

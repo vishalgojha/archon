@@ -2,7 +2,7 @@
 # Food license, safety standards, and compliance for Indian food businesses
 
 name: fssai-compliance
-version: 1.0.0
+version: 1
 description: >
   Assists food businesses in FSSAI licensing, food safety compliance, label
   requirements, hygiene standards, and recall procedures. Supports manufacturers,

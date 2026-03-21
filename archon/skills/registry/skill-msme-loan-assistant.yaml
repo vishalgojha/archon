@@ -2,7 +2,7 @@
 # Loan processing assistance for Indian MSMEs (MUDRA, CGTMSE, business loans)
 
 name: msme-loan-assistant
-version: 1.0.0
+version: 1
 description: >
   Assists MSMEs in navigating business loan applications including MUDRA,
   CGTMSE, bank business loans, and government subsidy schemes. Provides

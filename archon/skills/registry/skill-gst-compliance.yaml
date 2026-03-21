@@ -2,7 +2,7 @@
 # GST filing, return preparation, and compliance for Indian businesses
 
 name: gst-compliance
-version: 1.0.0
+version: 1
 description: >
   Assists businesses in GST compliance including return filing (GSTR-1, GSTR-3B,
   GSTR-9), invoice generation, input tax credit claims, and reconciliation.

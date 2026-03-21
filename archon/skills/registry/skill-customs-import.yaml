@@ -2,7 +2,7 @@
 # Import documentation, customs clearance, and duty calculation for India
 
 name: customs-import
-version: 1.0.0
+version: 1
 description: >
   Assists importers in navigating customs procedures, duty calculation,
   Bill of Entry filing, ITC-HS codes, and restricted item compliance.

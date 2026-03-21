@@ -2,7 +2,7 @@
 # Transaction pattern analysis and fraud prevention for Indian payment systems
 
 name: upi-fraud-detection
-version: 1.0.0
+version: 1
 description: >
   Analyzes UPI transaction patterns for fraud indicators, provides merchant
   verification, and guides users on fraud prevention and reporting. Integrates

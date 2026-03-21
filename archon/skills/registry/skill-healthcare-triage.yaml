@@ -2,7 +2,7 @@
 # Rural telemedicine symptom assessment and facility guidance
 
 name: healthcare-triage
-version: 1.0.0
+version: 1
 description: >
   Provides initial symptom assessment, facility level recommendation, and
   government health scheme eligibility checking for rural India. Supports

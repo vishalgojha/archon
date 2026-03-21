@@ -12,7 +12,11 @@ This repository bootstraps the ARCHON runtime with:
 
 ## Quick Start
 
-1. Install ARCHON globally for your user with the command that matches your shell:
+Prereqs: Python 3.11+ and git.
+
+1. Pick one install path (recommended: installer).
+
+Installer (recommended). Run the command that matches your shell:
 
 Windows PowerShell:
 
@@ -45,7 +49,7 @@ Notes:
 The installer:
 
 - uses your available `py -3` or `python` interpreter instead of hardcoding `py -3.11`
-- creates an isolated runtime under `%LOCALAPPDATA%\Programs\Archon` on Windows, `~/.local/share/archon` on Linux/WSL, or `~/Library/Application Support/Archon` on macOS
+- creates an isolated runtime under `%LOCALAPPDATA%\\Programs\\Archon` on Windows, `~/.local/share/archon` on Linux/WSL, or `~/Library/Application Support/Archon` on macOS
 - writes `archon` and `archon-server` shims into the runtime `bin` directory
 - avoids replacing the shared `archon.exe` in your system Python
 - refreshes the current PowerShell session when run via `install.ps1`
@@ -54,7 +58,7 @@ Open a new shell after installation if you used `install.cmd` or `install.sh`; `
 You can re-run the same flow later with `archon install`.
 Remove the dedicated runtime with `archon uninstall --yes`.
 
-2. Manual development setup is still available if you want a repo-local virtual environment:
+Repo-local virtualenv (no global install). Use this if you want to run from the repo only:
 
 ```powershell
 py -3 -m venv .venv
@@ -68,7 +72,17 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-3. Set at least one provider key in your environment:
+If you only want the runtime (no lint/test tooling), replace the last line with:
+
+```powershell
+pip install -r requirements.txt
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Set at least one provider key in your environment (or use a local Ollama setup):
 
 ```powershell
 $env:ANTHROPIC_API_KEY = "..."
@@ -80,7 +94,7 @@ export ANTHROPIC_API_KEY="..."
 export OPENAI_API_KEY="..."
 ```
 
-4. Validate config:
+3. Validate config:
 
 ```powershell
 python -m archon.validate_config
@@ -90,7 +104,13 @@ python -m archon.validate_config
 python -m archon.validate_config
 ```
 
-5. Start API server:
+If you are just checking schema locally (no provider health calls), run:
+
+```powershell
+python -m archon.validate_config --dry-run --no-color
+```
+
+4. Start API server:
 
 ```powershell
 archon ops serve

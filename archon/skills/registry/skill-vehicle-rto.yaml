@@ -2,7 +2,7 @@
 # RC, license, permit, pollution, and tax services for Indian vehicles
 
 name: vehicle-rto
-version: 1.0.0
+version: 1
 description: >
   Assists vehicle owners in RTO services including RC registration, driving
   license, permit renewal, pollution certificate, road tax, transfer of

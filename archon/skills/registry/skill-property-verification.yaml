@@ -2,7 +2,7 @@
 # Real estate title verification, RERA compliance, and agreement guidance
 
 name: property-verification
-version: 1.0.0
+version: 1
 description: >
   Assists buyers and sellers in property title verification, RERA compliance
   checking, rental agreement generation, and home loan comparison. Supports

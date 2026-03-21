@@ -35,6 +35,7 @@ ai-terminal/
 web/dashboard/node_modules/
 archon/interfaces/web/dashboard/node_modules/
 ai-terminal/node_modules/
+archon/studio/node_modules/
 ai-terminal/.env
 ai-terminal/.ai-terminal-state.json
 validate-config-*.yaml

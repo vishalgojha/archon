@@ -2,7 +2,7 @@
 # Mobile plan selection, bill disputes, porting, and complaint resolution
 
 name: telecom-assistant
-version: 1.0.0
+version: 1
 description: >
   Assists telecom consumers in plan selection, bill dispute resolution,
   mobile number portability (MNP), complaint filing, and tariff comparison.

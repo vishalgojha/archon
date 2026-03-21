@@ -2,7 +2,7 @@
 # Guide students through government scholarship applications (NSP, state schemes)
 
 name: scholarship-application
-version: 1.0.0
+version: 1
 description: >
   Assists students in navigating scholarship applications including National
   Scholarship Portal (NSP), state schemes, and category-based scholarships.

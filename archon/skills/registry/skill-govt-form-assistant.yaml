@@ -2,7 +2,7 @@
 # Assist citizens in filling digital government forms (Digital India initiative)
 
 name: govt-form-assistant
-version: 1.0.0
+version: 1
 description: >
   Guides citizens through online government form filling including Aadhaar,
   PAN, Passport, Voter ID, Driving License, and various state/citizen services.

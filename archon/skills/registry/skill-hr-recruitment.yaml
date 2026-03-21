@@ -2,7 +2,7 @@
 # Resume screening, job matching, and compliance for Indian job market
 
 name: hr-recruitment
-version: 1.0.0
+version: 1
 description: >
   Assists HR teams and recruiters in resume screening, candidate matching,
   salary benchmarking, and employment compliance. Supports Indian education

@@ -2,7 +2,7 @@
 # Startup registration, DPIIT recognition, and incentive guidance
 
 name: startup-india
-version: 1.0.0
+version: 1
 description: >
   Assists startups in DPIIT recognition, Startup India benefits, tax exemptions,
   IPR support, and funding schemes. Supports tech, manufacturing, and service

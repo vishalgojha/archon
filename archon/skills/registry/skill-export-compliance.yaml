@@ -2,7 +2,7 @@
 # Export documentation, customs clearance, and trade compliance for Indian exporters
 
 name: export-compliance
-version: 1.0.0
+version: 1
 description: >
   Assists Indian exporters in navigating export documentation, customs clearance,
   DGFT compliance, FTP guidelines, and destination country requirements. Supports

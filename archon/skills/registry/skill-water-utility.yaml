@@ -2,7 +2,7 @@
 # Water connections, bills, complaints, and utility guidance for India
 
 name: water-utility
-version: 1.0.0
+version: 1
 description: >
   Assists citizens in water connection applications, bill payment, complaint
   filing, and utility service guidance. Supports municipal water supply,
