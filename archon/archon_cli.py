@@ -87,18 +87,6 @@ def _default_byok_config() -> dict[str, Any]:
     return ArchonConfig().byok.model_dump()
 
 
-def _should_default_tui_to_live(config: Any) -> bool:
-    byok = getattr(config, "byok", None)
-    if not isinstance(config, ArchonConfig) or byok is None:
-        return False
-    return (
-        byok.primary == "ollama"
-        and byok.coding == "ollama"
-        and byok.fast == "ollama"
-        and byok.fallback == "ollama"
-    )
-
-
 def _probe_ollama(timeout_s: float = 2.0) -> dict[str, Any]:
     try:
         response = httpx.get("http://localhost:11434/api/tags", timeout=timeout_s)
@@ -201,7 +189,7 @@ def _validation_payload(config_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _run_validation_dry_run(config_data: dict[str, Any], config_path: str) -> int:
+def _run_validation(config_data: dict[str, Any], config_path: str) -> int:
     temp_path: Path | None = None
     try:
         config_dir = Path(config_path).resolve().parent
@@ -216,7 +204,7 @@ def _run_validation_dry_run(config_data: dict[str, Any], config_path: str) -> in
             temp_path = Path(handle.name)
         with io.StringIO() as stdout_buffer, io.StringIO() as stderr_buffer:
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                return int(validate_config_main(["--config", str(temp_path), "--dry-run"]))
+                return int(validate_config_main(["--config", str(temp_path)]))
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)

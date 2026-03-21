@@ -294,7 +294,6 @@ class DeploymentWorker:
         *,
         queue: WorkerQueue,
         config: ArchonConfig,
-        live_provider_calls: bool = False,
         memory_db_path: str | Path | None = None,
         orchestrator: Orchestrator | None = None,
     ) -> None:
@@ -306,7 +305,6 @@ class DeploymentWorker:
         )
         self.orchestrator = orchestrator or Orchestrator(
             config=config,
-            live_provider_calls=live_provider_calls,
         )
         self.orchestrator.memory_store = MemoryStore(
             db_path=str(memory_db_path or (_runtime_dir() / "archon_memory.sqlite3"))
@@ -410,7 +408,6 @@ async def run_worker_async(
     once: bool = False,
     config_path: str | Path | None = None,
     queue_path: str | Path | None = None,
-    live_provider_calls: bool = False,
 ) -> None:
     """Run the ARCHON deployment worker.
 
@@ -423,7 +420,6 @@ async def run_worker_async(
     worker = DeploymentWorker(
         queue=queue,
         config=load_archon_config(config_path or os.getenv("ARCHON_CONFIG", "config.archon.yaml")),
-        live_provider_calls=live_provider_calls,
         memory_db_path=_memory_db_path(),
     )
     try:
@@ -438,7 +434,6 @@ def run_worker(
     once: bool = False,
     config_path: str | Path | None = None,
     queue_path: str | Path | None = None,
-    live_provider_calls: bool = False,
 ) -> None:
     """Synchronous wrapper for the async worker loop.
 
@@ -453,7 +448,6 @@ def run_worker(
             once=once,
             config_path=config_path,
             queue_path=queue_path,
-            live_provider_calls=live_provider_calls,
         )
     )
 
@@ -529,8 +523,6 @@ def main() -> None:
         once=str(os.getenv("ARCHON_WORKER_ONCE", "")).strip().lower() == "true",
         config_path=os.getenv("ARCHON_CONFIG", "config.archon.yaml"),
         queue_path=os.getenv("ARCHON_WORKER_DB_PATH") or None,
-        live_provider_calls=str(os.getenv("ARCHON_LIVE_PROVIDER_CALLS", "")).strip().lower()
-        == "true",
     )
 
 

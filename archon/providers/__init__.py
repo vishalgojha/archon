@@ -1,12 +1,21 @@
-"""Provider routing and response normalization."""
+"""Provider router and types for ARCHON."""
 
-from archon.providers.router import ProviderRouter, ProviderUnavailableError
-from archon.providers.types import ProviderResponse, ProviderSelection, ProviderUsage
+from archon.providers.router import (
+    ProviderCallError,
+    ProviderRouter,
+    ProviderUnavailableError,
+)
+from archon.providers.types import (
+    ProviderResponse,
+    ProviderSelection,
+    ProviderUsage,
+)
 
 __all__ = [
     "ProviderRouter",
+    "ProviderCallError",
     "ProviderUnavailableError",
-    "ProviderSelection",
     "ProviderResponse",
+    "ProviderSelection",
     "ProviderUsage",
 ]

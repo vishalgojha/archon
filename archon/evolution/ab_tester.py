@@ -141,8 +141,7 @@ class ABTester:
 
     async def _execute(self, workflow: WorkflowDefinition, task: SyntheticTask) -> dict[str, Any]:
         if self._executor is None:
-            simulated_output = {"workflow": workflow.workflow_id, "task": task.task_id}
-            return {"output": simulated_output, "latency_ms": 1.0, "cost_usd": 0.0}
+            raise RuntimeError("ABTester requires an executor; none was provided.")
         return await self._executor(workflow, task)
 
     async def _judge_correctness(self, task: SyntheticTask, output: Any) -> float:

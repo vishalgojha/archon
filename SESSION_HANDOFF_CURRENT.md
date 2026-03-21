@@ -1,28 +1,32 @@
 # SESSION_HANDOFF_CURRENT
 
 ## Snapshot
-- Date: 2026-03-17
+- Date: 2026-03-18
 - Repo: `C:\Users\visha\archon`
 - Branch: `mobile-node`
-- Scope: Archon Studio dev UX + CLI entrypoint
+- Scope: Textual TUI redesign (markdown-first) + provider key onboarding polish
 
 ## What Works
-- `archon core studio` command + `archon studio` alias exist and were pushed.
-- Studio CSS now avoids Tailwind `bg-panel/90` apply error.
+- Textual TUI now renders a markdown-first overview header with tasks/costs as code-fenced tables plus a clean streaming log and minimal input line.
+- `Ctrl+H` toggles the overview panel in the TUI.
+- Provider key onboarding now shows key portal links, waits for login, and animates key authentication.
+- README updated to note the new TUI layout and overview toggle.
 
 ## Files Changed In This Session
-- `archon/studio/src/styles.css`
+- `README.md`
+- `archon/cli/drawers/core.py`
+- `archon/interfaces/cli/tui.py`
+- `archon/interfaces/cli/tui_onboarding.py`
 - `SESSION_HANDOFF_CURRENT.md`
 
 ## Verification
-- `pytest tests/`
+- Not run in this session.
 
 ## What's Broken
-- Studio Chat shows "Failed to fetch" because the API server has no CORS headers for `http://localhost:5173`.
+- TUI-related tests likely need updates after the layout change (e.g., `tests/test_tui.py`).
 
 ## Pending / Local Only
-- Uncommitted change: `ui_packs/tenant-ui/v1/pack.json` (timestamp bump only).
-- Untracked: `archon/studio/package-lock.json`, `archon/studio/node_modules/`.
+- None noted.
 
 ## Next Task
-- Add CORS middleware in `archon/interfaces/api/server.py` to allow Studio origin(s), then retest Chat.
+- Update TUI tests to reflect the markdown-first layout and re-run relevant test slices.

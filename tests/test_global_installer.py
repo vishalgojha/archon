@@ -169,7 +169,7 @@ def test_ensure_user_path_updates_bash_profile_on_linux(monkeypatch, tmp_path: P
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("SHELL", "/bin/bash")
 
-    updated = runtime_installer._ensure_user_path(bin_dir, dry_run=False)
+    updated = runtime_installer._ensure_user_path(bin_dir)
 
     profile = (tmp_path / ".bashrc").read_text(encoding="utf-8")
     assert updated is True
@@ -188,7 +188,7 @@ def test_remove_user_path_cleans_shell_profiles_on_linux(monkeypatch, tmp_path: 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("SHELL", "/bin/bash")
 
-    updated = runtime_installer._remove_user_path(bin_dir, dry_run=False)
+    updated = runtime_installer._remove_user_path(bin_dir)
 
     assert updated is True
     assert profile.read_text(encoding="utf-8") == ""
@@ -205,7 +205,6 @@ def test_uninstall_removes_runtime_tree_on_non_windows(monkeypatch, tmp_path: Pa
     exit_code = runtime_installer.uninstall(
         install_root=install_root,
         skip_path=False,
-        dry_run=False,
     )
 
     assert exit_code == 0
@@ -224,13 +223,12 @@ def test_uninstall_schedules_cleanup_on_windows(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr(
         runtime_installer,
         "_schedule_windows_uninstall",
-        lambda path, **_kwargs: scheduled.append(path) or cleanup_script,
+        lambda path: scheduled.append(path) or cleanup_script,
     )
 
     exit_code = runtime_installer.uninstall(
         install_root=install_root,
         skip_path=False,
-        dry_run=False,
     )
 
     assert exit_code == 0

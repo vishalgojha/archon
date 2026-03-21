@@ -113,7 +113,7 @@ evolution:
 """,
     )
     try:
-        report = validate_module.validate_config(path=config, dry_run=True)
+        report = validate_module.validate_config(path=config)
         assert report.schema_valid is False
         assert report.ok is False
         assert any("Invalid provider" in err for err in report.errors)
@@ -146,7 +146,7 @@ evolution:
 """,
     )
     try:
-        report = validate_module.validate_config(path=config, dry_run=True)
+        report = validate_module.validate_config(path=config)
         assert report.schema_valid is False
         assert report.ok is False
         assert any("tier" in err for err in report.errors)
@@ -177,7 +177,7 @@ evolution:
 """,
     )
     try:
-        report = validate_module.validate_config(path=config, dry_run=True)
+        report = validate_module.validate_config(path=config)
         assert report.schema_valid is False
         assert report.ok is False
         assert any("Budget sanity failed" in err for err in report.errors)
@@ -249,7 +249,7 @@ def test_not_configured_and_skipped_do_not_fail(monkeypatch: pytest.MonkeyPatch)
         assert not_configured.ok is True
         assert not_configured.provider_health[0].status == "NOT_CONFIGURED"
 
-        skipped = validate_module.validate_config(path=config, provider="openai", dry_run=True)
+        skipped = validate_module.validate_config(path=config, provider="openai")
         statuses = {row.status for row in skipped.provider_health}
         assert "SKIPPED" in statuses
         assert skipped.ok is True
@@ -289,7 +289,9 @@ evolution:
         failing.unlink(missing_ok=True)
 
 
-def test_normalize_config_accepts_onboarding_metadata_and_legacy_budget_shape() -> None:
+def test_normalize_config_accepts_onboarding_metadata_and_legacy_budget_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _write_yaml(
         """
 byok:
@@ -313,7 +315,14 @@ default_tier: free
 """,
     )
     try:
-        report = validate_module.validate_config(path=config, dry_run=True)
+        _patch_httpx(
+            monkeypatch,
+            {
+                "https://openrouter.ai/api/v1/models": 200,
+                "http://localhost:11434/api/tags": 200,
+            },
+        )
+        report = validate_module.validate_config(path=config)
         assert report.schema_valid is True
         assert report.ok is True
     finally:

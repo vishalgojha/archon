@@ -46,7 +46,6 @@ def preview(text: str, limit: int = 88) -> str:
 def render_screen(
     *,
     mode: str,
-    live_provider_calls: bool,
     context: dict[str, Any],
     transcript: list[dict[str, str]],
     history: list[dict[str, Any]],
@@ -57,7 +56,6 @@ def render_screen(
     Example:
         >>> "ARCHON" in render_screen(
         ...     mode="auto",
-        ...     live_provider_calls=False,
         ...     context={},
         ...     transcript=[],
         ...     history=[],
@@ -77,7 +75,6 @@ def render_screen(
             "Session",
             [
                 f"Mode: {mode}",
-                f"Live providers: {'on' if live_provider_calls else 'off'}",
                 f"Context keys: {', '.join(sorted(context)) if context else 'none'}",
                 f"Completed runs: {len(history)}",
                 f"Status: {'running' if running else 'idle'}",
@@ -108,7 +105,6 @@ def render_screen(
                     "/mode <debate>",
                     "/context <json-object>",
                     "/clear-context",
-                    "/live <on|off>",
                     "/history",
                     "/reset",
                     "/quit",
@@ -128,7 +124,7 @@ def render_screen(
                     tone=message.get("tone", "default"),
                 )
             )
-    sections.append(_status_line(mode, live_provider_calls, history, running, ansi=ansi))
+    sections.append(_status_line(mode, history, running, ansi=ansi))
     sections.append(_composer_line(ansi=ansi))
     return "\n".join(sections) + "\n"
 
@@ -190,7 +186,6 @@ def _title_line(title: str, *, width: int, ansi: bool) -> str:
 
 def _status_line(
     mode: str,
-    live_provider_calls: bool,
     history: list[dict[str, Any]],
     running: bool,
     *,
@@ -199,7 +194,6 @@ def _status_line(
     status = "busy" if running else "idle"
     text = (
         f"agent main | session main (archon-tui) | mode {mode} | "
-        f"live {'on' if live_provider_calls else 'off'} | "
         f"runs {len(history)} | {status}"
     )
     return _paint(text, color="cyan", ansi=ansi, dim=True)

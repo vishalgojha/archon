@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi.errors import RateLimitExceeded
@@ -50,6 +51,7 @@ from archon.interfaces.api.auth import (
     decode_auth_token,
     websocket_auth_context,
 )
+from archon.interfaces.webchat.server import mount_webchat
 from archon.interfaces.api.rate_limit import (
     InMemoryTierRateLimitStore,
     create_limiter,
@@ -197,6 +199,10 @@ def _to_response(result: OrchestrationResult) -> TaskResponse:
     )
 
 
+def _parse_cors_origins(raw: str) -> list[str]:
+    return [origin.strip() for origin in str(raw or "").split(",") if origin.strip()]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     test_tmp_dir = None
@@ -230,9 +236,12 @@ async def lifespan(app: FastAPI):
         else:
             runtime_secret = secrets.token_urlsafe(48)
         os.environ["ARCHON_JWT_SECRET"] = runtime_secret
-    live_env = str(os.getenv("ARCHON_LIVE_PROVIDER_CALLS", "")).strip().lower()
-    app.state.live_provider_calls = live_env in {"1", "true", "yes", "on"}
-    app.state.orchestrator = Orchestrator(config, live_provider_calls=app.state.live_provider_calls)
+    app.state.orchestrator = Orchestrator(config)
+    webchat_app = getattr(app.state, "webchat_app", None)
+    if isinstance(webchat_app, FastAPI):
+        runtime = getattr(webchat_app.state, "runtime", None)
+        if runtime is not None:
+            runtime.orchestrator = app.state.orchestrator
     app.state.auth_settings = AuthSettings.from_env(config)
     app.state.analytics_collector = AnalyticsCollector(
         path=_db_path("ARCHON_ANALYTICS_DB", "archon_analytics.sqlite3")
@@ -259,6 +268,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ARCHON API", version=resolve_version(), lifespan=lifespan)
+app.state.webchat_app = mount_webchat(app)
 EXEMPT_PREFIXES = {
     "/health",
 }
@@ -274,6 +284,7 @@ _exempt_path_prefixes = {
     "/api",
     "/agent",
     "/ui-packs",
+    "/webchat",
     *EXEMPT_PREFIXES,
 }
 app.add_middleware(
@@ -284,6 +295,34 @@ app.add_middleware(
     exempt_paths=_exempt_paths,
     exempt_path_prefixes=_exempt_path_prefixes,
 )
+_default_cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://[::1]:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "http://[::1]:4173",
+]
+_cors_origins = _parse_cors_origins(os.getenv("ARCHON_CORS_ORIGINS", ""))
+if not _cors_origins:
+    _cors_origins = _default_cors_origins
+if _cors_origins:
+    if "*" in _cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
 limiter = create_limiter()
 app.state.limiter = limiter
@@ -526,7 +565,7 @@ async def approve_guarded_action(
     orchestrator: Orchestrator = app.state.orchestrator
     ok = orchestrator.approval_gate.approve(request_id, approver=approver, notes=payload.notes)
     if not ok:
-        raise HTTPException(status_code=404, detail="Approval request not found.")
+        raise HTTPException(status_code=404, detail="Confirmation request not found.")
     await _emit_analytics_event(
         {
             "tenant_id": request.state.auth.tenant_id,
@@ -586,7 +625,7 @@ async def deny_guarded_action(
     orchestrator: Orchestrator = app.state.orchestrator
     ok = orchestrator.approval_gate.deny(request_id, approver=approver, notes=payload.notes)
     if not ok:
-        raise HTTPException(status_code=404, detail="Approval request not found.")
+        raise HTTPException(status_code=404, detail="Confirmation request not found.")
     await _emit_analytics_event(
         {
             "tenant_id": request.state.auth.tenant_id,
@@ -884,7 +923,6 @@ async def studio_status(request: Request) -> dict[str, Any]:
         "version": app.version,
         "git_sha": resolve_git_sha(),
         "uptime_s": max(0.0, time.monotonic() - started),
-        "live_provider_calls": bool(getattr(app.state, "live_provider_calls", False)),
         "deployment_count": len(deployments),
     }
 
@@ -915,7 +953,6 @@ async def studio_skills_propose(
             registry=SkillRegistry(),
             approval_gate=orchestrator.approval_gate,
             audit_trail=orchestrator.audit_trail,
-            live_provider_calls=bool(getattr(request.app.state, "live_provider_calls", False)),
         )
         try:
             gap_tasks = creator.find_gap_tasks(
@@ -953,7 +990,6 @@ async def studio_skills_apply(name: str, request: Request) -> Response:
             registry=SkillRegistry(),
             approval_gate=orchestrator.approval_gate,
             audit_trail=orchestrator.audit_trail,
-            live_provider_calls=bool(getattr(request.app.state, "live_provider_calls", False)),
         )
         try:
             return await creator.apply_skill(name=name, event_sink=event_sink)
@@ -980,7 +1016,6 @@ async def studio_providers(request: Request) -> dict[str, Any]:
     custom_endpoints = {endpoint.name: endpoint for endpoint in config.byok.custom_endpoints}
     provider_names.update(custom_endpoints.keys())
 
-    live_provider_calls = bool(getattr(request.app.state, "live_provider_calls", False))
     providers: list[dict[str, Any]] = []
     for provider in sorted(provider_names):
         assigned_roles = [role for role, value in roles.items() if value == provider]
@@ -989,7 +1024,7 @@ async def studio_providers(request: Request) -> dict[str, Any]:
             providers.append(
                 {
                     "name": provider,
-                    "status": "live" if live_provider_calls else "off",
+                    "status": "live",
                     "roles": assigned_roles,
                     "env_key": None,
                     "key_present": None,
@@ -998,11 +1033,7 @@ async def studio_providers(request: Request) -> dict[str, Any]:
                 }
             )
             continue
-        payload = _provider_status(
-            provider,
-            roles=assigned_roles,
-            live_provider_calls=live_provider_calls,
-        )
+        payload = _provider_status(provider, roles=assigned_roles)
         base_url = DEFAULT_BASE_URL.get(provider)
         if provider == "openrouter":
             base_url = config.byok.openrouter_base_url
@@ -1014,13 +1045,11 @@ async def studio_providers(request: Request) -> dict[str, Any]:
     return {
         "roles": roles,
         "providers": providers,
-        "live_provider_calls": live_provider_calls,
     }
 
 
 class ProviderRoleUpdate(BaseModel):
     provider: str | None = None
-    live_provider_calls: bool | None = None
 
 
 @app.patch("/api/providers/{role}")
@@ -1034,13 +1063,6 @@ async def studio_provider_update(
     _require_localhost(request)
     orchestrator: Orchestrator = request.app.state.orchestrator
     role_key = str(role).strip().lower()
-    if role_key == "live":
-        if payload.live_provider_calls is None:
-            raise HTTPException(status_code=400, detail="live_provider_calls is required.")
-        request.app.state.live_provider_calls = bool(payload.live_provider_calls)
-        orchestrator.provider_router._live_mode = bool(payload.live_provider_calls)
-        return await studio_providers(request)
-
     role_names = ("primary", "coding", "vision", "fast", "embedding", "fallback")
     if role_key not in role_names:
         raise HTTPException(status_code=400, detail="Unknown provider role.")
@@ -1079,7 +1101,7 @@ async def studio_approve(
     approver = payload.approver or "studio"
     ok = orchestrator.approval_gate.approve(request_id, approver=approver, notes=payload.notes)
     if not ok:
-        raise HTTPException(status_code=404, detail="Approval request not found.")
+        raise HTTPException(status_code=404, detail="Confirmation request not found.")
     await _emit_analytics_event(
         {
             "tenant_id": "studio",
@@ -1102,7 +1124,7 @@ async def studio_deny(
     approver = payload.approver or "studio"
     ok = orchestrator.approval_gate.deny(request_id, approver=approver, notes=payload.notes)
     if not ok:
-        raise HTTPException(status_code=404, detail="Approval request not found.")
+        raise HTTPException(status_code=404, detail="Confirmation request not found.")
     await _emit_analytics_event(
         {
             "tenant_id": "studio",
@@ -1322,7 +1344,7 @@ async def studio_agent(deployment_id: str, request: Request) -> Response:
     _require_localhost(request)
     deployment = await asyncio.to_thread(_load_deployment, deployment_id)
     if deployment is None:
-        raise HTTPException(status_code=404, detail="Deployment not found.")
+        raise HTTPException(status_code=404, detail="Launch not found.")
     return HTMLResponse(_render_agent_ui(deployment))
 
 
@@ -1459,18 +1481,15 @@ def _provider_status(
     provider: str,
     *,
     roles: list[str],
-    live_provider_calls: bool,
 ) -> dict[str, Any]:
     env_key = PROVIDER_ENV_KEY.get(provider)
     key_required = provider != "ollama"
     key_present = None
     if env_key:
         key_present = bool(os.getenv(env_key))
-    status = "off"
+    status = "live"
     if key_required and key_present is False:
         status = "missing_key"
-    elif live_provider_calls:
-        status = "live"
     return {
         "name": provider,
         "status": status,
@@ -1642,15 +1661,15 @@ def _render_agent_ui(deployment: dict[str, Any]) -> str:
       function addApproval(meta) {{\n
         const wrap = document.createElement(\"div\");\n
         wrap.className = \"message\";\n
-        wrap.textContent = \"Approval required.\";\n
+        wrap.textContent = \"Confirmation needed.\";\n
         const actions = document.createElement(\"div\");\n
         actions.className = \"approval\";\n
         const approve = document.createElement(\"button\");\n
         approve.className = \"primary\";\n
-        approve.textContent = \"Approve\";\n
+        approve.textContent = \"Confirm\";\n
         approve.onclick = () => respond(true, meta.request_id);\n
         const deny = document.createElement(\"button\");\n
-        deny.textContent = \"Deny\";\n
+        deny.textContent = \"Decline\";\n
         deny.onclick = () => respond(false, meta.request_id);\n
         actions.appendChild(approve);\n
         actions.appendChild(deny);\n

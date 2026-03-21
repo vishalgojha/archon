@@ -111,3 +111,10 @@ It is intended as a handoff artifact for any next agent.
 - Implemented approval-gated skill proposal and promotion with A/B testing via `ab_tester.py`.
 - Wired skill routing into the orchestrator and tracked task audits for gap analysis.
 - Added CLI drawer `archon skills` (list/propose/apply) and updated validation/config for skills.
+
+### Step 15 - 2026-03-18
+- Restyled the Textual TUI into a markdown-first terminal experience (overview header + streaming log + minimal input line).
+- Replaced the dashboard tables with code-fenced markdown tables rendered in the overview panel.
+- Added `Ctrl+H` to toggle the overview panel.
+- Added provider key onboarding polish: key portal links, login wait prompt, and auth spinner.
+- Updated README to document the new TUI layout and overview toggle.

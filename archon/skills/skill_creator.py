@@ -50,14 +50,12 @@ class SkillCreator:
         registry: SkillRegistry | None = None,
         approval_gate: ApprovalGate | None = None,
         audit_trail: ImmutableAuditTrail | None = None,
-        live_provider_calls: bool = False,
     ) -> None:
         self.config = config or ArchonConfig()
         self.registry = registry or SkillRegistry()
         self.approval_gate = approval_gate or ApprovalGate(supervised_mode=True)
         self._owns_audit_trail = audit_trail is None
         self.audit_trail = audit_trail or ImmutableAuditTrail("archon_evolution_audit.sqlite3")
-        self.live_provider_calls = live_provider_calls
 
     def close(self) -> None:
         if self._owns_audit_trail:
@@ -254,7 +252,6 @@ class SkillCreator:
             audit_trail = ImmutableAuditTrail(":memory:")
             orchestrator = Orchestrator(
                 config=self.config,
-                live_provider_calls=self.live_provider_calls,
                 audit_trail=audit_trail,
             )
             start = time.perf_counter()

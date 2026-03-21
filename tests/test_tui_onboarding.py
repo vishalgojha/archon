@@ -13,8 +13,8 @@ from archon.config import ArchonConfig
 from archon.interfaces.cli import tui_onboarding
 
 
-def test_run_launcher_updates_mode_and_live_toggle() -> None:
-    choices = iter(["mode", "debate", "live", "start"])
+def test_run_launcher_updates_mode() -> None:
+    choices = iter(["mode", "debate", "start"])
 
     async def fake_choose_menu_option(**_: Any) -> str:
         return next(choices)
@@ -27,7 +27,6 @@ def test_run_launcher_updates_mode_and_live_toggle() -> None:
                 config=ArchonConfig(),
                 config_path="config.archon.yaml",
                 mode="auto",
-                live_provider_calls=False,
                 onboarding=None,
             )
         )
@@ -36,9 +35,7 @@ def test_run_launcher_updates_mode_and_live_toggle() -> None:
 
     assert result.start is True
     assert result.mode == "debate"
-    assert result.live_provider_calls is True
     assert any(note["body"] == "Default mode set to debate." for note in result.notes)
-    assert any(note["body"] == "Live providers enabled." for note in result.notes)
 
 
 def test_run_setup_wizard_saves_real_config_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,4 +93,4 @@ def test_run_setup_wizard_saves_real_config_shape(monkeypatch: pytest.MonkeyPatc
     assert saved["config_data"]["supervised_mode"] is True
     assert env_writes[0][0] == "ARCHON_JWT_SECRET"
     assert os.getenv("ARCHON_JWT_SECRET") is None
-    assert "Provider: ollama (local models)" in summary
+    assert "Connection: ollama (local models)" in summary

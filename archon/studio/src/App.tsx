@@ -1,14 +1,38 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
-import { apiFetch, streamJsonLines } from "./lib/api";
+import { API_BASE, apiFetch, streamJsonLines } from "./lib/api";
 
-const NAV_ITEMS = [
-  { id: "builder", label: "Agent Builder" },
-  { id: "skills", label: "Skills" },
-  { id: "providers", label: "Providers" },
-  { id: "deploy", label: "Deploy" },
-  { id: "chat", label: "Chat" },
-  { id: "evolution", label: "Evolution Log" }
+const NAV_SECTIONS = [
+  {
+    title: "Build",
+    items: [
+      { id: "overview", label: "Overview" },
+      { id: "builder", label: "Builder" },
+      { id: "skills", label: "Capabilities" }
+    ]
+  },
+  {
+    title: "Operate",
+    items: [
+      { id: "providers", label: "Connections" },
+      { id: "memory", label: "Knowledge" },
+      { id: "approvals", label: "Confirmations" },
+      { id: "chat", label: "Live Chat" },
+      { id: "webchat", label: "Website Chat" },
+      { id: "sessions", label: "Chat Sessions" },
+      { id: "deploy", label: "Launches" },
+      { id: "observability", label: "System Health" }
+    ]
+  },
+  {
+    title: "Admin",
+    items: [
+      { id: "evolution", label: "Change History" },
+      { id: "config", label: "Settings" }
+    ]
+  }
 ] as const;
+
+const NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
 type ViewId = (typeof NAV_ITEMS)[number]["id"];
 
@@ -22,7 +46,7 @@ type Skill = {
 
 type ProviderEntry = {
   name: string;
-  status: "live" | "off" | "missing_key";
+  status: "live" | "missing_key";
   roles: string[];
   env_key: string | null;
   key_present: boolean | null;
@@ -33,7 +57,24 @@ type ProviderEntry = {
 type ProviderRoleResponse = {
   roles: Record<string, string>;
   providers: ProviderEntry[];
-  live_provider_calls: boolean;
+};
+
+type ApprovalEntry = {
+  request_id: string;
+  action_id: string;
+  action: string;
+  risk_level?: string | null;
+  created_at: number;
+  context: Record<string, any>;
+  timeout_remaining_s?: number;
+};
+
+type StudioStatus = {
+  status: string;
+  version: string;
+  git_sha: string;
+  uptime_s: number;
+  deployment_count: number;
 };
 
 type WorkflowNode = {
@@ -83,6 +124,15 @@ type Message = {
   meta?: Record<string, any>;
 };
 
+type DrawerKind = "node" | "provider" | "deployment" | "session" | "approval";
+
+type DrawerDescriptor = {
+  id: string;
+  title: string;
+  kind: DrawerKind;
+  payload: any;
+};
+
 const WORKFLOW_STORAGE_KEY = "archon_studio_workflows";
 
 function loadWorkflows(): Workflow[] {
@@ -122,7 +172,7 @@ function createNodeFromSkill(skill: Skill): WorkflowNode {
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<ViewId>("builder");
+  const [activeView, setActiveView] = useState<ViewId>("overview");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [skillsLoading, setSkillsLoading] = useState(false);
@@ -137,6 +187,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [studioStatus, setStudioStatus] = useState<StudioStatus | null>(null);
 
   const [skillsLog, setSkillsLog] = useState<Message[]>([]);
   const [deployLog, setDeployLog] = useState<Message[]>([]);
@@ -152,6 +203,19 @@ export default function App() {
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [webchatStatus, setWebchatStatus] = useState<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  const [approvals, setApprovals] = useState<ApprovalEntry[]>([]);
+  const [approvalsError, setApprovalsError] = useState<string | null>(null);
+  const [webchatToken, setWebchatToken] = useState<string>("");
+  const [webchatSessionId, setWebchatSessionId] = useState<string>("");
+  const [webchatMessages, setWebchatMessages] = useState<Message[]>([]);
+  const [webchatSessions, setWebchatSessions] = useState<Array<{ id: string; token: string }>>(
+    []
+  );
+  const [webchatError, setWebchatError] = useState<string | null>(null);
+  const [drawers, setDrawers] = useState<DrawerDescriptor[]>([]);
 
   const [statusBar, setStatusBar] = useState({
     provider: "auto",
@@ -176,6 +240,16 @@ export default function App() {
   useEffect(() => {
     saveWorkflows(workflows);
   }, [workflows]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    openDrawer({
+      id: `node:${selectedNode.id}`,
+      title: `Node · ${selectedNode.name}`,
+      kind: "node",
+      payload: selectedNode
+    });
+  }, [selectedNode]);
 
   useEffect(() => {
     if (!toast) return;
@@ -224,6 +298,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!["overview", "config", "observability"].includes(activeView)) return;
+    loadStudioStatus();
+  }, [activeView]);
+
+  useEffect(() => {
     if (activeView !== "deploy") return;
     const loadDeployments = async () => {
       try {
@@ -234,6 +313,43 @@ export default function App() {
       }
     };
     loadDeployments();
+  }, [activeView]);
+
+  useEffect(() => {
+    if (activeView !== "approvals") return;
+    loadApprovals();
+    const interval = setInterval(loadApprovals, 5000);
+    return () => clearInterval(interval);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (activeView !== "webchat") return;
+    const existing = document.getElementById("archon-webchat-script") as HTMLScriptElement | null;
+    if ((window as any).archon) {
+      setWebchatStatus("ready");
+      return;
+    }
+    setWebchatStatus("loading");
+    const script = existing ?? document.createElement("script");
+    if (!existing) {
+      script.id = "archon-webchat-script";
+      script.async = true;
+      script.src = `${API_BASE}/webchat/static/archon-chat.js`;
+      script.dataset.host = API_BASE;
+      script.dataset.theme = "dark";
+      script.dataset.whiteLabel = "true";
+      script.dataset.position = "right";
+      document.body.appendChild(script);
+    }
+
+    const handleLoad = () => setWebchatStatus("ready");
+    const handleError = () => setWebchatStatus("error");
+    script.addEventListener("load", handleLoad);
+    script.addEventListener("error", handleError);
+    return () => {
+      script.removeEventListener("load", handleLoad);
+      script.removeEventListener("error", handleError);
+    };
   }, [activeView]);
 
   useEffect(() => {
@@ -328,6 +444,159 @@ export default function App() {
 
   const appendLog = (setter: Dispatch<SetStateAction<Message[]>>, line: Message) => {
     setter((prev) => [...prev, line]);
+  };
+
+  const openDrawer = (drawer: DrawerDescriptor) => {
+    setDrawers((prev) => {
+      const index = prev.findIndex((item) => item.id === drawer.id);
+      if (index >= 0) {
+        const next = [...prev];
+        next[index] = drawer;
+        return next;
+      }
+      return [...prev, drawer];
+    });
+  };
+
+  const closeDrawer = (drawerId: string) => {
+    setDrawers((prev) => prev.filter((item) => item.id !== drawerId));
+  };
+
+  const renderDrawerContent = (drawer: DrawerDescriptor) => {
+    if (drawer.kind === "node") {
+      const node = drawer.payload as WorkflowNode;
+      return (
+        <div className="flex flex-col gap-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Connection</span>
+            <select
+              className="rounded-lg border border-stroke bg-panel px-2 py-1 text-xs"
+              value={node.provider || "auto"}
+              onChange={(event) =>
+                updateNode(node.id, {
+                  provider: event.target.value === "auto" ? null : event.target.value
+                })
+              }
+            >
+              <option value="auto">auto</option>
+              {availableProviders.map((provider) => (
+                <option key={provider} value={provider}>
+                  {provider}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Cost tier</span>
+            <span>{node.cost_tier}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">State</span>
+            <span>{node.state}</span>
+          </div>
+          <div className="rounded-lg border border-stroke p-2">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-inkMuted">Settings</div>
+            {Object.entries(node.config).map(([key, value]) => (
+              <div key={key} className="mt-2 flex items-center justify-between text-xs">
+                <span className="text-inkMuted">{key}</span>
+                <input
+                  className="w-24 rounded-md border border-stroke bg-panel px-2 py-1 text-xs"
+                  value={value}
+                  onChange={(event) =>
+                    updateNode(node.id, {
+                      config: { ...node.config, [key]: event.target.value }
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <button className="ghost-button" onClick={() => handleRemoveNode(node.id)}>
+            Remove Node
+          </button>
+        </div>
+      );
+    }
+    if (drawer.kind === "provider") {
+      const provider = drawer.payload as ProviderEntry;
+      return (
+        <div className="flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Status</span>
+            <span>{provider.status}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Roles</span>
+            <span>{provider.roles.join(", ") || "—"}</span>
+          </div>
+          {provider.base_url && (
+            <div className="flex items-center justify-between">
+              <span className="text-inkMuted">Base URL</span>
+              <span>{provider.base_url}</span>
+            </div>
+          )}
+          {provider.env_key && (
+            <div className="flex items-center justify-between">
+              <span className="text-inkMuted">Env key</span>
+              <span>{provider.env_key}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (drawer.kind === "deployment") {
+      const deployment = drawer.payload as Deployment;
+      return (
+        <div className="flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Entry capability</span>
+            <span>{deployment.entry_skill}</span>
+          </div>
+          <div className="rounded-lg border border-stroke p-2 text-[11px] text-inkMuted">
+            {deployment.description || "No description"}
+          </div>
+          <div className="text-[11px] text-inkMuted">{deployment.url}</div>
+        </div>
+      );
+    }
+    if (drawer.kind === "session") {
+      const session = drawer.payload as { session_id: string; tenant_id?: string; tier?: string };
+      return (
+        <div className="flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Chat Session</span>
+            <span>{session.session_id}</span>
+          </div>
+          {session.tenant_id && (
+            <div className="flex items-center justify-between">
+              <span className="text-inkMuted">Tenant</span>
+              <span>{session.tenant_id}</span>
+            </div>
+          )}
+          {session.tier && (
+            <div className="flex items-center justify-between">
+              <span className="text-inkMuted">Tier</span>
+              <span>{session.tier}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (drawer.kind === "approval") {
+      const approval = drawer.payload as ApprovalEntry;
+      return (
+        <div className="flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-inkMuted">Action</span>
+            <span>{approval.action}</span>
+          </div>
+          <div className="text-[11px] text-inkMuted">
+            {JSON.stringify(approval.context || {}, null, 0)}
+          </div>
+        </div>
+      );
+    }
+    return <div className="text-xs text-inkMuted">No details.</div>;
   };
 
   const runSkillProposal = async () => {
@@ -440,10 +709,10 @@ export default function App() {
           appendLog(setDeployLog, {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `Deployment ready at ${line.payload?.url || ""}`,
+            content: `Launch ready at ${line.payload?.url || ""}`,
             meta: line.payload
           });
-          setToast("Deployment created.");
+          setToast("Launch created.");
         }
         if (line.type === "error") {
           appendLog(setDeployLog, {
@@ -484,7 +753,7 @@ export default function App() {
               {
                 id: crypto.randomUUID(),
                 role: "system",
-                content: "Approval required",
+                content: "Confirmation needed",
                 meta: line.payload
               }
             ]);
@@ -558,24 +827,12 @@ export default function App() {
           body: JSON.stringify({ approver: "studio", notes: "Denied from Studio" })
         });
       }
-      setToast(approve ? "Approved." : "Denied.");
+      setToast(approve ? "Confirmed." : "Declined.");
+      if (activeView === "approvals") {
+        loadApprovals();
+      }
     } catch (err) {
-      setToast(`Approval failed: ${(err as Error).message}`);
-    }
-  };
-
-  const toggleLiveProviders = async () => {
-    if (!providers) return;
-    const next = !providers.live_provider_calls;
-    try {
-      const data = await apiFetch<ProviderRoleResponse>(`/api/providers/live`, {
-        method: "PATCH",
-        body: JSON.stringify({ live_provider_calls: next })
-      });
-      setProviders(data);
-      setToast(next ? "Live providers enabled." : "Live providers disabled.");
-    } catch (err) {
-      setToast(`Toggle failed: ${(err as Error).message}`);
+      setToast(`Confirmation failed: ${(err as Error).message}`);
     }
   };
 
@@ -592,16 +849,128 @@ export default function App() {
     }
   };
 
+  const loadStudioStatus = async () => {
+    try {
+      const data = await apiFetch<StudioStatus>("/api/status");
+      setStudioStatus(data);
+    } catch (err) {
+      setToast(`Status fetch failed: ${(err as Error).message}`);
+    }
+  };
+
+  const loadApprovals = async () => {
+    setApprovalsError(null);
+    try {
+      const data = await apiFetch<{ approvals: ApprovalEntry[] }>("/api/approvals");
+      setApprovals(data.approvals || []);
+    } catch (err) {
+      setApprovalsError((err as Error).message);
+      setApprovals([]);
+    }
+  };
+
+  const createWebchatSession = async () => {
+    setWebchatError(null);
+    try {
+      const data = await apiFetch<{
+        token: string;
+        session: { session_id: string };
+        identity: { session_id: string };
+      }>("/webchat/token", { method: "POST", body: JSON.stringify({}) });
+      const sessionId = data.session?.session_id || data.identity?.session_id || "";
+      if (!sessionId) {
+        throw new Error("Missing chat session id from website chat token response.");
+      }
+      setWebchatToken(data.token);
+      setWebchatSessionId(sessionId);
+      setWebchatSessions((prev) =>
+        prev.some((entry) => entry.id === sessionId)
+          ? prev
+          : [{ id: sessionId, token: data.token }, ...prev]
+      );
+      openDrawer({
+        id: `session:${sessionId}`,
+        title: `Session · ${sessionId}`,
+        kind: "session",
+        payload: { session_id: sessionId, token: data.token }
+      });
+    } catch (err) {
+      setWebchatError((err as Error).message);
+    }
+  };
+
+  const loadWebchatSession = async (sessionId: string, token: string) => {
+    setWebchatError(null);
+    if (!sessionId || !token) {
+      setWebchatError("Chat session id and token are required.");
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE}/webchat/session/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(
+          token
+        )}`
+      );
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data = (await response.json()) as {
+        session: { session_id: string; tenant_id: string; tier: string };
+        messages: { id: string; role: string; content: string }[];
+      };
+      const messages = (data.messages || []).map((msg) => ({
+        id: msg.id,
+        role: msg.role === "assistant" ? "assistant" : msg.role === "user" ? "user" : "system",
+        content: msg.content
+      }));
+      setWebchatMessages(messages);
+      openDrawer({
+        id: `session:${sessionId}`,
+        title: `Session · ${sessionId}`,
+        kind: "session",
+        payload: { ...data.session, token }
+      });
+    } catch (err) {
+      setWebchatError((err as Error).message);
+    }
+  };
+
+  const clearWebchatSession = async (sessionId: string, token: string) => {
+    setWebchatError(null);
+    if (!sessionId || !token) {
+      setWebchatError("Chat session id and token are required.");
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE}/webchat/session/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(
+          token
+        )}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      setWebchatMessages([]);
+      setToast("Session cleared.");
+    } catch (err) {
+      setWebchatError((err as Error).message);
+    }
+  };
+
   return (
-    <div className="min-h-screen">
+    <div className="studio-shell min-h-screen">
       <div className="relative z-10 grid min-h-screen grid-rows-[1fr_auto]">
-        <main className="grid flex-1 grid-cols-1 gap-4 px-4 pb-6 pt-6 lg:grid-cols-[240px_1fr_320px]">
-          <aside className="panel flex h-fit flex-col gap-3 p-4 lg:h-full">
+        <main className="grid flex-1 grid-cols-1 gap-3 px-3 pb-4 pt-4 lg:grid-cols-[220px_1fr_300px]">
+          <aside className="panel flex h-fit flex-col gap-3 p-3 lg:h-full">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-inkMuted">
-                  Archon Studio
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className="status-dot" />
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-inkMuted">
+                    Archon Studio
+                  </p>
+                </div>
                 <h1 className="text-xl font-semibold">Control Plane</h1>
               </div>
               <button className="ghost-button" onClick={handleAddWorkflow}>
@@ -609,43 +978,103 @@ export default function App() {
               </button>
             </div>
             <div className="mt-2 h-px w-full glow-line" />
-            <nav className="flex flex-col gap-2">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveView(item.id)}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                    activeView === item.id
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-stroke text-inkMuted hover:border-accent/40 hover:text-ink"
-                  }`}
-                >
-                  {item.label}
-                  <span className="text-xs">→</span>
-                </button>
+            <nav className="flex flex-col gap-4">
+              {NAV_SECTIONS.map((section) => (
+                <div key={section.title} className="flex flex-col gap-2">
+                  <p className="nav-label">{section.title}</p>
+                  {section.items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveView(item.id)}
+                      className={`nav-button ${
+                        activeView === item.id ? "nav-button-active" : "nav-button-idle"
+                      }`}
+                    >
+                      {item.label}
+                      <span className="text-xs">→</span>
+                    </button>
+                  ))}
+                </div>
               ))}
             </nav>
             <div className="mt-auto">
               <p className="muted-text">
-                Provider-agnostic agent control plane with live approvals and deployable chat
+                Connection-agnostic agent control plane with live confirmations and launchable chat
                 surfaces.
               </p>
             </div>
           </aside>
 
-          <section className="panel min-h-[70vh] p-6">
+          <section className="panel min-h-[70vh] p-5">
+            {activeView === "overview" && (
+              <div className="flex h-full flex-col gap-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Overview</h2>
+                    <p className="muted-text">Live snapshot of the control plane.</p>
+                  </div>
+                  <button className="ghost-button" onClick={loadStudioStatus}>
+                    Refresh
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Runtime</p>
+                    <div className="mt-2 text-lg font-semibold">
+                      {studioStatus?.status ?? "unknown"}
+                    </div>
+                    <div className="text-xs text-inkMuted">
+                      {studioStatus?.version ?? "—"}
+                    </div>
+                  </div>
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Launches</p>
+                    <div className="mt-2 text-lg font-semibold">
+                      {studioStatus?.deployment_count ?? deployments.length}
+                    </div>
+                    <div className="text-xs text-inkMuted">active endpoints</div>
+                  </div>
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Connections</p>
+                    <div className="mt-2 text-lg font-semibold">
+                      {providers?.providers.length ?? 0}
+                    </div>
+                    <div className="text-xs text-inkMuted">
+                      {providers
+                        ? providers.providers.some((entry) => entry.status === "missing_key")
+                          ? "needs keys"
+                          : "ready"
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Capabilities</p>
+                    <div className="mt-2 text-lg font-semibold">{skills.length}</div>
+                    <div className="text-xs text-inkMuted">registered capabilities</div>
+                  </div>
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Confirmations</p>
+                    <div className="mt-2 text-lg font-semibold">{approvals.length}</div>
+                    <div className="text-xs text-inkMuted">pending actions</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeView === "builder" && (
               <div className="flex h-full flex-col gap-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-2xl font-semibold">Agent Builder</h2>
                     <p className="muted-text">
-                      Compose agent workflows as connected, provider-aware skills.
+                      Compose agent workflows as connected, connection-aware capabilities.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button className="ghost-button" onClick={() => setShowSkillPicker(true)}>
-                      Add Skill
+                      Add Capability
                     </button>
                     <button className="ghost-button" onClick={handleSaveWorkflow}>
                       Save Workflow
@@ -670,7 +1099,7 @@ export default function App() {
                         >
                           {wf.name}
                           <div className="text-xs font-normal text-inkMuted">
-                            {wf.nodes.length} skills
+                            {wf.nodes.length} capabilities
                           </div>
                         </button>
                       ))}
@@ -687,7 +1116,7 @@ export default function App() {
                         <h3 className="text-lg font-semibold">
                           {activeWorkflow?.name || "Untitled"}
                         </h3>
-                        <p className="muted-text">Canvas view of connected skills.</p>
+                        <p className="muted-text">Canvas view of connected capabilities.</p>
                       </div>
                       <span className="chip">{activeWorkflow?.nodes.length || 0} nodes</span>
                     </div>
@@ -710,7 +1139,7 @@ export default function App() {
                                 </div>
                                 <p className="text-xs text-inkMuted">Tier: {node.cost_tier}</p>
                                 <p className="text-xs text-inkMuted">
-                                  Provider: {node.provider || "auto"}
+                                  Connection: {node.provider || "auto"}
                                 </p>
                               </button>
                               {index < activeWorkflow.nodes.length - 1 && (
@@ -721,7 +1150,7 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-stroke p-12 text-center text-sm text-inkMuted">
-                          Drop skills here to build an execution chain.
+                          Drop capabilities here to build an execution chain.
                         </div>
                       )}
                     </div>
@@ -734,31 +1163,37 @@ export default function App() {
               <div className="flex h-full flex-col gap-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-2xl font-semibold">Skills Registry</h2>
-                    <p className="muted-text">Audit, propose, and promote skills across domains.</p>
+                    <h2 className="text-2xl font-semibold">Capabilities Library</h2>
+                    <p className="muted-text">
+                      Audit, propose, and promote capabilities across domains.
+                    </p>
                   </div>
                   <button className="accent-button" onClick={runSkillProposal}>
-                    Propose Skill
+                    Propose Capability
                   </button>
                 </div>
                 <div className="panel-soft overflow-hidden">
                   <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-3 border-b border-stroke px-4 py-3 text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
                     <span>Name</span>
                     <span>State</span>
-                    <span>Provider</span>
+                    <span>Connection</span>
                     <span>Tier</span>
                     <span>Version</span>
                     <span></span>
                   </div>
                   <div className="divide-y divide-stroke">
                     {skillsLoading && (
-                      <div className="px-4 py-6 text-sm text-inkMuted">Loading skills…</div>
+                      <div className="px-4 py-6 text-sm text-inkMuted">
+                        Loading capabilities…
+                      </div>
                     )}
                     {skillsError && (
                       <div className="px-4 py-6 text-sm text-danger">{skillsError}</div>
                     )}
                     {!skillsLoading && !skills.length && (
-                      <div className="px-4 py-6 text-sm text-inkMuted">No skills registered.</div>
+                      <div className="px-4 py-6 text-sm text-inkMuted">
+                        No capabilities registered.
+                      </div>
                     )}
                     {skills.map((skill) => (
                       <div
@@ -806,13 +1241,13 @@ export default function App() {
                               className="accent-button"
                               onClick={() => approveAction(entry.meta.request_id, true)}
                             >
-                              Approve
+                              Confirm
                             </button>
                             <button
                               className="ghost-button"
                               onClick={() => approveAction(entry.meta.request_id, false)}
                             >
-                              Deny
+                              Decline
                             </button>
                           </div>
                         )}
@@ -827,11 +1262,13 @@ export default function App() {
               <div className="flex h-full flex-col gap-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-2xl font-semibold">Providers</h2>
-                    <p className="muted-text">Assign roles and manage provider availability.</p>
+                    <h2 className="text-2xl font-semibold">Connections</h2>
+                    <p className="muted-text">
+                      Assign roles and manage connection availability.
+                    </p>
                   </div>
-                  <button className="accent-button" onClick={toggleLiveProviders}>
-                    {providers?.live_provider_calls ? "Disable Live" : "Enable Live"}
+                  <button className="ghost-button" onClick={loadProviders}>
+                    Refresh
                   </button>
                 </div>
                 {providersError && <div className="text-sm text-danger">{providersError}</div>}
@@ -868,13 +1305,34 @@ export default function App() {
                   </div>
                   <div className="panel-soft p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
-                      Provider Status
+                      Connection Status
                     </p>
                     <div className="mt-4 flex flex-col gap-3">
                       {providers?.providers.map((entry) => (
                         <div
                           key={entry.name}
-                          className="flex flex-col gap-2 rounded-xl border border-stroke p-3"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() =>
+                            openDrawer({
+                              id: `provider:${entry.name}`,
+                              title: `Connection · ${entry.name}`,
+                              kind: "provider",
+                              payload: entry
+                            })
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openDrawer({
+                                id: `provider:${entry.name}`,
+                                title: `Connection · ${entry.name}`,
+                                kind: "provider",
+                                payload: entry
+                              });
+                            }
+                          }}
+                          className="flex cursor-pointer flex-col gap-2 rounded-xl border border-stroke p-3 transition hover:border-accent/40"
                         >
                           <div className="flex items-center justify-between">
                             <div>
@@ -916,10 +1374,273 @@ export default function App() {
               </div>
             )}
 
+            {activeView === "memory" && (
+              <div className="flex h-full flex-col gap-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Knowledge</h2>
+                  <p className="muted-text">Search, retention, and tenant knowledge state.</p>
+                </div>
+                <div className="panel-soft p-4">
+                  <div className="text-sm text-inkMuted">
+                    Knowledge search UI is coming next. Use the API to query knowledge while we
+                    wire the surface here.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeView === "approvals" && (
+              <div className="flex h-full flex-col gap-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Confirmations</h2>
+                    <p className="muted-text">Review and resolve guarded actions.</p>
+                  </div>
+                  <button className="ghost-button" onClick={loadApprovals}>
+                    Refresh
+                  </button>
+                </div>
+                <div className="panel-soft p-4">
+                  {approvalsError && (
+                    <div className="text-sm text-warn">Error: {approvalsError}</div>
+                  )}
+                  {approvals.length === 0 && (
+                    <div className="text-sm text-inkMuted">No approvals pending.</div>
+                  )}
+                  <div className="mt-3 flex flex-col gap-3">
+                    {approvals.map((approval) => (
+                      <div
+                        key={approval.request_id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() =>
+                            openDrawer({
+                              id: `approval:${approval.request_id}`,
+                              title: `Confirmation · ${approval.action}`,
+                              kind: "approval",
+                              payload: approval
+                            })
+                        }
+                        className="flex flex-col gap-2 rounded-xl border border-stroke p-3 transition hover:border-accent/40"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">{approval.action}</div>
+                            <div className="text-xs text-inkMuted">{approval.request_id}</div>
+                          </div>
+                          <span className="chip">{approval.risk_level || "unknown"}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="accent-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              approveAction(approval.request_id, true);
+                            }}
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            className="ghost-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              approveAction(approval.request_id, false);
+                            }}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeView === "sessions" && (
+              <div className="flex h-full flex-col gap-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Chat Sessions</h2>
+                  <p className="muted-text">Create or inspect website chat sessions.</p>
+                </div>
+                <div className="panel-soft p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button className="accent-button" onClick={createWebchatSession}>
+                      Create Chat Session
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={() => loadWebchatSession(webchatSessionId, webchatToken)}
+                    >
+                      Load Chat Session
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={() => clearWebchatSession(webchatSessionId, webchatToken)}
+                    >
+                      Clear Messages
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <input
+                      className="rounded-lg border border-stroke bg-panel px-3 py-2 text-sm"
+                      placeholder="Chat session id"
+                      value={webchatSessionId}
+                      onChange={(event) => setWebchatSessionId(event.target.value)}
+                    />
+                    <input
+                      className="rounded-lg border border-stroke bg-panel px-3 py-2 text-sm"
+                      placeholder="Chat session token"
+                      value={webchatToken}
+                      onChange={(event) => setWebchatToken(event.target.value)}
+                    />
+                  </div>
+                  {webchatError && <div className="mt-3 text-sm text-warn">{webchatError}</div>}
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-inkMuted">
+                      Recent Chat Sessions
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {webchatSessions.length === 0 && (
+                        <div className="text-sm text-inkMuted">No chat sessions yet.</div>
+                      )}
+                      {webchatSessions.map((entry) => (
+                        <button
+                          key={entry.id}
+                          className="chip"
+                          onClick={() => {
+                            setWebchatSessionId(entry.id);
+                            setWebchatToken(entry.token);
+                            loadWebchatSession(entry.id, entry.token);
+                          }}
+                        >
+                          {entry.id}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-inkMuted">
+                      Messages
+                    </p>
+                    <div className="mt-2 flex max-h-[300px] flex-col gap-2 overflow-y-auto">
+                      {webchatMessages.length === 0 && (
+                        <div className="text-sm text-inkMuted">No messages loaded.</div>
+                      )}
+                      {webchatMessages.map((message) => (
+                        <div key={message.id} className="rounded-lg border border-stroke p-2">
+                          <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
+                            {message.role}
+                          </div>
+                          <div className="text-sm">{message.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeView === "observability" && (
+              <div className="flex h-full flex-col gap-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-semibold">System Health</h2>
+                    <p className="muted-text">Costs, latency, and runtime health.</p>
+                  </div>
+                  <button className="ghost-button" onClick={loadStudioStatus}>
+                    Refresh
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Uptime</p>
+                    <div className="mt-2 text-lg font-semibold">
+                      {studioStatus ? `${studioStatus.uptime_s.toFixed(0)}s` : "—"}
+                    </div>
+                  </div>
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">Version</p>
+                    <div className="mt-2 text-lg font-semibold">{studioStatus?.version ?? "—"}</div>
+                    <div className="text-xs text-inkMuted">{studioStatus?.git_sha ?? "—"}</div>
+                  </div>
+                  <div className="panel-soft p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-inkMuted">
+                      Connection Health
+                    </p>
+                    <div className="mt-2 text-lg font-semibold">
+                      {providers
+                        ? providers.providers.some((entry) => entry.status === "missing_key")
+                          ? "needs keys"
+                          : "ready"
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-soft p-4">
+                  <div className="text-sm text-inkMuted">
+                    Metrics dashboards can be linked here (Grafana, OTEL, traces).
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeView === "config" && (
+              <div className="flex h-full flex-col gap-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Settings</h2>
+                    <p className="muted-text">Runtime settings snapshot.</p>
+                  </div>
+                  <button className="ghost-button" onClick={loadStudioStatus}>
+                    Refresh
+                  </button>
+                </div>
+                <div className="panel-soft p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-stroke p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
+                        Version
+                      </div>
+                      <div className="text-sm font-semibold">{studioStatus?.version ?? "—"}</div>
+                    </div>
+                    <div className="rounded-xl border border-stroke p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">Git SHA</div>
+                      <div className="text-sm font-semibold">{studioStatus?.git_sha ?? "—"}</div>
+                    </div>
+                    <div className="rounded-xl border border-stroke p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
+                        Connection Health
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {providers
+                          ? providers.providers.some((entry) => entry.status === "missing_key")
+                            ? "needs keys"
+                            : "ready"
+                          : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-stroke p-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
+                        Launches
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {studioStatus?.deployment_count ?? deployments.length}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 text-sm text-inkMuted">
+                    Settings file edits happen in `config.archon.yaml` on the server. Reload the
+                    API to apply changes.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeView === "deploy" && (
               <div className="flex h-full flex-col gap-6">
                 <div>
-                  <h2 className="text-2xl font-semibold">Deploy</h2>
+                  <h2 className="text-2xl font-semibold">Launches</h2>
                   <p className="muted-text">
                     Package and publish workflows into branded agent endpoints.
                   </p>
@@ -927,7 +1648,7 @@ export default function App() {
                 <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
                   <div className="panel-soft p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
-                      New Deployment
+                      New Launch
                     </p>
                     <div className="mt-4 flex flex-col gap-3">
                       <input
@@ -972,7 +1693,7 @@ export default function App() {
                           setDeploymentForm((prev) => ({ ...prev, entrySkill: event.target.value }))
                         }
                       >
-                        <option value="">Select entry skill</option>
+                        <option value="">Select entry capability</option>
                         {skills.map((skill) => (
                           <option key={skill.name} value={skill.name}>
                             {skill.name}
@@ -980,12 +1701,12 @@ export default function App() {
                         ))}
                       </select>
                       <button className="accent-button" onClick={handleDeploySubmit}>
-                        Create Deployment
+                        Create Launch
                       </button>
                     </div>
                     <div className="mt-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
-                        Deployment Stream
+                        Launch Stream
                       </p>
                       <div className="mt-2 flex flex-col gap-2">
                         {deployLog.length === 0 && (
@@ -1001,13 +1722,13 @@ export default function App() {
                                   className="accent-button"
                                   onClick={() => approveAction(entry.meta.request_id, true)}
                                 >
-                                  Approve
+                                  Confirm
                                 </button>
                                 <button
                                   className="ghost-button"
                                   onClick={() => approveAction(entry.meta.request_id, false)}
                                 >
-                                  Deny
+                                  Decline
                                 </button>
                               </div>
                             )}
@@ -1018,16 +1739,37 @@ export default function App() {
                   </div>
                   <div className="panel-soft p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
-                      Active Deployments
+                      Active Launches
                     </p>
                     <div className="mt-4 flex flex-col gap-3">
                       {deployments.length === 0 && (
-                        <div className="text-sm text-inkMuted">No deployments yet.</div>
+                        <div className="text-sm text-inkMuted">No launches yet.</div>
                       )}
                       {deployments.map((deployment) => (
                         <div
                           key={deployment.id}
-                          className="rounded-xl border border-stroke p-3"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() =>
+                            openDrawer({
+                              id: `deployment:${deployment.id}`,
+                              title: `Launch · ${deployment.name}`,
+                              kind: "deployment",
+                              payload: deployment
+                            })
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openDrawer({
+                                id: `deployment:${deployment.id}`,
+                                title: `Launch · ${deployment.name}`,
+                                kind: "deployment",
+                                payload: deployment
+                              });
+                            }
+                          }}
+                          className="cursor-pointer rounded-xl border border-stroke p-3 transition hover:border-accent/40"
                         >
                           <div className="flex items-center justify-between">
                             <div>
@@ -1050,8 +1792,10 @@ export default function App() {
             {activeView === "chat" && (
               <div className="flex h-full flex-col gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold">Chat</h2>
-                  <p className="muted-text">Run tasks, inspect system events, and approve actions.</p>
+                  <h2 className="text-2xl font-semibold">Live Chat</h2>
+                  <p className="muted-text">
+                    Run tasks, inspect system events, and confirm actions.
+                  </p>
                 </div>
                 <div className="panel-soft flex flex-1 flex-col gap-3 p-4">
                   <div className="flex-1 space-y-3 overflow-y-auto">
@@ -1061,12 +1805,12 @@ export default function App() {
                     {chatMessages.map((message) => (
                       <div
                         key={message.id}
-                        className={`rounded-2xl border p-3 text-sm ${
+                        className={`chat-message rounded-2xl border p-3 text-sm ${
                           message.role === "user"
-                            ? "border-accent bg-accent/10"
+                            ? "chat-message-user"
                             : message.role === "assistant"
-                            ? "border-stroke bg-panel"
-                            : "border-stroke bg-panelSoft"
+                            ? "chat-message-assistant"
+                            : "chat-message-system"
                         }`}
                       >
                         <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
@@ -1079,13 +1823,13 @@ export default function App() {
                               className="accent-button"
                               onClick={() => approveAction(message.meta.request_id, true)}
                             >
-                              Approve
+                              Confirm
                             </button>
                             <button
                               className="ghost-button"
                               onClick={() => approveAction(message.meta.request_id, false)}
                             >
-                              Deny
+                              Decline
                             </button>
                           </div>
                         )}
@@ -1107,17 +1851,69 @@ export default function App() {
               </div>
             )}
 
+            {activeView === "webchat" && (
+              <div className="flex h-full flex-col gap-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Website Chat</h2>
+                  <p className="muted-text">
+                    Embedded widget with session storage, confirmations, and streaming tokens.
+                  </p>
+                </div>
+                <div className="panel-soft flex flex-col gap-4 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-inkMuted">
+                        Widget Status
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {webchatStatus === "ready"
+                          ? "Ready"
+                          : webchatStatus === "loading"
+                          ? "Loading"
+                          : webchatStatus === "error"
+                          ? "Failed to load"
+                          : "Idle"}
+                      </div>
+                    </div>
+                    <span className="chip">{webchatStatus}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="accent-button"
+                      onClick={() => (window as any).archon?.open?.()}
+                      disabled={webchatStatus !== "ready"}
+                    >
+                      Open Website Chat Widget
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={() => (window as any).archon?.close?.()}
+                    >
+                      Close Widget
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-stroke p-3 text-xs text-inkMuted">
+                    API base: {API_BASE}
+                  </div>
+                  <div className="rounded-xl border border-stroke p-3 text-xs text-inkMuted">
+                    This widget is served from `/webchat/static/archon-chat.js` and uses the
+                    `/webchat` API for sessions.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeView === "evolution" && (
               <div className="flex h-full flex-col gap-6">
                 <div>
-                  <h2 className="text-2xl font-semibold">Evolution Log</h2>
-                  <p className="muted-text">Audit trail across skills, workflows, and tasks.</p>
+                  <h2 className="text-2xl font-semibold">Change History</h2>
+                  <p className="muted-text">Audit trail across capabilities, workflows, and tasks.</p>
                 </div>
                 <div className="panel-soft p-4">
                   <div className="grid gap-3 md:grid-cols-4">
                     <input
                       className="rounded-lg border border-stroke bg-panel px-3 py-2 text-sm"
-                      placeholder="Filter skill"
+                      placeholder="Filter capability"
                       value={evolutionFilter.skill}
                       onChange={(event) =>
                         setEvolutionFilter((prev) => ({ ...prev, skill: event.target.value }))
@@ -1125,7 +1921,7 @@ export default function App() {
                     />
                     <input
                       className="rounded-lg border border-stroke bg-panel px-3 py-2 text-sm"
-                      placeholder="Filter provider"
+                      placeholder="Filter connection"
                       value={evolutionFilter.provider}
                       onChange={(event) =>
                         setEvolutionFilter((prev) => ({ ...prev, provider: event.target.value }))
@@ -1152,7 +1948,7 @@ export default function App() {
                 <div className="panel-soft overflow-hidden">
                   <div className="grid grid-cols-[1fr_1fr_1fr_1fr_2fr] gap-3 border-b border-stroke px-4 py-3 text-xs font-semibold uppercase tracking-[0.25em] text-inkMuted">
                     <span>Event</span>
-                    <span>Skill</span>
+                    <span>Capability</span>
                     <span>Outcome</span>
                     <span>Confidence</span>
                     <span>Details</span>
@@ -1190,82 +1986,58 @@ export default function App() {
             )}
           </section>
 
-          <aside className="panel hidden h-fit flex-col gap-4 p-4 lg:flex">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-inkMuted">
-                Properties
-              </p>
-              <h3 className="text-lg font-semibold">Selection</h3>
+          <aside className="panel hidden h-fit flex-col gap-3 p-3 lg:flex">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-inkMuted">
+                  Drawers
+                </p>
+                <h3 className="text-lg font-semibold">Details</h3>
+              </div>
+              {drawers.length > 0 && (
+                <button className="ghost-button" onClick={() => setDrawers([])}>
+                  Clear
+                </button>
+              )}
             </div>
-            {activeView === "builder" ? (
-              selectedNode ? (
-                <div className="flex flex-col gap-3">
-                  <div className="rounded-xl border border-stroke p-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">Skill</div>
-                    <div className="text-sm font-semibold">{selectedNode.name}</div>
-                  </div>
-                  <div className="rounded-xl border border-stroke p-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">
-                      Provider Override
-                    </div>
-                    <select
-                      className="mt-2 w-full rounded-lg border border-stroke bg-panel px-2 py-1 text-sm"
-                      value={selectedNode.provider || "auto"}
-                      onChange={(event) =>
-                        updateNode(selectedNode.id, {
-                          provider: event.target.value === "auto" ? null : event.target.value
-                        })
-                      }
-                    >
-                      <option value="auto">auto</option>
-                      {availableProviders.map((provider) => (
-                        <option key={provider} value={provider}>
-                          {provider}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="rounded-xl border border-stroke p-3">
-                    <div className="text-xs uppercase tracking-[0.2em] text-inkMuted">Config</div>
-                    {Object.entries(selectedNode.config).map(([key, value]) => (
-                      <div key={key} className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-inkMuted">{key}</span>
-                        <input
-                          className="w-24 rounded-md border border-stroke bg-panel px-2 py-1 text-xs"
-                          value={value}
-                          onChange={(event) =>
-                            updateNode(selectedNode.id, {
-                              config: { ...selectedNode.config, [key]: event.target.value }
-                            })
-                          }
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <button className="ghost-button" onClick={() => handleRemoveNode(selectedNode.id)}>
-                    Remove Node
-                  </button>
-                </div>
-              ) : (
-                <div className="text-sm text-inkMuted">Select a node to edit its settings.</div>
-              )
-            ) : (
+            {drawers.length === 0 ? (
               <div className="text-sm text-inkMuted">
-                Choose a section to inspect its configuration and metadata.
+                Open items to inspect details. Drawers can stack.
+              </div>
+            ) : (
+              <div className="flex max-h-[calc(100vh-220px)] flex-col gap-3 overflow-y-auto pr-1">
+                {drawers.map((drawer) => (
+                  <div key={drawer.id} className="panel-soft p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-inkMuted">
+                        {drawer.title}
+                      </div>
+                      <button className="ghost-button" onClick={() => closeDrawer(drawer.id)}>
+                        Close
+                      </button>
+                    </div>
+                    <div className="mt-2">{renderDrawerContent(drawer)}</div>
+                  </div>
+                ))}
               </div>
             )}
           </aside>
         </main>
 
-        <footer className="sticky bottom-0 flex w-full flex-wrap items-center justify-between gap-3 border-t border-stroke bg-panel/80 px-6 py-3 text-xs text-inkMuted backdrop-blur">
+        <footer className="studio-footer sticky bottom-0 flex w-full flex-wrap items-center justify-between gap-3 border-t border-stroke px-6 py-3 text-xs text-inkMuted backdrop-blur">
           <div className="flex flex-wrap items-center gap-4">
-            <span>Provider: {statusBar.provider}</span>
+            <span>Connection: {statusBar.provider}</span>
             <span>Mode: {statusBar.mode}</span>
             <span>Tokens: {statusBar.tokens}</span>
             <span>Cost: {statusBar.cost}</span>
           </div>
           <div className="text-xs">
-            Live providers: {providers?.live_provider_calls ? "on" : "off"}
+            Connection health:{" "}
+            {providers
+              ? providers.providers.some((entry) => entry.status === "missing_key")
+                ? "needs keys"
+                : "ready"
+              : "—"}
           </div>
         </footer>
       </div>
@@ -1274,7 +2046,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="panel w-full max-w-xl p-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Skill Registry</h3>
+              <h3 className="text-lg font-semibold">Capability Library</h3>
               <button className="ghost-button" onClick={() => setShowSkillPicker(false)}>
                 Close
               </button>
@@ -1291,12 +2063,12 @@ export default function App() {
                     <span className="text-xs text-inkMuted">{skill.state}</span>
                   </div>
                   <div className="text-xs text-inkMuted">
-                    Provider: {skill.provider_preference || "auto"} · Tier: {skill.cost_tier}
+                    Connection: {skill.provider_preference || "auto"} · Tier: {skill.cost_tier}
                   </div>
                 </button>
               ))}
               {!skills.length && (
-                <div className="text-sm text-inkMuted">No skills available.</div>
+                <div className="text-sm text-inkMuted">No capabilities available.</div>
               )}
             </div>
           </div>

@@ -15,6 +15,12 @@ from archon.config import ArchonConfig
 from archon.interfaces.cli.tui_input import read_key, supports_raw_keys
 from archon.interfaces.cli.tui_render import render_menu_screen
 
+_PROVIDER_KEY_URLS = {
+    "anthropic": "https://console.anthropic.com/settings/keys",
+    "openai": "https://platform.openai.com/api-keys",
+    "openrouter": "https://openrouter.ai/keys",
+}
+
 
 @dataclass(slots=True)
 class MenuOption:
@@ -28,7 +34,6 @@ class LauncherResult:
     start: bool
     config: ArchonConfig
     mode: str
-    live_provider_calls: bool
     notes: list[dict[str, str]] = field(default_factory=list)
 
 
@@ -51,7 +56,6 @@ async def run_launcher(
     config: ArchonConfig,
     config_path: str,
     mode: str,
-    live_provider_calls: bool,
     onboarding: OnboardingCallbacks | None,
 ) -> LauncherResult:
     """Run the startup launcher and optional setup wizard.
@@ -65,21 +69,15 @@ async def run_launcher(
     notes: list[dict[str, str]] = []
     current_config = config
     current_mode = mode
-    current_live = live_provider_calls
     while True:
         options = [
             MenuOption("start", "Start agent shell", "Open the ARCHON transcript workspace."),
             MenuOption(
                 "setup",
                 "Run setup wizard",
-                "Configure providers, budgets, and deployment defaults.",
+                "Configure connections, budgets, and launch defaults.",
             ),
             MenuOption("mode", f"Change mode ({current_mode})", "Switch the default routing mode."),
-            MenuOption(
-                "live",
-                f"Toggle live providers ({'on' if current_live else 'off'})",
-                "Enable or disable live model/API calls.",
-            ),
             MenuOption("quit", "Quit", "Exit before starting the shell."),
         ]
         choice = await choose_menu_option(
@@ -88,7 +86,6 @@ async def run_launcher(
                 f"Config path: {config_path}",
                 f"Config detected: {'yes' if Path(config_path).exists() else 'no'}",
                 f"Mode: {current_mode}",
-                f"Live providers: {'on' if current_live else 'off'}",
                 "",
                 "Use Up/Down and Enter. If raw terminal input is unavailable, enter the option number.",
             ],
@@ -99,7 +96,6 @@ async def run_launcher(
                 start=True,
                 config=current_config,
                 mode=current_mode,
-                live_provider_calls=current_live,
                 notes=notes,
             )
         if choice == "quit":
@@ -107,7 +103,6 @@ async def run_launcher(
                 start=False,
                 config=current_config,
                 mode=current_mode,
-                live_provider_calls=current_live,
                 notes=notes,
             )
         if choice == "mode":
@@ -122,16 +117,6 @@ async def run_launcher(
                 {
                     "title": "Launcher",
                     "body": f"Default mode set to {current_mode}.",
-                    "tone": "system",
-                }
-            )
-            continue
-        if choice == "live":
-            current_live = not current_live
-            notes.append(
-                {
-                    "title": "Launcher",
-                    "body": f"Live providers {'enabled' if current_live else 'disabled'}.",
                     "tone": "system",
                 }
             )
@@ -156,12 +141,12 @@ async def run_setup_wizard(
     proceed = await choose_menu_option(
         title="Security",
         body=[
-            "ARCHON can call models, store memory, and gate sensitive actions.",
-            "Use tenant tokens and approval gates before exposing it beyond one trusted operator.",
-            "All new external actions still require approval where policy says so.",
+            "ARCHON can call models, store knowledge, and gate sensitive actions.",
+            "Use tenant tokens and confirmation gates before exposing it beyond one trusted operator.",
+            "All new external actions still require confirmation where policy says so.",
         ],
         options=[
-            MenuOption("continue", "Continue setup", "Proceed into provider and budget setup."),
+            MenuOption("continue", "Continue setup", "Proceed into connection and budget setup."),
             MenuOption("cancel", "Cancel", "Return to the launcher without saving."),
         ],
     )
@@ -169,8 +154,8 @@ async def run_setup_wizard(
         return current_config, "Setup cancelled."
 
     stack = await choose_menu_option(
-        title="Provider stack",
-        body=["Choose the default provider strategy for ARCHON."],
+        title="Connection stack",
+        body=["Choose the default connection strategy for ARCHON."],
         options=[
             MenuOption("free", "Free", "Ollama local-first with optional OpenRouter fallback."),
             MenuOption("pro", "Pro", "Anthropic / OpenAI cloud setup."),
@@ -202,12 +187,12 @@ async def run_setup_wizard(
         ],
     )
     deployment_mode = await choose_menu_option(
-        title="Deployment mode",
+        title="Launch mode",
         body=["Tell ARCHON what you are building so defaults match the risk profile."],
         options=[
             MenuOption("personal", "Personal assistant", "Single-user, cheapest defaults."),
             MenuOption("team", "Team tool", "Small internal team."),
-            MenuOption("customer", "Customer product", "Public or multi-tenant deployment."),
+            MenuOption("customer", "Customer product", "Public or multi-tenant launch."),
             MenuOption("explore", "Just exploring", "Safe defaults for experimentation."),
         ],
     )
@@ -258,7 +243,7 @@ async def run_setup_wizard(
     validation_exit_code = onboarding.run_validation(config_data, config_path)
     summary = "\n".join(
         [
-            f"Provider: {provider_summary}",
+            f"Connection: {provider_summary}",
             f"Budget: ${daily_budget:.2f}/day | alert {int(alert_profile)}%",
             f"Mode: {'supervised' if supervised_mode else 'enterprise/public defaults'}",
             f"Probe: {probe_detail}",
@@ -347,6 +332,68 @@ def _prompt_text_sync(label: str, default: str, secret: bool) -> str:
     return str(value).strip()
 
 
+def _provider_key_url(provider: str) -> str:
+    return _PROVIDER_KEY_URLS.get(provider, "")
+
+
+def _mask_key(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if len(cleaned) <= 6:
+        return "*" * len(cleaned)
+    return f"{cleaned[:2]}...{cleaned[-4:]}"
+
+
+async def _await_login(
+    provider: str,
+    *,
+    env_path: Path,
+    onboarding: OnboardingCallbacks,
+) -> None:
+    url = _provider_key_url(provider)
+    if not url:
+        return
+    click.echo(f"Key portal: {url}")
+    env_name = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }.get(provider, "")
+    existing = ""
+    if env_name:
+        existing = str(
+            os.getenv(env_name) or onboarding.read_env_value(env_name, env_path) or ""
+        ).strip()
+    if existing:
+        return
+    await prompt_text("Press Enter once logged in (or press Enter to skip)", default="")
+
+
+async def _validate_key_with_spinner(
+    label: str,
+    validator: Callable[[str, float], bool],
+    key: str,
+) -> bool:
+    frames = "|/-\\"
+    stop = asyncio.Event()
+
+    async def _spin() -> None:
+        index = 0
+        while not stop.is_set():
+            click.echo(f"\r{label} {frames[index % len(frames)]}", nl=False)
+            await asyncio.sleep(0.12)
+            index += 1
+
+    spinner_task = asyncio.create_task(_spin())
+    try:
+        result = await asyncio.to_thread(validator, key, 5.0)
+    finally:
+        stop.set()
+        await spinner_task
+    status = "ok" if result else "failed"
+    click.echo(f"\r{label} {status}".ljust(48))
+    return bool(result)
+
+
 async def _configure_stack(
     stack: str,
     byok: dict[str, Any],
@@ -357,10 +404,20 @@ async def _configure_stack(
         return "custom (edit config manually)", "manual configuration"
     if stack == "free":
         probe = onboarding.probe_ollama(2.0)
+        await _await_login("openrouter", env_path=env_path, onboarding=onboarding)
         openrouter_key = await prompt_text("OpenRouter API key (optional)", default="", secret=True)
         if openrouter_key:
-            onboarding.validate_openrouter_key(openrouter_key, 5.0)
-            onboarding.write_env("OPENROUTER_API_KEY", openrouter_key, env_path)
+            click.echo(f"OpenRouter key captured: {_mask_key(openrouter_key)}")
+            ok = await _validate_key_with_spinner(
+                "Authenticating OpenRouter key",
+                onboarding.validate_openrouter_key,
+                openrouter_key,
+            )
+            if ok:
+                click.echo("OpenRouter key authenticated.")
+                onboarding.write_env("OPENROUTER_API_KEY", openrouter_key, env_path)
+            else:
+                click.echo("OpenRouter key authentication failed.")
         byok.update(
             {
                 "primary": "ollama",
@@ -379,14 +436,34 @@ async def _configure_stack(
             f"Ollama {'reachable' if probe.get('reachable') else 'unreachable'} | models: {models}",
         )
 
+    await _await_login("anthropic", env_path=env_path, onboarding=onboarding)
     anthropic_key = await prompt_text("Anthropic API key (optional)", default="", secret=True)
+    await _await_login("openai", env_path=env_path, onboarding=onboarding)
     openai_key = await prompt_text("OpenAI API key (optional)", default="", secret=True)
     if anthropic_key:
-        onboarding.validate_anthropic_key(anthropic_key, 5.0)
-        onboarding.write_env("ANTHROPIC_API_KEY", anthropic_key, env_path)
+        click.echo(f"Anthropic key captured: {_mask_key(anthropic_key)}")
+        ok = await _validate_key_with_spinner(
+            "Authenticating Anthropic key",
+            onboarding.validate_anthropic_key,
+            anthropic_key,
+        )
+        if ok:
+            click.echo("Anthropic key authenticated.")
+            onboarding.write_env("ANTHROPIC_API_KEY", anthropic_key, env_path)
+        else:
+            click.echo("Anthropic key authentication failed.")
     if openai_key:
-        onboarding.validate_openai_key(openai_key, 5.0)
-        onboarding.write_env("OPENAI_API_KEY", openai_key, env_path)
+        click.echo(f"OpenAI key captured: {_mask_key(openai_key)}")
+        ok = await _validate_key_with_spinner(
+            "Authenticating OpenAI key",
+            onboarding.validate_openai_key,
+            openai_key,
+        )
+        if ok:
+            click.echo("OpenAI key authenticated.")
+            onboarding.write_env("OPENAI_API_KEY", openai_key, env_path)
+        else:
+            click.echo("OpenAI key authentication failed.")
     if anthropic_key and openai_key:
         byok.update(
             {

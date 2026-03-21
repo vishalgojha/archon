@@ -49,7 +49,7 @@ class _Propose(ArchonCommand):
     async def run(self, session, *, config_path: str, limit: int, confidence: int):
         cfg = session.run_step(0, self.bindings._load_config, config_path)
         gate = ApprovalGate(supervised_mode=True)
-        creator = SkillCreator(config=cfg, approval_gate=gate, live_provider_calls=False)
+        creator = SkillCreator(config=cfg, approval_gate=gate)
         gap_tasks = session.run_step(
             1, creator.find_gap_tasks, limit=limit, confidence_threshold=confidence
         )
@@ -82,7 +82,7 @@ class _Apply(ArchonCommand):
     async def run(self, session, *, name: str, config_path: str):
         cfg = session.run_step(0, self.bindings._load_config, config_path)
         gate = ApprovalGate(supervised_mode=True)
-        creator = SkillCreator(config=cfg, approval_gate=gate, live_provider_calls=False)
+        creator = SkillCreator(config=cfg, approval_gate=gate)
         session.update_step(1, "running")
         try:
             result = await creator.apply_skill(name=name, event_sink=_approval_event_sink(gate))

@@ -127,7 +127,6 @@ def test_core_chat_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> 
         *,
         config: object,
         initial_mode: str,
-        live_provider_calls: bool,
         initial_context: dict[str, object],
         config_path: str,
         onboarding: object,
@@ -135,7 +134,6 @@ def test_core_chat_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> 
     ) -> None:
         captured["config"] = config
         captured["initial_mode"] = initial_mode
-        captured["live_provider_calls"] = live_provider_calls
         captured["initial_context"] = initial_context
         captured["config_path"] = config_path
         captured["show_launcher"] = show_launcher

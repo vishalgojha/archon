@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable
 
 from archon.agents.optimization import CostOptimizerAgent
 from archon.config import ArchonConfig
@@ -14,26 +13,14 @@ from archon.core.approval_gate import ApprovalDecision, ApprovalGate
 from archon.core.cost_governor import BudgetExceededError, CostGovernor
 from archon.core.debate_engine import DebateEngine
 from archon.core.memory_store import MemoryStore
+from archon.core.multimode import PipelineModeExecutor, SingleModeExecutor
 from archon.core.swarm_router import SwarmRouter
+from archon.core.types import OrchestrationResult, TaskMode
 from archon.evolution.audit_trail import AuditEntry, ImmutableAuditTrail
 from archon.providers import ProviderRouter
 from archon.skills.skill_registry import SkillDefinition, SkillRegistry
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
-TaskMode = Literal["debate"]
-
-
-@dataclass(slots=True)
-class OrchestrationResult:
-    """Final output payload returned by Orchestrator."""
-
-    task_id: str
-    goal: str
-    mode: TaskMode
-    final_answer: str
-    confidence: int
-    budget: dict[str, float | bool]
-    debate: dict[str, Any] | None = None
 
 
 class Orchestrator:
@@ -48,7 +35,6 @@ class Orchestrator:
     def __init__(
         self,
         config: ArchonConfig,
-        live_provider_calls: bool = False,
         *,
         audit_trail: ImmutableAuditTrail | None = None,
     ) -> None:
@@ -57,7 +43,6 @@ class Orchestrator:
         self.provider_router = ProviderRouter(
             config=config,
             cost_governor=self.cost_governor,
-            live_mode=live_provider_calls,
         )
         self.cost_optimizer = CostOptimizerAgent(self.provider_router)
         self.provider_router.set_cost_optimizer(self.cost_optimizer)
@@ -68,6 +53,22 @@ class Orchestrator:
         self.skill_registry = SkillRegistry()
         self._owns_audit_trail = audit_trail is None
         self.audit_trail = audit_trail or ImmutableAuditTrail("archon_evolution_audit.sqlite3")
+
+        # Initialize mode executors
+        self._single_executor = SingleModeExecutor(
+            config=config,
+            provider_router=self.provider_router,
+            cost_governor=self.cost_governor,
+            memory_store=self.memory_store,
+            audit_trail=self.audit_trail,
+        )
+        self._pipeline_executor = PipelineModeExecutor(
+            config=config,
+            provider_router=self.provider_router,
+            cost_governor=self.cost_governor,
+            memory_store=self.memory_store,
+            audit_trail=self.audit_trail,
+        )
 
     async def execute(
         self,
@@ -191,6 +192,22 @@ class Orchestrator:
                     confidence=outcome.confidence,
                     budget=budget_snapshot,
                     debate=debate_payload,
+                )
+
+            elif mode == "single":
+                return await self._single_executor.execute(
+                    goal=goal,
+                    task_id=effective_task_id,
+                    language=language,
+                    context=context,
+                )
+
+            elif mode == "pipeline":
+                return await self._pipeline_executor.execute(
+                    goal=goal,
+                    task_id=effective_task_id,
+                    language=language,
+                    context=context,
                 )
 
             raise ValueError(f"Unsupported orchestration mode: {mode}")

@@ -4,6 +4,8 @@ import asyncio
 import os
 import sqlite3
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import click
@@ -30,6 +32,11 @@ _ENV_KEYS = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "ollama": "OLLAMA_API_KEY",
+}
+_PROVIDER_KEY_URLS = {
+    "anthropic": "https://console.anthropic.com/settings/keys",
+    "openai": "https://platform.openai.com/api-keys",
+    "openrouter": "https://openrouter.ai/keys",
 }
 _VALIDATORS = {
     "anthropic": "_validate_anthropic_key",
@@ -72,11 +79,64 @@ def _choice(prompt_key: str) -> str:
     )
 
 
+def _key_portal(provider: str) -> str:
+    return _PROVIDER_KEY_URLS.get(provider, "")
+
+
+def _mask_key(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if len(cleaned) <= 6:
+        return "*" * len(cleaned)
+    return f"{cleaned[:2]}...{cleaned[-4:]}"
+
+
+def _await_login(bindings, provider: str) -> None:  # type: ignore[no-untyped-def]
+    url = _key_portal(provider)
+    if not url:
+        return
+    env_name = _ENV_KEYS.get(provider, "")
+    existing = ""
+    if env_name:
+        existing = str(
+            os.getenv(env_name) or bindings._read_env_value(env_name) or ""
+        ).strip()
+    click.echo(f"Key portal: {url}")
+    if existing:
+        return
+    click.prompt("Press Enter once logged in", default="", show_default=False)
+
+
+def _run_with_spinner(label: str, func):  # type: ignore[no-untyped-def]
+    frames = "|/-\\"
+    done = False
+    result = False
+
+    def _worker() -> None:
+        nonlocal result, done
+        result = bool(func())
+        done = True
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    index = 0
+    while not done:
+        click.echo(f"\r{label} {frames[index % len(frames)]}", nl=False)
+        time.sleep(0.12)
+        index += 1
+    thread.join()
+    status = "ok" if result else "failed"
+    click.echo(f"\r{label} {status}".ljust(48))
+    return result
+
+
 def _check_key(bindings, provider: str, key: str) -> bool:  # type: ignore[no-untyped-def]
     if provider == "ollama":
         return True
     validator = getattr(bindings, _VALIDATORS[provider])
-    return bool(validator(key, timeout_s=5.0))
+    return _run_with_spinner(
+        f"Authenticating {provider} key",
+        lambda: validator(key, timeout_s=5.0),
+    )
 
 
 def validate_config(config_path: str, timeout_seconds: float, *, provider: str | None = None):
@@ -106,7 +166,7 @@ def _build_onboarding_callbacks(bindings):
         validate_openai_key=bindings._validate_openai_key,
         validate_anthropic_key=bindings._validate_anthropic_key,
         save_config=bindings._save_onboarding_config,
-        run_validation=bindings._run_validation_dry_run,
+        run_validation=bindings._run_validation,
         read_env_value=bindings._read_env_value,
         write_env=bindings.write_env,
         load_config=bindings._load_config,
@@ -122,25 +182,32 @@ class _Init(ArchonCommand):
         primary = _choice("primary_provider")
         key = ""
         if primary != "ollama":
+            _await_login(self.bindings, primary)
             key = click.prompt(
                 _key_prompt("primary_key"), hide_input=True, default="", show_default=False
             )
-            if key and not _check_key(self.bindings, primary, key):
-                raise click.ClickException(primary)
             if key:
+                click.echo(f"{primary} key captured: {_mask_key(key)}")
+                if not _check_key(self.bindings, primary, key):
+                    raise click.ClickException(primary)
+                click.echo(f"{primary} key authenticated.")
                 self.bindings.write_env(_ENV_KEYS[primary], key)
         fast = session.run_step(1, _choice, "fast_provider")
         if fast not in {"ollama", primary}:
+            _await_login(self.bindings, fast)
             fast_key = click.prompt(
                 _key_prompt("primary_key"), hide_input=True, default="", show_default=False
             )
-            if fast_key and not _check_key(self.bindings, fast, fast_key):
-                raise click.ClickException(fast)
             if fast_key:
+                click.echo(f"{fast} key captured: {_mask_key(fast_key)}")
+                if not _check_key(self.bindings, fast, fast_key):
+                    raise click.ClickException(fast)
+                click.echo(f"{fast} key authenticated.")
                 self.bindings.write_env(_ENV_KEYS[fast], fast_key)
         ollama = session.run_step(2, self.bindings._probe_ollama, 2.0)
-        models = list(ollama.get("models", []))
-        if "llama3.2" not in models:
+        models = [str(name).strip() for name in ollama.get("models", []) if str(name).strip()]
+        # Only prompt to pull if Ollama is reachable but has no models available.
+        if ollama.get("reachable") and not models:
             click.confirm(_key_prompt("ollama_pull"), default=True, abort=False)
             try:
                 subprocess.run(["ollama", "pull", "llama3.2"], check=False)
@@ -250,7 +317,6 @@ class _Chat(ArchonCommand):
         await run_agentic_tui(
             config=config,
             initial_mode=mode,
-            live_provider_calls=self.bindings._should_default_tui_to_live(config),
             initial_context={},
             config_path=config_path,
             onboarding=onboarding,

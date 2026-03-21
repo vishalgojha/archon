@@ -35,7 +35,7 @@ def _build_onboarding(bindings):  # type: ignore[no-untyped-def]
         validate_openai_key=bindings._validate_openai_key,
         validate_anthropic_key=bindings._validate_anthropic_key,
         save_config=bindings._save_onboarding_config,
-        run_validation=bindings._run_validation_dry_run,
+        run_validation=bindings._run_validation,
         read_env_value=bindings._read_env_value,
         write_env=bindings.write_env,
         load_config=bindings._load_config,
@@ -105,7 +105,6 @@ class _Debate(ArchonCommand):
         question: str,
         mode: str,
         budget: float | None,
-        live_providers: bool,
         config_path: str,
     ):
         config = session.run_step(0, self.bindings._load_config, config_path)
@@ -116,7 +115,6 @@ class _Debate(ArchonCommand):
             1,
             Orchestrator,
             config=config,
-            live_provider_calls=live_providers,
         )
         live = TaskLiveDisplay()
         live.start()
@@ -150,7 +148,6 @@ class _Tui(ArchonCommand):
         *,
         mode: str,
         budget: float | None,
-        live_providers: bool,
         context_text: str,
         context_file: Path | None,
         config_path: str,
@@ -162,7 +159,6 @@ class _Tui(ArchonCommand):
         )
         if budget is not None:
             config.byok.budget_per_task_usd = float(budget)
-        effective_live = live_providers or self.bindings._should_default_tui_to_live(config)
         context = session.run_step(
             1, self.bindings._parse_context, context_text or None, context_file
         )
@@ -171,7 +167,6 @@ class _Tui(ArchonCommand):
         await run_agentic_tui(
             config=config,
             initial_mode=mode,
-            live_provider_calls=effective_live,
             initial_context=context,
             config_path=config_path,
             onboarding=onboarding,
@@ -234,27 +229,23 @@ def build_group(bindings):
     @click.argument("question")
     @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--budget", type=float, default=None)
-    @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def debate_command(
         question: str,
         mode: str,
         budget: float | None,
-        live_providers: bool,
         config_path: str,
     ) -> None:
         _Debate(bindings).invoke(
             question=question,
             mode=mode,
             budget=budget,
-            live_providers=live_providers,
             config_path=config_path,
         )
 
     @group.command("tui", help=str(COMMAND_HELP[COMMAND_IDS[2]]))
     @click.option("--mode", type=click.Choice(["debate"]), default="debate")
     @click.option("--budget", type=float, default=None)
-    @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--context", "context_text", default="")
     @click.option(
         "--context-file",
@@ -265,7 +256,6 @@ def build_group(bindings):
     def tui_command(
         mode: str,
         budget: float | None,
-        live_providers: bool,
         context_text: str,
         context_file: Path | None,
         config_path: str,
@@ -273,7 +263,6 @@ def build_group(bindings):
         _Tui(bindings).invoke(
             mode=mode,
             budget=budget,
-            live_providers=live_providers,
             context_text=context_text,
             context_file=context_file,
             config_path=config_path,

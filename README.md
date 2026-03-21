@@ -116,6 +116,10 @@ That root surface is for capability discovery and navigation. The interactive ch
 launcher lives under `archon core chat` or `archon agents tui` when you want the
 transcript-driven terminal session.
 
+The terminal session uses a markdown-first, low-noise layout (overview header +
+streaming log + input line). Press `Ctrl+H` inside the session to toggle the
+overview panel.
+
 Example commands:
 
 ```powershell

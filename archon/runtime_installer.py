@@ -250,17 +250,13 @@ def _venv_python(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "python"
 
 
-def _run(command: Sequence[str], *, cwd: Path | None = None, dry_run: bool = False) -> None:
+def _run(command: Sequence[str], *, cwd: Path | None = None) -> None:
     printable = " ".join(str(part) for part in command)
     print(f"[archon-installer] {printable}")
-    if dry_run:
-        return
     subprocess.run(command, cwd=str(cwd) if cwd is not None else None, check=True)
 
 
-def _query_purelib(venv_python: Path, *, dry_run: bool = False) -> Path:
-    if dry_run:
-        return Path("<purelib>")
+def _query_purelib(venv_python: Path) -> Path:
     value = subprocess.check_output(
         [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
         text=True,
@@ -268,28 +264,23 @@ def _query_purelib(venv_python: Path, *, dry_run: bool = False) -> Path:
     return Path(value)
 
 
-def _ensure_venv(venv_dir: Path, *, dry_run: bool = False) -> Path:
+def _ensure_venv(venv_dir: Path) -> Path:
     venv_python = _venv_python(venv_dir)
     if venv_python.exists():
         return venv_python
     print(f"[archon-installer] Creating virtual environment at {venv_dir}")
-    if not dry_run:
-        venv.EnvBuilder(with_pip=True).create(str(venv_dir))
+    venv.EnvBuilder(with_pip=True).create(str(venv_dir))
     return venv_python
 
 
-def _write_text(path: Path, content: str, *, dry_run: bool = False) -> None:
+def _write_text(path: Path, content: str) -> None:
     print(f"[archon-installer] Writing {path}")
-    if dry_run:
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
-def _write_executable_text(path: Path, content: str, *, dry_run: bool = False) -> None:
-    _write_text(path, content, dry_run=dry_run)
-    if dry_run:
-        return
+def _write_executable_text(path: Path, content: str) -> None:
+    _write_text(path, content)
     path.chmod(0o755)
 
 
@@ -297,9 +288,8 @@ def _write_source_pth(
     purelib_dir: Path,
     *,
     repo_root: Path,
-    dry_run: bool = False,
 ) -> None:
-    _write_text(purelib_dir / "archon_repo.pth", f"{repo_root.resolve()}\n", dry_run=dry_run)
+    _write_text(purelib_dir / "archon_repo.pth", f"{repo_root.resolve()}\n")
 
 
 def _write_manifest(
@@ -307,7 +297,6 @@ def _write_manifest(
     *,
     repo_root: Path,
     include_dev: bool,
-    dry_run: bool = False,
 ) -> None:
     payload = {
         "repo_root": str(repo_root.resolve()),
@@ -318,43 +307,36 @@ def _write_manifest(
     _write_text(
         install_root / "install-manifest.json",
         json.dumps(payload, indent=2) + "\n",
-        dry_run=dry_run,
     )
 
 
-def _write_windows_shims(bin_dir: Path, *, dry_run: bool = False) -> None:
+def _write_windows_shims(bin_dir: Path) -> None:
     _write_text(
         bin_dir / "archon.cmd",
         render_windows_cmd_shim("-m", "archon.archon_cli"),
-        dry_run=dry_run,
     )
     _write_text(
         bin_dir / "archon.ps1",
         render_windows_ps1_shim("-m", "archon.archon_cli"),
-        dry_run=dry_run,
     )
     _write_text(
         bin_dir / "archon-server.cmd",
         render_windows_cmd_shim("-m", "archon.archon_cli", "ops", "serve"),
-        dry_run=dry_run,
     )
     _write_text(
         bin_dir / "archon-server.ps1",
         render_windows_ps1_shim("-m", "archon.archon_cli", "ops", "serve"),
-        dry_run=dry_run,
     )
 
 
-def _write_posix_shims(bin_dir: Path, *, dry_run: bool = False) -> None:
+def _write_posix_shims(bin_dir: Path) -> None:
     _write_executable_text(
         bin_dir / "archon",
         render_posix_shim("-m", "archon.archon_cli"),
-        dry_run=dry_run,
     )
     _write_executable_text(
         bin_dir / "archon-server",
         render_posix_shim("-m", "archon.archon_cli", "ops", "serve"),
-        dry_run=dry_run,
     )
 
 
@@ -471,7 +453,7 @@ def _read_profile_text(profile_path: Path) -> str:
             return profile_path.read_text(encoding="latin-1")
 
 
-def _upsert_archon_path_block(profile_path: Path, bin_dir: Path, *, dry_run: bool = False) -> bool:
+def _upsert_archon_path_block(profile_path: Path, bin_dir: Path) -> bool:
     existing = _read_profile_text(profile_path)
     base = _strip_archon_path_block(existing)
     block = _render_posix_path_block(bin_dir).rstrip("\n")
@@ -479,11 +461,11 @@ def _upsert_archon_path_block(profile_path: Path, bin_dir: Path, *, dry_run: boo
     if next_content == existing:
         return False
     print(f"[archon-installer] Updating shell profile {profile_path}")
-    _write_text(profile_path, next_content, dry_run=dry_run)
+    _write_text(profile_path, next_content)
     return True
 
 
-def _remove_archon_path_block(profile_path: Path, *, dry_run: bool = False) -> bool:
+def _remove_archon_path_block(profile_path: Path) -> bool:
     if not profile_path.exists():
         return False
     existing = _read_profile_text(profile_path)
@@ -492,11 +474,11 @@ def _remove_archon_path_block(profile_path: Path, *, dry_run: bool = False) -> b
     if next_content == existing:
         return False
     print(f"[archon-installer] Cleaning shell profile {profile_path}")
-    _write_text(profile_path, next_content, dry_run=dry_run)
+    _write_text(profile_path, next_content)
     return True
 
 
-def _ensure_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
+def _ensure_user_path(bin_dir: Path) -> bool:
     if sys.platform.startswith("win"):
         import winreg
 
@@ -516,23 +498,22 @@ def _ensure_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
             if merged != str(current or ""):
                 print(f"[archon-installer] Adding {bin_dir} to the user PATH")
                 updated = True
-                if not dry_run:
-                    winreg.SetValueEx(
-                        key,
-                        "Path",
-                        0,
-                        value_type
-                        if value_type in {winreg.REG_EXPAND_SZ, winreg.REG_SZ}
-                        else winreg.REG_EXPAND_SZ,
-                        merged,
-                    )
+                winreg.SetValueEx(
+                    key,
+                    "Path",
+                    0,
+                    value_type
+                    if value_type in {winreg.REG_EXPAND_SZ, winreg.REG_SZ}
+                    else winreg.REG_EXPAND_SZ,
+                    merged,
+                )
         os.environ["PATH"] = merge_path_value(
             os.environ.get("PATH", ""),
             bin_dir,
             platform_name="win32",
             prioritize=True,
         )
-        if updated and not dry_run:
+        if updated:
             _broadcast_environment_change()
         return updated
 
@@ -542,10 +523,10 @@ def _ensure_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
         platform_name=sys.platform,
         prioritize=True,
     )
-    return _upsert_archon_path_block(_selected_shell_profile(), bin_dir, dry_run=dry_run)
+    return _upsert_archon_path_block(_selected_shell_profile(), bin_dir)
 
 
-def _remove_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
+def _remove_user_path(bin_dir: Path) -> bool:
     if sys.platform.startswith("win"):
         import winreg
 
@@ -564,22 +545,21 @@ def _remove_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
             if trimmed != str(current or ""):
                 print(f"[archon-installer] Removing {bin_dir} from the user PATH")
                 updated = True
-                if not dry_run:
-                    winreg.SetValueEx(
-                        key,
-                        "Path",
-                        0,
-                        value_type
-                        if value_type in {winreg.REG_EXPAND_SZ, winreg.REG_SZ}
-                        else winreg.REG_EXPAND_SZ,
-                        trimmed,
-                    )
+                winreg.SetValueEx(
+                    key,
+                    "Path",
+                    0,
+                    value_type
+                    if value_type in {winreg.REG_EXPAND_SZ, winreg.REG_SZ}
+                    else winreg.REG_EXPAND_SZ,
+                    trimmed,
+                )
         os.environ["PATH"] = remove_path_value(
             os.environ.get("PATH", ""),
             bin_dir,
             platform_name="win32",
         )
-        if updated and not dry_run:
+        if updated:
             _broadcast_environment_change()
         return updated
 
@@ -590,7 +570,7 @@ def _remove_user_path(bin_dir: Path, *, dry_run: bool = False) -> bool:
     )
     updated = False
     for profile_path in _shell_profile_candidates():
-        updated = _remove_archon_path_block(profile_path, dry_run=dry_run) or updated
+        updated = _remove_archon_path_block(profile_path) or updated
     return updated
 
 
@@ -599,7 +579,7 @@ def _validate_runtime() -> None:
         raise SystemExit("ARCHON requires Python 3.11+.")
 
 
-def _schedule_windows_uninstall(install_root: Path, *, dry_run: bool = False) -> Path:
+def _schedule_windows_uninstall(install_root: Path) -> Path:
     script_path = Path(tempfile.gettempdir()) / f"archon-uninstall-{os.getpid()}.cmd"
     script_text = "\n".join(
         [
@@ -616,9 +596,7 @@ def _schedule_windows_uninstall(install_root: Path, *, dry_run: bool = False) ->
             "",
         ]
     )
-    _write_text(script_path, script_text, dry_run=dry_run)
-    if dry_run:
-        return script_path
+    _write_text(script_path, script_text)
 
     creationflags = 0
     creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -653,21 +631,14 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not add the generated bin directory to the user PATH.",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print actions without creating files or installing dependencies.",
-    )
     return parser
 
 
-def install(
-    *, repo_root: Path, install_root: Path, include_dev: bool, skip_path: bool, dry_run: bool
-) -> int:
+def install(*, repo_root: Path, install_root: Path, include_dev: bool, skip_path: bool) -> int:
     """Install ARCHON into a dedicated user-local runtime.
 
     Example:
-        Input: ``repo_root=Path.cwd(), install_root=default_install_root(), dry_run=True``
+        Input: ``repo_root=Path.cwd(), install_root=default_install_root()``
         Output: ``0``
     """
 
@@ -681,28 +652,26 @@ def install(
 
     venv_dir = install_root / "venv"
     bin_dir = install_root / "bin"
-    venv_python = _ensure_venv(venv_dir, dry_run=dry_run)
+    venv_python = _ensure_venv(venv_dir)
     _run(
         [str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
         cwd=repo_root,
-        dry_run=dry_run,
     )
     _run(
         [str(venv_python), "-m", "pip", "install", "--upgrade", *dependencies],
         cwd=repo_root,
-        dry_run=dry_run,
     )
-    purelib_dir = _query_purelib(venv_python, dry_run=dry_run)
-    _write_source_pth(purelib_dir, repo_root=repo_root, dry_run=dry_run)
+    purelib_dir = _query_purelib(venv_python)
+    _write_source_pth(purelib_dir, repo_root=repo_root)
     if sys.platform.startswith("win"):
-        _write_windows_shims(bin_dir, dry_run=dry_run)
+        _write_windows_shims(bin_dir)
     else:
-        _write_posix_shims(bin_dir, dry_run=dry_run)
-    _write_manifest(install_root, repo_root=repo_root, include_dev=include_dev, dry_run=dry_run)
+        _write_posix_shims(bin_dir)
+    _write_manifest(install_root, repo_root=repo_root, include_dev=include_dev)
 
     path_updated = False
     if not skip_path:
-        path_updated = _ensure_user_path(bin_dir, dry_run=dry_run)
+        path_updated = _ensure_user_path(bin_dir)
 
     print("")
     print("ARCHON global install complete.")
@@ -711,9 +680,7 @@ def install(
     print(f"  Commands:     {bin_dir}")
     print(f"  Dependencies: {'base + dev' if include_dev else 'base'}")
     _print_resolution_guidance(bin_dir)
-    if dry_run:
-        print("  Mode:         dry-run")
-    elif path_updated:
+    if path_updated:
         print("  PATH:         updated for the current user")
     elif skip_path:
         print("  PATH:         unchanged (--skip-path)")
@@ -733,28 +700,20 @@ def install(
     return 0
 
 
-def uninstall(*, install_root: Path, skip_path: bool, dry_run: bool) -> int:
+def uninstall(*, install_root: Path, skip_path: bool) -> int:
     """Remove the dedicated ARCHON runtime and its PATH entry.
 
     Example:
-        Input: ``install_root=default_install_root(), dry_run=True``
+        Input: ``install_root=default_install_root()``
         Output: ``0``
     """
 
     bin_dir = install_root / "bin"
     path_updated = False
     if not skip_path:
-        path_updated = _remove_user_path(bin_dir, dry_run=dry_run)
+        path_updated = _remove_user_path(bin_dir)
 
     print("")
-    if dry_run:
-        print("ARCHON uninstall preview.")
-        print(f"  Runtime:      {install_root}")
-        print(f"  Commands:     {bin_dir}")
-        print(f"  PATH change:  {'yes' if path_updated else 'no'}")
-        print("")
-        return 0
-
     if not install_root.exists():
         print("ARCHON runtime not found.")
         print(f"  Expected:     {install_root}")
@@ -764,7 +723,7 @@ def uninstall(*, install_root: Path, skip_path: bool, dry_run: bool) -> int:
         return 0
 
     if sys.platform.startswith("win"):
-        script_path = _schedule_windows_uninstall(install_root, dry_run=False)
+        script_path = _schedule_windows_uninstall(install_root)
         print("ARCHON uninstall scheduled.")
         print(f"  Runtime:      {install_root}")
         print(f"  Cleanup:      {script_path}")
@@ -787,7 +746,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the standalone installer entrypoint.
 
     Example:
-        Input: ``argv=["--dry-run"]``
+        Input: ``argv=[]``
         Output: ``0``
     """
 
@@ -798,7 +757,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         install_root=Path(args.home),
         include_dev=bool(args.dev),
         skip_path=bool(args.skip_path),
-        dry_run=bool(args.dry_run),
     )
 
 

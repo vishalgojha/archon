@@ -1,9 +1,10 @@
-"""Unit tests for provider resolution and simulated invocation."""
+"""Unit tests for provider resolution and live invocation."""
 
 from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 
 from archon.agents.optimization import CostOptimizerAgent
@@ -69,13 +70,26 @@ def test_resolve_provider_uses_configured_ollama_models() -> None:
     assert router.resolve_provider(role="fast").model == "llama3.1:latest"
 
 
-def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch) -> None:
+def _mock_openai_transport() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 8},
+        }
+        return httpx.Response(200, json=payload)
+
+    return httpx.MockTransport(handler)
+
+
+def test_invoke_charges_cost_governor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     governor = CostGovernor(default_budget_usd=1.0)
     governor.start_task("task-1")
 
     config = ArchonConfig()
-    router = ProviderRouter(config=config, cost_governor=governor, live_mode=False)
+    router = ProviderRouter(config=config, cost_governor=governor)
+    asyncio.run(router._http.aclose())
+    router._http = httpx.AsyncClient(transport=_mock_openai_transport())
 
     response = asyncio.run(
         router.invoke(role="coding", prompt="Write a SQL query", task_id="task-1")
@@ -83,7 +97,7 @@ def test_invoke_simulation_charges_cost_governor(monkeypatch: pytest.MonkeyPatch
     snapshot = governor.snapshot("task-1")
 
     assert response.provider == "openai"
-    assert response.text.startswith("[simulated:openai/")
+    assert response.text == "ok"
     assert snapshot["spent_usd"] > 0
     assert snapshot["remaining_usd"] < snapshot["budget_usd"]
 
@@ -98,7 +112,9 @@ def test_router_applies_cost_optimizer_override_under_budget_pressure(
 
     governor = CostGovernor(default_budget_usd=1.0)
     config = ArchonConfig()
-    router = ProviderRouter(config=config, cost_governor=governor, live_mode=False)
+    router = ProviderRouter(config=config, cost_governor=governor)
+    asyncio.run(router._http.aclose())
+    router._http = httpx.AsyncClient(transport=_mock_openai_transport())
     optimizer = CostOptimizerAgent(router, min_samples=1, pressure_threshold=0.8)
     router.set_cost_optimizer(optimizer)
 

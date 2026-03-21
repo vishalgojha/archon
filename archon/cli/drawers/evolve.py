@@ -83,7 +83,6 @@ class _Plan(ArchonCommand):
         session,
         *,
         workflow_file: str,
-        live_providers: bool,
         config_path: str,
     ):
         config = session.run_step(0, self.bindings._load_config, config_path)
@@ -93,7 +92,6 @@ class _Plan(ArchonCommand):
             3,
             Orchestrator,
             config=config,
-            live_provider_calls=live_providers,
         )
         engine = session.run_step(
             4,
@@ -207,16 +205,13 @@ def build_group(bindings):
 
     @group.command("plan", help=str(COMMAND_HELP[COMMAND_IDS[0]]))
     @click.argument("workflow_file", type=click.Path(exists=True, dir_okay=False))
-    @click.option("--live-providers", is_flag=True, default=False)
     @click.option("--config", "config_path", default="config.archon.yaml")
     def plan_command(
         workflow_file: str,
-        live_providers: bool,
         config_path: str,
     ) -> None:
         _Plan(bindings).invoke(
             workflow_file=workflow_file,
-            live_providers=live_providers,
             config_path=config_path,
         )
 

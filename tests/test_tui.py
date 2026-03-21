@@ -9,7 +9,7 @@ from archon.interfaces.cli import tui
 
 
 def test_tui_state_tracks_task_events() -> None:
-    state = tui.TuiState(mode="auto", live_provider_calls=False, context={})
+    state = tui.TuiState(mode="auto", context={})
 
     state.apply_event(
         {
@@ -54,7 +54,7 @@ def test_tui_state_tracks_task_events() -> None:
 
 
 def test_tui_state_tracks_approval_events() -> None:
-    state = tui.TuiState(mode="debate", live_provider_calls=True, context={})
+    state = tui.TuiState(mode="debate", context={})
 
     state.apply_event(
         {
@@ -87,13 +87,11 @@ async def test_run_agentic_tui_launches_textual(monkeypatch: pytest.MonkeyPatch)
             *,
             config: ArchonConfig,
             initial_mode: str,
-            live_provider_calls: bool,
             initial_context: dict[str, object],
             config_path: str,
         ) -> None:
             created["config"] = config
             created["initial_mode"] = initial_mode
-            created["live_provider_calls"] = live_provider_calls
             created["initial_context"] = initial_context
             created["config_path"] = config_path
 
@@ -105,12 +103,10 @@ async def test_run_agentic_tui_launches_textual(monkeypatch: pytest.MonkeyPatch)
     await tui.run_agentic_tui(
         config=ArchonConfig(),
         initial_mode="debate",
-        live_provider_calls=True,
         initial_context={"sector": "pharma"},
         config_path="config.archon.yaml",
     )
 
     assert created.get("ran") is True
     assert created["initial_mode"] == "debate"
-    assert created["live_provider_calls"] is True
     assert created["initial_context"] == {"sector": "pharma"}

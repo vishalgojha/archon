@@ -10,22 +10,34 @@ import pytest
 from archon import validate_config as validate_module
 
 
+def _mock_health(
+    monkeypatch: pytest.MonkeyPatch, status_map: dict[str, validate_module.ProviderStatus]
+) -> None:
+    def _fake_ping(providers, checks, *, timeout_seconds):  # type: ignore[no-untyped-def]
+        rows = []
+        for name in sorted(checks):
+            rows.append(
+                validate_module.ProviderHealth(
+                    provider=name,
+                    status=status_map.get(name, "PASS"),
+                    detail="mocked",
+                )
+            )
+        return rows
+
+    monkeypatch.setattr(validate_module, "_ping_configured_providers", _fake_ping)
+
+
 def _write_yaml(content: str) -> Path:
     path = Path(f"validate-config-{uuid.uuid4().hex}.yaml")
     path.write_text(content, encoding="utf-8")
     return path
 
 
-def test_validate_config_dry_run_passes_without_credentials(
+def test_validate_config_passes_with_mocked_health(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for env_name in (
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GROQ_API_KEY",
-        "OPENROUTER_API_KEY",
-    ):
-        monkeypatch.delenv(env_name, raising=False)
+    _mock_health(monkeypatch, {})
 
     path = _write_yaml("""
 byok:
@@ -37,24 +49,18 @@ byok:
   fallback: openrouter
 """)
     try:
-        report = validate_module.validate_config(path=path, dry_run=True)
+        report = validate_module.validate_config(path=path)
         assert report.ok is True
         assert report.errors == []
-        assert report.warnings
+        assert report.provider_health
     finally:
         path.unlink(missing_ok=True)
 
 
-def test_validate_config_strict_fails_without_credentials(
+def test_validate_config_reports_failed_health(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for env_name in (
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GROQ_API_KEY",
-        "OPENROUTER_API_KEY",
-    ):
-        monkeypatch.delenv(env_name, raising=False)
+    _mock_health(monkeypatch, {"anthropic": "FAIL"})
 
     path = _write_yaml("""
 byok:
@@ -66,36 +72,26 @@ byok:
   fallback: openrouter
 """)
     try:
-        report = validate_module.validate_config(path=path, dry_run=False)
+        report = validate_module.validate_config(path=path)
         assert report.ok is False
         assert report.errors
     finally:
         path.unlink(missing_ok=True)
 
 
-def test_validate_config_strict_passes_with_openrouter_fallback_key(
+def test_validate_config_reports_not_configured_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    _mock_health(monkeypatch, {})
 
     path = _write_yaml("""
 byok:
-  primary: anthropic
-  coding: openai
-  vision: openai
-  fast: groq
   embedding: ollama
-  fallback: openrouter
 """)
     try:
-        report = validate_module.validate_config(path=path, dry_run=False)
-        assert report.ok is False
-        # Strict mode demands credentials for all configured providers.
-        assert any("anthropic" in err for err in report.errors)
-        assert any("openai" in err for err in report.errors)
+        report = validate_module.validate_config(path=path, provider="openai")
+        assert report.ok is True
+        assert any(row.status == "NOT_CONFIGURED" for row in report.provider_health)
     finally:
         path.unlink(missing_ok=True)
 

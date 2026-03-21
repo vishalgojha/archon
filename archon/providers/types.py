@@ -1,40 +1,62 @@
-"""Typed provider contracts used by all ARCHON agents."""
+"""Type definitions for provider responses and usage tracking."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
+
+ProviderRole = Literal["primary", "coding", "vision", "fast"]
+ProviderName = Literal[
+    "anthropic",
+    "openai",
+    "gemini",
+    "mistral",
+    "groq",
+    "together",
+    "fireworks",
+    "openrouter",
+    "ollama",
+]
 
 
-@dataclass(slots=True)
+@dataclass
 class ProviderSelection:
-    """Resolved provider endpoint details for one request."""
+    """Result of provider selection logic."""
 
-    provider: str
-    role: str
+    provider: ProviderName
     model: str
-    base_url: str
-    api_key: str
-    source: str = "built_in"
+    role: ProviderRole
+    base_url: str | None = None
+    api_key: str | None = None
+    is_fallback: bool = False
+    reason: str = ""
+    source: str | None = None
     endpoint_name: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass
+class ProviderResponse:
+    """Normalized response from any provider."""
+
+    text: str
+    provider: ProviderName
+    model: str
+    usage: dict[str, int]
+    finish_reason: str | None = None
+    raw: Any | None = None
+
+
+@dataclass
 class ProviderUsage:
-    """Token and cost usage returned by provider calls."""
+    """Token and cost usage tracking."""
 
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    cost_usd: float
+    cost_usd: float = 0.0
+    model: str = ""
+    provider: ProviderName | None = None
 
-
-@dataclass(slots=True)
-class ProviderResponse:
-    """Normalized provider response object shared by all agents."""
-
-    text: str
-    provider: str
-    model: str
-    usage: ProviderUsage
-    raw: dict[str, Any] = field(default_factory=dict)
+    def update_cost(self, cost_usd: float) -> None:
+        """Update the cost in USD."""
+        self.cost_usd = cost_usd

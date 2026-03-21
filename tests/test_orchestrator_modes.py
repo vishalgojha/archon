@@ -6,6 +6,7 @@ import asyncio
 import uuid
 from pathlib import Path
 
+import httpx
 import pytest
 
 from archon.config import ArchonConfig
@@ -15,7 +16,19 @@ from archon.core.orchestrator import Orchestrator
 
 def test_orchestrator_supports_debate_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    orchestrator = Orchestrator(config=ArchonConfig(), live_provider_calls=False)
+    orchestrator = Orchestrator(config=ArchonConfig())
+    asyncio.run(orchestrator.provider_router._http.aclose())
+    orchestrator.provider_router._http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"prompt_tokens": 8, "completion_tokens": 5},
+                },
+            )
+        )
+    )
     db_path = Path(f"orchestrator-memory-{uuid.uuid4().hex}.sqlite3")
     orchestrator.memory_store = MemoryStore(db_path=db_path)
 

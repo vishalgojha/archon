@@ -10,7 +10,7 @@ from archon.providers import ProviderRouter
 
 
 def test_cost_optimizer_recommends_lower_cost_profile_when_quality_holds() -> None:
-    router = ProviderRouter(config=ArchonConfig(), live_mode=False)
+    router = ProviderRouter(config=ArchonConfig())
     optimizer = CostOptimizerAgent(router, min_samples=1, pressure_threshold=0.8)
 
     optimizer.observe_selection(
@@ -45,7 +45,7 @@ def test_cost_optimizer_recommends_lower_cost_profile_when_quality_holds() -> No
 
 
 def test_cost_optimizer_skips_when_pressure_is_low_or_quality_drops() -> None:
-    router = ProviderRouter(config=ArchonConfig(), live_mode=False)
+    router = ProviderRouter(config=ArchonConfig())
     optimizer = CostOptimizerAgent(router, min_samples=1, pressure_threshold=0.8)
 
     optimizer.observe_selection(

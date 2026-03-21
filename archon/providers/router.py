@@ -131,12 +131,10 @@ class ProviderRouter:
         self,
         config: ArchonConfig,
         cost_governor: CostGovernor | None = None,
-        live_mode: bool = False,
         timeout_seconds: float = 45.0,
     ) -> None:
         self._config = config
         self._cost_governor = cost_governor
-        self._live_mode = live_mode
         self._http = httpx.AsyncClient(timeout=timeout_seconds)
         self._cost_optimizer: CostOptimizerAgent | None = None
         self._task_overrides: dict[str, dict[str, str | None]] = {}
@@ -248,31 +246,63 @@ class ProviderRouter:
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
 
-        if not self._live_mode:
-            response = self._simulate_response(prompt, selection)
-        elif selection.provider == "anthropic":
-            response = await self._call_anthropic(selection, prompt, system_prompt)
-        elif selection.provider == "gemini":
-            response = await self._call_gemini(selection, prompt, system_prompt)
+        providers_to_try = self._provider_priority_chain(role, effective_provider_override)
+        try_order: list[ProviderSelection] = []
+        if selection.provider == "openrouter":
+            openrouter_chain = self._openrouter_model_chain(role, model_override)
+            if openrouter_chain:
+                try_order.extend(openrouter_chain)
+            else:
+                try_order.append(selection)
         else:
-            response = await self._call_openai_compatible(selection, prompt, system_prompt)
+            try_order.append(selection)
+        for provider_name in providers_to_try:
+            if provider_name == selection.provider:
+                continue
+            candidate = self._try_provider(provider_name, role, model_override)
+            if candidate is not None:
+                try_order.append(candidate)
 
-        if task_id and self._cost_governor:
-            self._cost_governor.add_cost(
-                task_id=task_id,
-                cost_usd=response.usage.cost_usd,
-                provider=selection.provider,
-                model=selection.model,
-            )
-        if task_id and self._cost_optimizer is not None:
-            self._cost_optimizer.observe_selection(
-                task_id,
-                role=role,
-                provider=selection.provider,
-                model=selection.model,
-                cost_usd=response.usage.cost_usd,
-            )
-        return response
+        last_error: ProviderCallError | None = None
+        for attempt in try_order:
+            try:
+                if attempt.provider == "anthropic":
+                    response = await self._call_anthropic(attempt, prompt, system_prompt)
+                elif attempt.provider == "gemini":
+                    response = await self._call_gemini(attempt, prompt, system_prompt)
+                else:
+                    response = await self._call_openai_compatible(attempt, prompt, system_prompt)
+            except ProviderCallError as exc:
+                last_error = exc
+                continue
+
+            if attempt.provider != selection.provider:
+                self._record_task_routing(
+                    task_id=task_id,
+                    role=role,
+                    selection=attempt,
+                    provider_override=effective_provider_override,
+                )
+            if task_id and self._cost_governor:
+                self._cost_governor.add_cost(
+                    task_id=task_id,
+                    cost_usd=response.usage.cost_usd,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                )
+            if task_id and self._cost_optimizer is not None:
+                self._cost_optimizer.observe_selection(
+                    task_id,
+                    role=role,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                    cost_usd=response.usage.cost_usd,
+                )
+            return response
+
+        if last_error is not None:
+            raise last_error
+        raise ProviderCallError(f"Provider call failed ({selection.provider}).")
 
     def _record_task_routing(
         self,
@@ -338,46 +368,78 @@ class ProviderRouter:
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
 
-        if not self._live_mode:
-            response = self._simulate_response(text, selection)
-        elif selection.provider == "anthropic":
-            response = await self._call_anthropic_multimodal(
-                selection,
-                text=text,
-                content_blocks=content_blocks,
-                system_prompt=system_prompt,
-            )
-        elif selection.provider == "gemini":
-            response = await self._call_gemini_multimodal(
-                selection,
-                text=text,
-                content_blocks=content_blocks,
-                system_prompt=system_prompt,
-            )
+        providers_to_try = self._provider_priority_chain(role, effective_provider_override)
+        try_order: list[ProviderSelection] = []
+        if selection.provider == "openrouter":
+            openrouter_chain = self._openrouter_model_chain(role, model_override)
+            if openrouter_chain:
+                try_order.extend(openrouter_chain)
+            else:
+                try_order.append(selection)
         else:
-            response = await self._call_openai_compatible_multimodal(
-                selection,
-                text=text,
-                content_blocks=content_blocks,
-                system_prompt=system_prompt,
-            )
+            try_order.append(selection)
+        for provider_name in providers_to_try:
+            if provider_name == selection.provider:
+                continue
+            candidate = self._try_provider(provider_name, role, model_override)
+            if candidate is not None:
+                try_order.append(candidate)
 
-        if task_id and self._cost_governor:
-            self._cost_governor.add_cost(
-                task_id=task_id,
-                cost_usd=response.usage.cost_usd,
-                provider=selection.provider,
-                model=selection.model,
-            )
-        if task_id and self._cost_optimizer is not None:
-            self._cost_optimizer.observe_selection(
-                task_id,
-                role=role,
-                provider=selection.provider,
-                model=selection.model,
-                cost_usd=response.usage.cost_usd,
-            )
-        return response
+        last_error: ProviderCallError | None = None
+        for attempt in try_order:
+            try:
+                if attempt.provider == "anthropic":
+                    response = await self._call_anthropic_multimodal(
+                        attempt,
+                        text=text,
+                        content_blocks=content_blocks,
+                        system_prompt=system_prompt,
+                    )
+                elif attempt.provider == "gemini":
+                    response = await self._call_gemini_multimodal(
+                        attempt,
+                        text=text,
+                        content_blocks=content_blocks,
+                        system_prompt=system_prompt,
+                    )
+                else:
+                    response = await self._call_openai_compatible_multimodal(
+                        attempt,
+                        text=text,
+                        content_blocks=content_blocks,
+                        system_prompt=system_prompt,
+                    )
+            except ProviderCallError as exc:
+                last_error = exc
+                continue
+
+            if attempt.provider != selection.provider:
+                self._record_task_routing(
+                    task_id=task_id,
+                    role=role,
+                    selection=attempt,
+                    provider_override=effective_provider_override,
+                )
+            if task_id and self._cost_governor:
+                self._cost_governor.add_cost(
+                    task_id=task_id,
+                    cost_usd=response.usage.cost_usd,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                )
+            if task_id and self._cost_optimizer is not None:
+                self._cost_optimizer.observe_selection(
+                    task_id,
+                    role=role,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                    cost_usd=response.usage.cost_usd,
+                )
+            return response
+
+        if last_error is not None:
+            raise last_error
+        raise ProviderCallError(f"Provider call failed ({selection.provider}).")
 
     def record_task_feedback(self, task_id: str, *, quality_score: float) -> None:
         """Feed task-quality feedback back into the optimizer.
@@ -408,6 +470,28 @@ class ProviderRouter:
         for endpoint in byok.custom_endpoints:
             if role in endpoint.roles and endpoint.name not in chain:
                 chain.append(endpoint.name)
+        return chain
+
+    def _openrouter_model_chain(
+        self, role: str, model_override: str | None
+    ) -> list[ProviderSelection]:
+        byok = self._config.byok
+        if not byok.openrouter_fallback_chain:
+            return []
+        if model_override and not byok.free_tier_first:
+            return []
+
+        chain: list[ProviderSelection] = []
+        seen: set[str] = set()
+        for model in byok.openrouter_fallback_chain:
+            candidate = self._try_provider("openrouter", role, model)
+            if candidate is None:
+                continue
+            key = f"{candidate.provider}:{candidate.model}"
+            if key in seen:
+                continue
+            seen.add(key)
+            chain.append(candidate)
         return chain
 
     def _try_provider(
@@ -490,22 +574,6 @@ class ProviderRouter:
 
         role_models = DEFAULT_MODEL_BY_ROLE.get(provider, {})
         return role_models.get(role) or role_models.get("primary") or "unknown-model"
-
-    def _simulate_response(self, prompt: str, selection: ProviderSelection) -> ProviderResponse:
-        prompt_tokens = _estimate_tokens(prompt)
-        completion_tokens = max(24, min(256, int(prompt_tokens * 0.6)))
-        usage = self._usage_for(selection.provider, prompt_tokens, completion_tokens)
-        text = (
-            f"[simulated:{selection.provider}/{selection.model}] "
-            "Policy-compliant simulated response."
-        )
-        return ProviderResponse(
-            text=text,
-            provider=selection.provider,
-            model=selection.model,
-            usage=usage,
-            raw={"simulated": True, "source": selection.source},
-        )
 
     def _optimize_selection_if_needed(
         self,

@@ -99,7 +99,7 @@ class CostOptimizerAgent(BaseAgent):
     Example:
         >>> from archon.config import ArchonConfig
         >>> from archon.providers import ProviderRouter
-        >>> router = ProviderRouter(config=ArchonConfig(), live_mode=False)
+        >>> router = ProviderRouter(config=ArchonConfig())
         >>> optimizer = CostOptimizerAgent(router)
         >>> optimizer.observe_selection("task-1", role="primary", provider="openai", model="o3", cost_usd=0.3)
         >>> optimizer.record_task_feedback("task-1", quality_score=0.92)
