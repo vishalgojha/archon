@@ -1,4 +1,4 @@
-"""India-specific skill implementations for ARCHON."""
+"""India-specific skill implementations for ARCHON - Next 5 skills."""
 
 from __future__ import annotations
 
@@ -11,457 +11,477 @@ from archon.providers import ProviderRouter
 from archon.skills.skill_registry import SkillDefinition, SkillRegistry
 
 
-class KisanAdvisoryAgent(BaseAgent):
-    """Agriculture advisory agent for Indian farmers."""
+class ONDCSellerAgent(BaseAgent):
+    """ONDC seller onboarding and operations agent."""
 
-    role = "kisan-advisory"
-
-    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
-        super().__init__(provider_router)
-        self.config = config
-        self.language_map = {
-            "hindi": "hi",
-            "marathi": "mr",
-            "punjabi": "pa",
-            "tamil": "ta",
-            "telugu": "te",
-            "kannada": "kn",
-            "gujarati": "gu",
-            "bengali": "bn",
-        }
-
-    async def execute(self, context: dict[str, Any]) -> str:
-        """Execute kisan advisory task."""
-        region = context.get("region", "unknown")
-        season = context.get("season", "kharif")
-        language = context.get("language", "hindi")
-        
-        prompt = self._build_advisory_prompt(region, season, context)
-        
-        # Use pipeline mode for structured analysis
-        response = await self.provider_router.invoke(
-            role="primary",
-            prompt=prompt,
-            system_prompt=self._get_system_prompt(language),
-        )
-        
-        return self._format_response(response.content, context)
-
-    def _build_advisory_prompt(
-        self,
-        region: str,
-        season: str,
-        context: dict[str, Any],
-    ) -> str:
-        """Build prompt for crop advisory."""
-        soil = context.get("soil_type", "not specified")
-        size = context.get("land_size_acres", "not specified")
-        
-        return f"""किसान सलाह प्रणाली - Kisan Advisory System
-
-Region: {region}
-Season: {season}
-Soil Type: {soil}
-Land Size: {size} acres
-
-Provide:
-1. Crop recommendations for current season
-2. Weather advisory (check IMD forecasts)
-3. Mandi price trends for recommended crops
-4. Fertilizer and pesticide recommendations
-5. Government scheme eligibility (PM-KISAN, soil health card)
-
-Respond in the language detected from context."""
-
-    def _get_system_prompt(self, language: str) -> str:
-        """Get system prompt in regional language."""
-        prompts = {
-            "hindi": "आप एक भारतीय कृषि विशेषज्ञ हैं। किसानों को व्यावहारिक सलाह दें।",
-            "marathi": "आप एक भारतीय कृषि विशेषज्ञ आहात. शेतकऱ्यांना व्यावहारिक सल्ला द्या.",
-            "tamil": "நீர் ஒரு இந்திய வேளாண் நிபுணர். விவசாயிகளுக்கு நடைமுறை ஆலோசனை வழங்குங்கள்.",
-        }
-        return prompts.get(language, "You are an Indian agriculture expert. Provide practical advice to farmers.")
-
-    def _format_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format response with actionable items."""
-        region = context.get("region", "region")
-        return f"""🌾 किसान सलाह - {region}
-
-{content}
-
-⚠️ Disclaimer: Consult local agriculture officer for final decisions.
-📞 Kisan Call Centre: 1800-180-1551"""
-
-
-class HealthcareTriageAgent(BaseAgent):
-    """Healthcare triage agent for rural India."""
-
-    role = "healthcare-triage"
+    role = "ondc-seller-assistant"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.emergency_keywords = [
-            "chest pain", "breathing difficulty", "unconscious",
-            "severe bleeding", "stroke", "heart attack"
+        self.onboarding_steps = [
+            "1. Udyam Registration (MSME)",
+            "2. GST Registration",
+            "3. Choose ONDC Seller App",
+            "4. Complete KYC",
+            "5. Product Catalog Upload",
+            "6. Logistics Partner Selection",
+            "7. Go Live",
         ]
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute healthcare triage task."""
-        symptoms = context.get("symptoms", "")
-        duration = context.get("duration_days", "unknown")
-        location = context.get("location", "rural")
-        
-        # Check for emergency
-        if self._is_emergency(symptoms):
-            return self._emergency_response()
-        
-        prompt = self._build_triage_prompt(symptoms, duration, location, context)
-        
-        # Use single mode for fast response
-        response = await self.provider_router.invoke(
-            role="fast",
-            prompt=prompt,
-            system_prompt=self._get_triage_system_prompt(),
-        )
-        
-        return self._format_triage_response(response.content, context)
-
-    def _is_emergency(self, symptoms: str) -> bool:
-        """Check if symptoms indicate emergency."""
-        symptoms_lower = symptoms.lower()
-        return any(kw in symptoms_lower for kw in self.emergency_keywords)
-
-    def _emergency_response(self) -> str:
-        """Return emergency instructions."""
-        return """🚨 MEDICAL EMERGENCY DETECTED
-
-Immediate Actions:
-1. Call 108 Ambulance immediately
-2. Do not wait for online consultation
-3. Go to nearest emergency facility
-
-Emergency Numbers:
-- 108: Ambulance (Free)
-- 102: Patient Transport
-- 112: Emergency Response
-
-⚠️ This is not a diagnosis. Seek immediate medical attention."""
-
-    def _build_triage_prompt(
-        self,
-        symptoms: str,
-        duration: str,
-        location: str,
-        context: dict[str, Any],
-    ) -> str:
-        """Build triage prompt."""
-        age = context.get("patient_age", "unknown")
-        conditions = context.get("existing_conditions", "none")
-        
-        return f"""Healthcare Triage Assessment
-
-Symptoms: {symptoms}
-Duration: {duration} days
-Location: {location}
-Patient Age: {age}
-Existing Conditions: {conditions}
-
-Provide:
-1. Triage level (emergency/urgent/routine)
-2. Facility recommendation (PHC/CHC/District Hospital)
-3. Immediate actions
-4. Ayushman Bharat PM-JAY eligibility
-5. Warning signs to watch
-
-Be conservative in triage assessment."""
-
-    def _get_triage_system_prompt(self) -> str:
-        """Get triage system prompt."""
-        return """You are a healthcare triage assistant for rural India. 
-Always prioritize patient safety. When in doubt, recommend higher level of care.
-Include disclaimers. This is not a diagnosis."""
-
-    def _format_triage_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format triage response."""
-        location = context.get("location", "location")
-        return f"""🏥 Healthcare Triage - {location}
-
-{content}
-
-⚠️ Disclaimer: This is not a diagnosis. Consult a qualified healthcare professional.
-📞 National Health Portal: 1800-116-666"""
-
-
-class ScholarshipApplicationAgent(BaseAgent):
-    """Scholarship application guidance agent."""
-
-    role = "scholarship-application"
-
-    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
-        super().__init__(provider_router)
-        self.config = config
-        self.schemes = {
-            "SC": ["Post-Matric SC", "Pre-Matric SC", "Top Class Education"],
-            "ST": ["Post-Matric ST", "Pre-Matric ST", "Top Class Education"],
-            "OBC": ["Post-Matric OBC", "Pre-Matric OBC"],
-            "EWS": ["EWS Scholarship", "Post-Matric EWS"],
-            "General": ["Merit-cum-Means", "Central Scheme"],
-        }
-
-    async def execute(self, context: dict[str, Any]) -> str:
-        """Execute scholarship application guidance."""
-        category = context.get("student_category", "General")
-        education_level = context.get("education_level", "unknown")
+        """Execute ONDC seller assistance."""
+        business_type = context.get("business_type", "kirana")
         state = context.get("state", "unknown")
-        income = context.get("family_income", "not specified")
+        gst = context.get("gst_number", "not provided")
         
-        prompt = self._build_scholarship_prompt(category, education_level, state, income)
+        prompt = self._build_onboarding_prompt(business_type, state, gst, context)
         
-        # Use pipeline mode for structured guidance
+        # Use pipeline mode for structured onboarding
         response = await self.provider_router.invoke(
             role="primary",
             prompt=prompt,
-            system_prompt=self._get_scholarship_system_prompt(),
+            system_prompt=self._get_onboarding_system_prompt(),
         )
         
-        return self._format_scholarship_response(response.content, context)
+        return self._format_onboarding_response(response.content, context)
 
-    def _build_scholarship_prompt(
-        self,
-        category: str,
-        education_level: str,
-        state: str,
-        income: str,
-    ) -> str:
-        """Build scholarship guidance prompt."""
-        return f"""Scholarship Application Assistant
-
-Student Category: {category}
-Education Level: {education_level}
-State: {state}
-Family Income: {income}
-
-Provide:
-1. Eligible schemes (National + State)
-2. Eligibility criteria for each
-3. Document checklist
-4. Application steps (NSP portal)
-5. Deadlines
-6. Renewal requirements
-7. Contact information
-
-Include links to official portals."""
-
-    def _get_scholarship_system_prompt(self) -> str:
-        """Get scholarship system prompt."""
-        return """You are a scholarship application assistant for Indian students.
-Provide accurate, up-to-date information. Always link to official portals.
-Do not store personal student data."""
-
-    def _format_scholarship_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format scholarship response."""
-        category = context.get("student_category", "category")
-        return f"""📚 Scholarship Guidance - {category}
-
-{content}
-
-🔗 National Scholarship Portal: https://scholarships.gov.in
-⚠️ Verify all information on official portals."""
-
-
-class MSMELoanAgent(BaseAgent):
-    """MSME loan assistance agent."""
-
-    role = "msme-loan-assistant"
-
-    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
-        super().__init__(provider_router)
-        self.config = config
-        self.mudra_categories = {
-            "Shishu": "Up to ₹50,000",
-            "Kishore": "₹50,000 to ₹5 Lakh",
-            "Tarun": "₹5 Lakh to ₹10 Lakh",
-        }
-
-    async def execute(self, context: dict[str, Any]) -> str:
-        """Execute MSME loan assistance."""
-        business_type = context.get("business_type", "unknown")
-        loan_amount = context.get("loan_amount_requested", 0)
-        state = context.get("state", "unknown")
-        turnover = context.get("annual_turnover", "not specified")
-        
-        prompt = self._build_loan_prompt(business_type, loan_amount, state, turnover)
-        
-        # Use pipeline mode for multi-stage analysis
-        response = await self.provider_router.invoke(
-            role="primary",
-            prompt=prompt,
-            system_prompt=self._get_loan_system_prompt(),
-        )
-        
-        return self._format_loan_response(response.content, context)
-
-    def _build_loan_prompt(
+    def _build_onboarding_prompt(
         self,
         business_type: str,
-        loan_amount: float,
         state: str,
-        turnover: str,
+        gst: str,
+        context: dict[str, Any],
     ) -> str:
-        """Build loan assistance prompt."""
-        return f"""MSME Loan Assistant
+        """Build ONDC onboarding prompt."""
+        category = context.get("product_category", "general")
+        pin_code = context.get("pin_code", "unknown")
+        
+        return f"""ONDC Seller Assistant
 
 Business Type: {business_type}
-Loan Amount Requested: ₹{loan_amount:,}
 State: {state}
-Annual Turnover: {turnover}
+GST Number: {gst}
+Product Category: {category}
+Pin Code: {pin_code}
 
 Provide:
-1. Eligible schemes (MUDRA, CGTMSE, bank loans)
-2. MUDRA category (Shishu/Kishore/Tarun)
-3. Interest rate range
-4. Document checklist (Udyam, GST, financials)
-5. Lender recommendations
-6. Subsidy details (if applicable)
-7. Application timeline
-8. PMEGP eligibility
+1. ONDC onboarding steps
+2. Document checklist (Udyam, GST, bank)
+3. Seller app recommendations for {state}
+4. Product listing optimization tips
+5. Logistics partner options
+6. Commission structure
+7. Customer support templates
+8. GST invoice generation guide
 
-Include calculations where applicable."""
+Include links to ONDC resources."""
 
-    def _get_loan_system_prompt(self) -> str:
-        """Get loan system prompt."""
-        return """You are an MSME loan assistant for Indian businesses.
-Provide accurate scheme information. Include disclaimers about bank approval.
-Never guarantee loan approval."""
+    def _get_onboarding_system_prompt(self) -> str:
+        """Get ONDC system prompt."""
+        return """You are an ONDC seller assistant for Indian businesses.
+Provide practical, actionable guidance. Link to official ONDC resources.
+Help small sellers and kirana stores go digital."""
 
-    def _format_loan_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format loan response."""
+    def _format_onboarding_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format ONDC response."""
         business = context.get("business_type", "business")
-        amount = context.get("loan_amount_requested", 0)
-        return f"""💰 MSME Loan Assistant - {business}
-
-Requested Amount: ₹{amount:,}
+        state = context.get("state", "state")
+        return f"""🛒 ONDC Seller Assistant - {business} ({state})
 
 {content}
 
-🔗 Udyam Registration: https://udyamregistration.gov.in
-⚠️ Final approval subject to bank verification."""
+🔗 ONDC Network: https://ondc.org
+📞 Seller App Support: Check your chosen app
+⚠️ Commission rates vary by platform"""
 
 
-class GovtFormAgent(BaseAgent):
-    """Government form filling assistance agent."""
+class GSTComplianceAgent(BaseAgent):
+    """GST compliance and filing assistance agent."""
 
-    role = "govt-form-assistant"
+    role = "gst-compliance"
 
     def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
         super().__init__(provider_router)
         self.config = config
-        self.form_portals = {
-            "Aadhaar": "https://myaadhaar.uidai.gov.in",
-            "PAN": "https://www.tin-nsdl.com",
-            "Passport": "https://passportindia.gov.in",
-            "Voter ID": "https://voters.eci.gov.in",
-            "Driving License": "https://parivahan.gov.in",
+        self.return_types = {
+            "GSTR-1": "Outward supplies (monthly/quarterly)",
+            "GSTR-3B": "Summary return (monthly)",
+            "GSTR-9": "Annual return",
+            "GSTR-4": "Composition scheme annual",
         }
 
     async def execute(self, context: dict[str, Any]) -> str:
-        """Execute government form assistance."""
-        form_type = context.get("form_type", "unknown")
-        action = context.get("action_type", "new")
-        state = context.get("state", "pan-India")
+        """Execute GST compliance assistance."""
+        gstin = context.get("gstin", "not provided")
+        return_type = context.get("return_type", "GSTR-3B")
+        period = context.get("tax_period", "current")
+        scheme = context.get("scheme_type", "regular")
         
-        prompt = self._build_form_prompt(form_type, action, state)
+        prompt = self._build_gst_prompt(gstin, return_type, period, scheme, context)
         
-        # Use single mode for quick guidance
+        # Use pipeline mode for structured compliance
         response = await self.provider_router.invoke(
-            role="fast",
+            role="primary",
             prompt=prompt,
-            system_prompt=self._get_form_system_prompt(),
+            system_prompt=self._get_gst_system_prompt(),
         )
         
-        return self._format_form_response(response.content, context)
+        return self._format_gst_response(response.content, context)
 
-    def _build_form_prompt(
+    def _build_gst_prompt(
         self,
-        form_type: str,
-        action: str,
-        state: str,
+        gstin: str,
+        return_type: str,
+        period: str,
+        scheme: str,
+        context: dict[str, Any],
     ) -> str:
-        """Build form assistance prompt."""
-        return f"""Government Form Assistant
+        """Build GST compliance prompt."""
+        turnover = context.get("turnover", "not specified")
+        sector = context.get("sector", "general")
+        
+        return f"""GST Compliance Assistant
 
-Form Type: {form_type}
-Action: {action}
-State: {state}
+GSTIN: {gstin}
+Return Type: {return_type}
+Tax Period: {period}
+Scheme: {scheme}
+Turnover: {turnover}
+Sector: {sector}
 
 Provide:
-1. Official portal URL
-2. Document checklist
-3. Step-by-step guide
-4. Fees applicable
-5. Processing time
-6. Tracking instructions
-7. Helpdesk contact
+1. Eligibility check for {return_type}
+2. Form selection guidance
+3. Calculation worksheet (CGST, SGST, IGST)
+4. Document checklist
+5. Filing steps on GST portal
+6. Due dates and penalties
+7. ITC reconciliation guide
+8. HSN classification tips
 
-Use simple language. Avoid bureaucratic jargon."""
+Include tables for calculations."""
 
-    def _get_form_system_prompt(self) -> str:
-        """Get form system prompt."""
-        return """You are a government form assistant for Indian citizens.
-Use simple, clear language. Always link to official portals.
-Do not collect personal data. Include disclaimers."""
+    def _get_gst_system_prompt(self) -> str:
+        """Get GST system prompt."""
+        return """You are a GST compliance assistant for Indian businesses.
+Provide accurate filing guidance. Always recommend CA consultation for complex cases.
+Include penalty information for delays."""
 
-    def _format_form_response(self, content: str, context: dict[str, Any]) -> str:
-        """Format form response."""
-        form = context.get("form_type", "form")
-        action = context.get("action_type", "application")
-        portal = self.form_portals.get(form, "official portal")
-        return f"""📋 {form} {action.title()} Guide
+    def _format_gst_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format GST response."""
+        return_type = context.get("return_type", "return")
+        period = context.get("tax_period", "period")
+        return f"""📊 GST Compliance - {return_type} ({period})
 
 {content}
 
-🔗 Official Portal: {portal}
-📞 UMANG App: Available for most services
-⚠️ Verify information on official portal."""
+🔗 GST Portal: https://www.gst.gov.in
+📞 GST Helpdesk: 0124-4688999
+⚠️ Consult CA for complex transactions"""
 
 
-def register_india_skills(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
-    """Register all India-specific skills."""
+class PropertyVerificationAgent(BaseAgent):
+    """Property verification and real estate assistance agent."""
+
+    role = "property-verification"
+
+    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
+        super().__init__(provider_router)
+        self.config = config
+        self.doc_checklist = [
+            "Title Deed",
+            "Encumbrance Certificate (13 years)",
+            "Property Tax Receipts",
+            "Approved Building Plan",
+            "Occupancy Certificate",
+            "RERA Registration",
+            "Sale Agreement",
+            "Mother Deed",
+        ]
+
+    async def execute(self, context: dict[str, Any]) -> str:
+        """Execute property verification assistance."""
+        property_type = context.get("property_type", "residential")
+        location = context.get("location", "unknown")
+        transaction = context.get("transaction_type", "buy")
+        value = context.get("property_value", "not specified")
+        
+        prompt = self._build_property_prompt(property_type, location, transaction, value, context)
+        
+        # Use debate mode for multi-source verification
+        response = await self.provider_router.invoke(
+            role="primary",
+            prompt=prompt,
+            system_prompt=self._get_property_system_prompt(),
+        )
+        
+        return self._format_property_response(response.content, context)
+
+    def _build_property_prompt(
+        self,
+        property_type: str,
+        location: str,
+        transaction: str,
+        value: str,
+        context: dict[str, Any],
+    ) -> str:
+        """Build property verification prompt."""
+        state = context.get("state", "unknown")
+        
+        return f"""Property Verification Assistant
+
+Property Type: {property_type}
+Location: {location}
+Transaction: {transaction}
+Value: ₹{value}
+State: {state}
+
+Provide:
+1. Title verification steps
+2. RERA compliance check
+3. Document checklist
+4. Encumbrance certificate guide
+5. Agreement template key clauses
+6. Home loan comparison
+7. Registration process
+8. Stamp duty & registration fee
+9. Property tax calculation
+10. Red flags to watch
+
+Include state-specific requirements."""
+
+    def _get_property_system_prompt(self) -> str:
+        """Get property system prompt."""
+        return """You are a property verification assistant for Indian real estate.
+Always recommend legal verification. Highlight red flags.
+Include RERA and land record portal links."""
+
+    def _format_property_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format property response."""
+        location = context.get("location", "location")
+        prop_type = context.get("property_type", "property")
+        return f"""🏠 Property Verification - {prop_type} ({location})
+
+{content}
+
+🔗 RERA Portal: Check state RERA website
+📞 Legal Consultation: Recommended before transaction
+⚠️ Verify with registered lawyer"""
+
+
+class HRRecruitmentAgent(BaseAgent):
+    """HR recruitment and compliance assistance agent."""
+
+    role = "hr-recruitment"
+
+    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
+        super().__init__(provider_router)
+        self.config = config
+        self.salary_benchmarks = {
+            "entry_level": "₹3-6 LPA",
+            "mid_level": "₹6-15 LPA",
+            "senior_level": "₹15-40 LPA",
+            "leadership": "₹40L+ LPA",
+        }
+
+    async def execute(self, context: dict[str, Any]) -> str:
+        """Execute HR recruitment assistance."""
+        job_role = context.get("job_role", "unknown")
+        location = context.get("location", "pan-India")
+        experience = context.get("experience_range", "0-2 years")
+        industry = context.get("industry", "IT")
+        
+        prompt = self._build_hr_prompt(job_role, location, experience, industry, context)
+        
+        # Use pipeline mode for structured recruitment
+        response = await self.provider_router.invoke(
+            role="primary",
+            prompt=prompt,
+            system_prompt=self._get_hr_system_prompt(),
+        )
+        
+        return self._format_hr_response(response.content, context)
+
+    def _build_hr_prompt(
+        self,
+        job_role: str,
+        location: str,
+        experience: str,
+        industry: str,
+        context: dict[str, Any],
+    ) -> str:
+        """Build HR recruitment prompt."""
+        salary_range = context.get("salary_range", "not specified")
+        company_size = context.get("company_size", "SMB")
+        
+        return f"""HR Recruitment Assistant
+
+Job Role: {job_role}
+Location: {location}
+Experience: {experience}
+Industry: {industry}
+Salary Range: {salary_range}
+Company Size: {company_size}
+
+Provide:
+1. Candidate match scoring criteria
+2. Education equivalence (Indian universities)
+3. Experience validation tips
+4. Salary benchmark for {location}
+5. Notice period expectations
+6. Compliance checklist (PF, ESI, labor laws)
+7. Offer letter template
+8. Background verification steps
+9. Onboarding checklist
+
+Include state-specific labor law compliance."""
+
+    def _get_hr_system_prompt(self) -> str:
+        """Get HR system prompt."""
+        return """You are an HR recruitment assistant for Indian companies.
+Provide fair, compliant hiring guidance. Include labor law compliance.
+Recommend background verification for all hires."""
+
+    def _format_hr_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format HR response."""
+        role = context.get("job_role", "role")
+        location = context.get("location", "location")
+        return f"""💼 HR Recruitment - {role} ({location})
+
+{content}
+
+🔗 Job Portals: Naukri, LinkedIn, Indeed
+📞 Labor Dept: Check state regulations
+⚠️ Verify education and employment history"""
+
+
+class UPIFraudDetectionAgent(BaseAgent):
+    """UPI fraud detection and prevention agent."""
+
+    role = "upi-fraud-detection"
+
+    def __init__(self, provider_router: ProviderRouter, config: ArchonConfig) -> None:
+        super().__init__(provider_router)
+        self.config = config
+        self.fraud_indicators = [
+            "Multiple small transactions in short time",
+            "New merchant with large amount",
+            "Unusual time (late night) transactions",
+            "Phishing link clicks",
+            "OTP sharing requests",
+            "Refund scams",
+            "Fake customer care numbers",
+        ]
+
+    async def execute(self, context: dict[str, Any]) -> str:
+        """Execute UPI fraud detection assistance."""
+        tx_count = context.get("transaction_count", 0)
+        amount_range = context.get("amount_range", "unknown")
+        period = context.get("time_period", "24 hours")
+        merchant_vpa = context.get("merchant_vpa", "not provided")
+        
+        prompt = self._build_fraud_prompt(tx_count, amount_range, period, merchant_vpa, context)
+        
+        # Use debate mode for multi-perspective analysis
+        response = await self.provider_router.invoke(
+            role="primary",
+            prompt=prompt,
+            system_prompt=self._get_fraud_system_prompt(),
+        )
+        
+        return self._format_fraud_response(response.content, context)
+
+    def _build_fraud_prompt(
+        self,
+        tx_count: int,
+        amount_range: str,
+        period: str,
+        merchant_vpa: str,
+        context: dict[str, Any],
+    ) -> str:
+        """Build fraud detection prompt."""
+        bank = context.get("bank_name", "unknown")
+        tx_type = context.get("transaction_type", "P2M")
+        
+        return f"""UPI Fraud Detection Assistant
+
+Transaction Count: {tx_count}
+Amount Range: {amount_range}
+Time Period: {period}
+Merchant VPA: {merchant_vpa}
+Bank: {bank}
+Transaction Type: {tx_type}
+
+Provide:
+1. Fraud risk score (0-100)
+2. Risk indicators detected
+3. Merchant verification status
+4. Immediate actions required
+5. Reporting steps (bank, cybercrime)
+6. Prevention tips
+7. Bank fraud helpline
+8. Cybercrime portal link
+
+Be conservative in risk assessment."""
+
+    def _get_fraud_system_prompt(self) -> str:
+        """Get fraud detection system prompt."""
+        return """You are a UPI fraud detection assistant for Indian users.
+Prioritize user safety. When in doubt, recommend reporting to bank.
+Include emergency contact numbers."""
+
+    def _format_fraud_response(self, content: str, context: dict[str, Any]) -> str:
+        """Format fraud response."""
+        risk_level = "HIGH" if context.get("transaction_count", 0) > 10 else "MEDIUM"
+        return f"""⚠️ UPI Fraud Alert - Risk Level: {risk_level}
+
+{content}
+
+🚨 Immediate Actions:
+- Contact bank: {context.get('bank_name', 'your bank')}
+- Cybercrime Portal: https://cybercrime.gov.in
+- National Helpline: 1930
+
+⚠️ Report immediately for unauthorized transactions"""
+
+
+def register_india_skills_batch2(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    """Register India-specific skills batch 2 (skills 6-10)."""
     skills = [
         SkillDefinition(
-            name="kisan-advisory",
+            name="ondc-seller-assistant",
             version="1.0.0",
             provider_preference="openai",
             cost_tier="low",
             state="active",
         ),
         SkillDefinition(
-            name="healthcare-triage",
+            name="gst-compliance",
             version="1.0.0",
             provider_preference="anthropic",
             cost_tier="standard",
             state="active",
         ),
         SkillDefinition(
-            name="scholarship-application",
+            name="property-verification",
             version="1.0.0",
-            provider_preference="openai",
-            cost_tier="low",
+            provider_preference="anthropic",
+            cost_tier="standard",
             state="active",
         ),
         SkillDefinition(
-            name="msme-loan-assistant",
+            name="hr-recruitment",
             version="1.0.0",
             provider_preference="openai",
             cost_tier="standard",
             state="active",
         ),
         SkillDefinition(
-            name="govt-form-assistant",
+            name="upi-fraud-detection",
             version="1.0.0",
-            provider_preference="openai",
-            cost_tier="low",
+            provider_preference="anthropic",
+            cost_tier="standard",
             state="active",
         ),
     ]
