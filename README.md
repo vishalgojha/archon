@@ -55,8 +55,8 @@ The installer:
 - refreshes the current PowerShell session when run via `install.ps1`
 
 Open a new shell after installation if you used `install.cmd` or `install.sh`; `install.ps1` updates the current PowerShell session automatically.
-You can re-run the same flow later with `archon install`.
-Remove the dedicated runtime with `archon uninstall --yes`.
+You can re-run the same flow later by re-running the installer script from this repo.
+To remove the dedicated runtime, delete the install root shown above and remove the Archon `bin` directory from your user PATH (the installer adds it).
 
 Repo-local virtualenv (no global install). Use this if you want to run from the repo only:
 
@@ -168,7 +168,7 @@ Useful entry points:
 - `archon agents debate` executes locally without going through HTTP.
 - Some drawers intentionally expose staged placeholder commands before the full operator flow is wired.
 
-6. Run tasks with explicit orchestration mode (debate-only today):
+Optional: Run tasks with explicit orchestration mode (debate-only today):
 
 ```json
 POST /v1/tasks
