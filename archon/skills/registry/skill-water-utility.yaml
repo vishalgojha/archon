@@ -1,0 +1,128 @@
+# ARCHON Skill: Water & Utility Services Assistant
+# Water connections, bills, complaints, and utility guidance for India
+
+name: water-utility
+version: 1
+description: >
+  Assists citizens in water connection applications, bill payment, complaint
+  filing, and utility service guidance. Supports municipal water supply,
+  sewerage, electricity, and gas connections across Indian states.
+
+category: utility_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+  - odia
+
+provider_preference: openai  # Good citizen service guidance
+cost_tier: low  # Essential services, mass market
+state: active
+
+triggers:
+  keywords:
+    - water
+    - connection
+    - bill
+    - complaint
+    - sewerage
+    - electricity
+    - gas
+    - utility
+    - municipal
+    - corporation
+    - Jal
+    - supply
+    - leakage
+    - पाणी
+  patterns:
+    - "water connection"
+    - "pay water bill"
+    - "file complaint"
+    - "sewerage connection"
+    - "electricity connection"
+    - "gas connection"
+    - "supply issue"
+    - "meter reading"
+
+execution_config:
+  default_mode: single  # Quick service guidance
+  fallback_mode: pipeline
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required:
+    - utility_type  # water/sewerage/electricity/gas
+    - service_request  # new_connection/bill/complaint
+    - state
+    - city
+  optional:
+    - consumer_number
+    - language
+    - connection_type  # domestic/commercial
+
+output_format:
+  structure:
+    - service_overview
+    - eligibility_check
+    - document_checklist
+    - application_process
+    - fees_applicable
+    - timeline_estimate
+    - bill_payment_options
+    - complaint_process
+    - escalation_path
+    - contact_information
+  language: from context
+  include_links: true
+  include_checklists: true
+
+compliance:
+  data_sources:
+    - Jal Shakti Ministry
+    - State water boards
+    - Municipal corporations
+    - Electricity distribution companies
+    - Gas distribution networks
+  disclaimers:
+    - "Fees subject to state/municipal regulations"
+    - "Timeline subject to department processing"
+    - "Verify on official utility portal"
+
+metrics:
+  success_criteria:
+    - correct_service_guide
+    - complete_document_list
+    - accurate_fee_estimate
+  tracking:
+    - utility_type
+    - service_request
+    - state
+    - city
+    - resolution_status
+
+risk_management:
+  service_issues:
+    - prolonged_non_supply
+    - contaminated_water
+    - billing_disputes
+    - illegal_connections
+  escalation_required: true
+  grievance_officer_recommended: >
+    For unresolved complaints or supply > 7 days
+
+integration_points:
+  - Jal Shakti portal (jalshakti-dowr.gov.in)
+  - State water board portals
+  - Municipal corporation portals
+  - Electricity discom portals
+  - Gas provider portals (Indane, Bharat Gas)
+  - CPGRAMS grievance portal

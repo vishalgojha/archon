@@ -1,0 +1,125 @@
+# ARCHON Skill: Telecom Services Assistant
+# Mobile plan selection, bill disputes, porting, and complaint resolution
+
+name: telecom-assistant
+version: 1
+description: >
+  Assists telecom consumers in plan selection, bill dispute resolution,
+  mobile number portability (MNP), complaint filing, and tariff comparison.
+  Supports prepaid, postpaid, broadband, and DTH services.
+
+category: telecom
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+  - odia
+
+provider_preference: openai  # Good consumer guidance
+cost_tier: low  # Mass market (1.2B users)
+state: active
+
+triggers:
+  keywords:
+    - mobile
+    - plan
+    - recharge
+    - bill
+    - complaint
+    - porting
+    - MNP
+    - broadband
+    - DTH
+    - data
+    - calls
+    - network
+    - TRAI
+    - टेलीकॉम
+  patterns:
+    - "best plan for"
+    - "bill dispute"
+    - "number portability"
+    - "file complaint"
+    - "tariff comparison"
+    - "network issue"
+    - "broadband plan"
+    - "DTH recharge"
+
+execution_config:
+  default_mode: single  # Quick consumer guidance
+  fallback_mode: pipeline
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required:
+    - service_type  # prepaid/postpaid/broadband/DTH
+    - current_operator
+    - state
+  optional:
+    - monthly_usage
+    - budget_range
+    - language
+    - complaint_type
+
+output_format:
+  structure:
+    - plan_recommendations
+    - tariff_comparison
+    - bill_analysis
+    - dispute_resolution_steps
+    - porting_process
+    - complaint_filing
+    - escalation_path
+    - TRAI_guidelines
+    - consumer_rights
+  language: from context
+  include_tables: true
+  include_links: true
+
+compliance:
+  data_sources:
+    - TRAI guidelines
+    - Operator tariffs
+    - Consumer protection guidelines
+    - Telecom complaint portal
+    - MNP guidelines
+  disclaimers:
+    - "Tariffs subject to operator changes"
+    - "Porting subject to eligibility"
+    - "Bill disputes subject to operator policy"
+
+metrics:
+  success_criteria:
+    - accurate_plan_match
+    - clear_dispute_steps
+    - comprehensive_comparison
+  tracking:
+    - service_type
+    - operator
+    - complaint_type
+    - resolution_status
+
+risk_management:
+  consumer_issues:
+    - unexpected_charges
+    - service_deterioration
+    - hidden_terms
+    - auto_renewal_without_consent
+  escalation_required: true
+  trao_complaint_recommended: >
+    For unresolved operator complaints
+
+integration_points:
+  - Operator APIs (Jio, Airtel, Vi, BSNL)
+  - TRAI complaint portal
+  - MNP system
+  - Broadband provider portals
+  - DTH platforms

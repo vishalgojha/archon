@@ -1,0 +1,120 @@
+# ARCHON Skill: Export Compliance Assistant
+# Export documentation, customs clearance, and trade compliance for Indian exporters
+
+name: export-compliance
+version: 1
+description: >
+  Assists Indian exporters in navigating export documentation, customs clearance,
+  DGFT compliance, FTP guidelines, and destination country requirements. Supports
+  MSME exporters, manufacturers, and service exporters.
+
+category: trade_compliance
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: anthropic  # Strong trade compliance reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - export
+    - customs
+    - DGFT
+    - IEC
+    - shipping bill
+    - drawback
+    - FTP
+    - certificate of origin
+    - निर्यात
+    - customs duty
+  patterns:
+    - "export documentation"
+    - "IEC code"
+    - "customs clearance"
+    - "export incentive"
+    - "drawback claim"
+    - "certificate of origin"
+    - "destination country"
+    - "HS code"
+
+execution_config:
+  default_mode: debate  # Multi-regulation analysis
+  fallback_mode: pipeline
+  max_budget_usd: 2.00
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - product_type
+    - destination_country
+    - export_value
+  optional:
+    - iec_code
+    - state
+    - exporter_type  # MSME/large
+    - language
+    - incoterms
+
+output_format:
+  structure:
+    - eligibility_check
+    - document_checklist
+    - hs_code_classification
+    - customs_procedures
+    - incentive_schemes
+    - destination_requirements
+    - timeline_estimate
+    - cost_breakdown
+  language: from context
+  include_tables: true
+  include_calculations: true
+
+compliance:
+  data_sources:
+    - DGFT (dgft.gov.in)
+    - Customs Icegate portal
+    - Foreign Trade Policy
+    - RBI export guidelines
+    - Destination country customs
+  disclaimers:
+    - "Verify HS code with customs broker"
+    - "Destination requirements subject to change"
+    - "Incentive schemes subject to eligibility"
+
+metrics:
+  success_criteria:
+    - complete_document_list
+    - accurate_hs_classification
+    - incentive_scheme_match
+  tracking:
+    - product_type
+    - destination
+    - exporter_type
+    - clearance_time
+
+risk_management:
+  compliance_flags:
+    - restricted_items
+    - dual_use_goods
+    - sanction_country
+    - undervaluation
+    - misclassification
+  escalation_required: true
+  customs_broker_recommended: >
+    For shipment value > 50L or restricted items
+
+integration_points:
+  - Icegate customs portal
+  - DGFT APIs
+  - RBI export reporting
+  - EPCG scheme portal
+  - Drawback portal

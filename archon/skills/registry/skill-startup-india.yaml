@@ -1,0 +1,121 @@
+# ARCHON Skill: Startup India Assistant
+# Startup registration, DPIIT recognition, and incentive guidance
+
+name: startup-india
+version: 1
+description: >
+  Assists startups in DPIIT recognition, Startup India benefits, tax exemptions,
+  IPR support, and funding schemes. Supports tech, manufacturing, and service
+  startups across India.
+
+category: startup_entrepreneurship
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: openai  # Good startup ecosystem knowledge
+cost_tier: low  # Early-stage startups budget-conscious
+state: active
+
+triggers:
+  keywords:
+    - startup
+    - DPIIT
+    - recognition
+    - incorporation
+    - tax exemption
+    - IPR
+    - patent
+    - funding
+    - incubator
+    - accelerator
+    - स्टार्टअप
+  patterns:
+    - "register startup"
+    - "DPIIT recognition"
+    - "tax holiday"
+    - "patent filing"
+    - "startup funding"
+    - "incubator support"
+    - "angel tax"
+    - "80IAC deduction"
+
+execution_config:
+  default_mode: pipeline  # Multi-stage: registration→benefits→funding
+  fallback_mode: single
+  max_budget_usd: 0.80
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - business_type  # tech/manufacturing/service
+    - incorporation_date
+    - state
+  optional:
+    - turnover
+    - team_size
+    - sector
+    - language
+    - funding_stage
+
+output_format:
+  structure:
+    - eligibility_check
+    - registration_steps
+    - document_checklist
+    - tax_benefits
+    - ipr_support
+    - funding_options
+    - incubator_recommendations
+    - compliance_requirements
+    - timeline_estimate
+  language: from context
+  include_links: true
+  include_checklists: true
+
+compliance:
+  data_sources:
+    - Startup India portal (startupindia.gov.in)
+    - DPIIT guidelines
+    - Income Tax Act (80IAC)
+    - Companies Act 2013
+    - IPR office (CGPDTM)
+  disclaimers:
+    - "Turnover limit: 100Cr for 10 years from incorporation"
+    - "Tax exemption subject to DPIIT recognition"
+    - "Verify eligibility on Startup India portal"
+
+metrics:
+  success_criteria:
+    - accurate_eligibility
+    - complete_registration_guide
+    - comprehensive_benefit_list
+  tracking:
+    - sector
+    - state
+    - recognition_status
+    - funding_raised
+
+risk_management:
+  eligibility_flags:
+    - turnover_exceeds_100cr
+    - entity_type_not_company
+    - business_age_over_10_years
+    - not_innovative_nature
+  escalation_required: false
+  ca_consultation_recommended: >
+    For tax planning and 80IAC claims
+
+integration_points:
+  - Startup India portal API
+  - DPIIT recognition system
+  - IPR filing (CGPDTM)
+  - Angel tax reporting
+  - Incubator networks (T-Hub, CIIE, etc.)

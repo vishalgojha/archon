@@ -1,0 +1,127 @@
+# ARCHON Skill: Insurance Advisor
+# Insurance recommendation, claims assistance, and policy guidance for India
+
+name: insurance-advisor
+version: 1
+description: >
+  Assists Indians in selecting insurance policies (health, life, motor, crop),
+  claims filing, premium comparison, and government scheme enrollment
+  (PMJJBY, PMSBY, Ayushman Bharat). Supports retail and corporate insurance.
+
+category: financial_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+  - odia
+
+provider_preference: anthropic  # Strong financial reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - insurance
+    - policy
+    - claim
+    - premium
+    - coverage
+    - health
+    - life
+    - motor
+    - crop
+    - PMJJBY
+    - PMSBY
+    - term
+    - बीमा
+  patterns:
+    - "best insurance for"
+    - "claim process"
+    - "premium comparison"
+    - "policy renewal"
+    - "Ayushman Bharat"
+    - "term insurance"
+    - "health coverage"
+    - "bike/car insurance"
+
+execution_config:
+  default_mode: pipeline  # Needs→comparison→recommendation→enrollment
+  fallback_mode: single
+  max_budget_usd: 1.00
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - insurance_type  # health/life/motor/crop
+    - age
+    - state
+  optional:
+    - sum_assured
+    - budget_range
+    - family_size
+    - occupation
+    - language
+    - existing_policies
+
+output_format:
+  structure:
+    - needs_analysis
+    - policy_recommendations
+    - premium_comparison
+    - coverage_details
+    - enrollment_process
+    - claims_process
+    - tax_benefits
+    - government_schemes
+    - renewal_reminders
+  language: from context
+  include_tables: true
+  include_calculations: true
+
+compliance:
+  data_sources:
+    - IRDAI guidelines
+    - Insurance company policies
+    - PMJJBY/PMSBY schemes
+    - Ayushman Bharat PM-JAY
+    - Tax laws (80D, 10(10D))
+  disclaimers:
+    - "Compare policies before purchase"
+    - "Read policy wordings carefully"
+    - "Claim subject to terms & conditions"
+    - "Government schemes subject to eligibility"
+
+metrics:
+  success_criteria:
+    - accurate_needs_match
+    - comprehensive_comparison
+    - clear_claims_guide
+  tracking:
+    - insurance_type
+    - age_group
+    - state
+    - scheme_enrolled
+
+risk_management:
+  mis-selling_indicators:
+    - inadequate_sum_assured
+    - excluded_pre_existing
+    - misleading_returns
+    - hidden_charges
+  escalation_required: true
+  advisor_recommended: >
+    For sum assured > 50L or complex riders
+
+integration_points:
+  - IRDAI policy repository
+  - Insurance company APIs
+  - PMJJBY/PMSBY portals
+  - Ayushman Bharat PM-JAY
+  - Tax filing systems

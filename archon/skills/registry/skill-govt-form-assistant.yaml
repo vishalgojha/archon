@@ -1,0 +1,118 @@
+# ARCHON Skill: Government Form Assistant
+# Assist citizens in filling digital government forms (Digital India initiative)
+
+name: govt-form-assistant
+version: 1
+description: >
+  Guides citizens through online government form filling including Aadhaar,
+  PAN, Passport, Voter ID, Driving License, and various state/citizen services.
+  Provides step-by-step instructions, document requirements, and tracking info.
+
+category: government_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - odia
+  - assamese
+  - malayalam
+
+provider_preference: openai  # Good structured guidance
+cost_tier: low  # High volume, citizen-facing
+state: active
+
+triggers:
+  keywords:
+    - Aadhaar
+    - PAN
+    - passport
+    - voter ID
+    - driving license
+    - ration card
+    - birth certificate
+    - death certificate
+    - property tax
+    - form
+    - आवेदन
+    - फॉर्म
+  patterns:
+    - "apply for.*"
+    - "renew.*"
+    - "correct.*"
+    - "download.*"
+    - "status of.*"
+    - "track.*application"
+    - "documents for.*"
+
+execution_config:
+  default_mode: single  # Quick guidance
+  fallback_mode: pipeline  # Complex forms
+  max_budget_usd: 0.20
+  timeout_seconds: 45
+
+context_requirements:
+  required:
+    - form_type
+    - action_type  # new/renew/correction/track
+  optional:
+    - state
+    - language
+    - existing_number  # For tracking
+    - applicant_category
+
+output_format:
+  structure:
+    - form_url
+    - document_checklist
+    - step_by_step_guide
+    - fees_applicable
+    - processing_time
+    - tracking_instructions
+    - helpdesk_contact
+  language: from context
+  include_links: true
+  include_screenshots: false  # Text-only
+
+compliance:
+  data_sources:
+    - UIDAI (Aadhaar)
+    - Income Tax Dept (PAN)
+    - Passport Seva
+    - Election Commission
+    - Transport Dept (RTO)
+    - State citizen portals
+  privacy: >
+    Do not collect or store personal citizen data. Clear context after session.
+    Never ask for Aadhaar number, PAN, or passwords.
+  disclaimers:
+    - "Information is indicative, verify on official portal"
+    - "Fees and processing times subject to change"
+
+metrics:
+  success_criteria:
+    - accurate_form_url
+    - complete_document_list
+    - clear_steps_provided
+  tracking:
+    - form_type
+    - state
+    - action_type
+    - language_used
+
+accessibility:
+  screen_reader_friendly: true
+  simple_language: true  # Avoid bureaucratic jargon
+  step_numbering: true
+  estimated_time_per_step: true
+
+integration_points:
+  - UMANG app
+  - DigiLocker
+  - State citizen service portals
+  - Common Service Centres (CSC) network

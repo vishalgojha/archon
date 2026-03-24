@@ -1,0 +1,128 @@
+# ARCHON Skill: Legal Aid & Consumer Court Assistant
+# Legal guidance, consumer complaints, RTI, and court assistance for India
+
+name: legal-aid
+version: 1
+description: >
+  Assists citizens in legal matters including consumer court complaints,
+  RTI filing, legal aid services, court case tracking, and basic legal
+  guidance. Supports civil, criminal, consumer, and constitutional matters.
+
+category: legal_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+  - odia
+
+provider_preference: anthropic  # Strong legal reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - legal
+    - lawyer
+    - court
+    - case
+    - consumer
+    - complaint
+    - RTI
+    - FIR
+    - bail
+    - notice
+    - affidavit
+    - वकील
+    - कानून
+  patterns:
+    - "file consumer complaint"
+    - "RTI application"
+    - "legal notice"
+    - "case status"
+    - "find lawyer"
+    - "legal aid"
+    - "FIR filing"
+    - "bail process"
+
+execution_config:
+  default_mode: pipeline  # Structured legal guidance
+  fallback_mode: debate  # Complex legal matters
+  max_budget_usd: 1.50
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - legal_matter_type  # consumer/civil/criminal/RTI
+    - state
+    - urgency
+  optional:
+    - case_value
+    - court_level
+    - language
+    - existing_case_number
+
+output_format:
+  structure:
+    - legal_overview
+    - rights_summary
+    - document_checklist
+    - filing_process
+    - court_jurisdiction
+    - timeline_estimate
+    - fee_structure
+    - legal_aid_eligibility
+    - lawyer_recommendations
+    - case_tracking
+  language: from context
+  include_warnings: true
+  include_disclaimers: true
+
+compliance:
+  data_sources:
+    - Consumer Protection Act 2019
+    - RTI Act 2005
+    - Code of Civil Procedure
+    - Code of Criminal Procedure
+    - Legal Services Authorities Act
+    - e-Courts portal
+  disclaimers:
+    - "This is not legal advice"
+    - "Consult advocate for case-specific guidance"
+    - "Court proceedings subject to judicial discretion"
+    - "Legal aid subject to eligibility"
+
+metrics:
+  success_criteria:
+    - accurate_legal_overview
+    - complete_filing_guide
+    - appropriate_court_match
+  tracking:
+    - matter_type
+    - state
+    - court_level
+    - resolution_status
+
+risk_management:
+  high_risk_matters:
+    - criminal_charges
+    - bailable_offenses
+    - constitutional_petitions
+    - high_value_disputes
+  escalation_required: true
+  lawyer_mandatory: >
+    For criminal matters, high-value disputes (>10L), or constitutional petitions
+
+integration_points:
+  - e-Courts portal (ecourts.gov.in)
+  - NCDRC consumer portal
+  - State consumer commissions
+  - RTI portals (central/state)
+  - Legal Services Authority (NLSA)
+  - Bar Council directories

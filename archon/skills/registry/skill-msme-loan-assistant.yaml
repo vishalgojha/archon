@@ -1,0 +1,117 @@
+# ARCHON Skill: MSME Loan Assistant
+# Loan processing assistance for Indian MSMEs (MUDRA, CGTMSE, business loans)
+
+name: msme-loan-assistant
+version: 1
+description: >
+  Assists MSMEs in navigating business loan applications including MUDRA,
+  CGTMSE, bank business loans, and government subsidy schemes. Provides
+  eligibility checking, document preparation, and lender matching.
+
+category: financial_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: openai  # Strong financial reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - loan
+    - MUDRA
+    - CGTMSE
+    - business loan
+    - MSME
+    - Udyam
+    - subsidy
+    - credit
+    - ऋण
+    - working capital
+  patterns:
+    - "apply for business loan"
+    - "MUDRA eligibility"
+    - "MSME registration"
+    - "loan documents"
+    - "interest rate for.*"
+    - "subsidy scheme"
+    - "collateral free loan"
+
+execution_config:
+  default_mode: pipeline  # Multi-stage: eligibility→docs→lender
+  fallback_mode: debate  # Complex financial decisions
+  max_budget_usd: 1.00
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - business_type
+    - loan_amount_requested
+    - state
+  optional:
+    - udyam_registration
+    - gst_number
+    - annual_turnover
+    - years_in_business
+    - existing_loans
+    - language
+    - preferred_bank
+
+output_format:
+  structure:
+    - eligible_schemes
+    - loan_amount_range
+    - interest_rate_range
+    - document_checklist
+    - lender_recommendations
+    - subsidy_details
+    - application_timeline
+  language: from context
+  include_calculations: true
+
+compliance:
+  data_sources:
+    - RBI guidelines
+    - MUDRA scheme documentation
+    - CGTMSE trust
+    - MSME Ministry (udyamregistration.gov.in)
+    - Bank-specific schemes
+  disclaimers:
+    - "Final approval subject to bank verification"
+    - "Interest rates subject to change"
+    - "Consult CA for financial advice"
+
+metrics:
+  success_criteria:
+    - accurate_eligibility
+    - complete_document_list
+    - appropriate_lender_match
+  tracking:
+    - business_sector
+    - loan_size_category  # Shishu/Kishore/Tarun
+    - scheme_utilized
+    - approval_rate
+
+risk_management:
+  fraud_indicators:
+    - inflated_turnover
+    - multiple_simultaneous_applications
+    - mismatched_documents
+  verification_required: true
+  escalate_to_human: >
+    For loan amounts > 50L or complex business structures
+
+integration_points:
+  - Udyam Registration API
+  - GST API (GSTN)
+  - CIBIL score check (with consent)
+  - Bank loan portals
+  - PMEGP portal

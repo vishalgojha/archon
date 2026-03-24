@@ -1,0 +1,30 @@
+byok:
+  primary: ollama
+  coding: ollama
+  vision: ollama
+  fast: ollama
+  embedding: ollama
+  fallback: openrouter
+  budget_per_task_usd: 0.5
+  budget_per_month_usd: 150.0
+  prefer_cheapest: false
+  free_tier_first: false
+  ollama_base_url: http://localhost:11434/v1
+  ollama_primary_model: llama3.3:70b
+  ollama_coding_model: qwen2.5-coder:32b
+  ollama_fast_model: llama3.2:3b
+  ollama_embedding_model: nomic-embed-text
+  ollama_vision_model: llava:34b
+  vision_model: null
+  openrouter_base_url: https://openrouter.ai/api/v1
+  openrouter_fallback_chain:
+  - anthropic/claude-sonnet-4-5
+  - openai/gpt-4o
+  - meta-llama/llama-4-maverick:free
+  custom_endpoints: []
+budget:
+  daily_limit_usd: 5.0
+  alert_threshold_pct: 80
+supervised_mode: true
+deployment_mode: team_tool
+default_tier: pro

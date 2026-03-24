@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}-api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-api
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}-api
+    spec:
+      containers:
+        - name: archon-api
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["archon-server"]
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: ARCHON_HOST
+              value: "0.0.0.0"
+            - name: ARCHON_PORT
+              value: "{{ .Values.service.port }}"
+            - name: ARCHON_DATABASE_BACKEND
+              value: {{ .Values.database.backend }}
+            - name: ARCHON_DATABASE_URL
+              value: {{ .Values.database.url }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Chart.Name }}-secrets
+                  key: openaiApiKey
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Chart.Name }}-secrets
+                  key: anthropicApiKey
+            - name: ARCHON_STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Chart.Name }}-secrets
+                  key: stripeSecretKey
+            - name: ARCHON_STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Chart.Name }}-secrets
+                  key: stripeWebhookSecret
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}

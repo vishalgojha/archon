@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "archon"
+version = "0.1.0"
+description = "Autonomous Recursive Cognitive Hierarchy Orchestration Network"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "click>=8.1.7",
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "jsonschema>=4.23.0",
+  "PyJWT>=2.9.0",
+  "pydantic>=2.8.0",
+  "pyyaml>=6.0.1",
+  "rich>=14.3.0",
+  "slowapi>=0.1.9",
+  "textual>=8.1.1",
+  "uvicorn>=0.30.0",
+  "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.7.9",
+  "black>=24.8.0",
+  "mypy>=1.11.2",
+  "pytest>=8.2.0",
+  "pytest-asyncio>=1.3.0",
+  "ruff>=0.15.4",
+  "types-PyYAML>=6.0.12.20240917",
+]
+
+[project.scripts]
+archon = "archon.archon_cli:main"
+archon-server = "archon.interfaces.api.server:run"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["archon*"]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+testpaths = ["tests", "archon/tests"]
+asyncio_mode = "auto"
+norecursedirs = ["archon/tests/_tmp_*", "tests/_tmp_*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["archon"]
+exclude = '(^|/)(archon/tests/_tmp_|tests/_tmp_)'
+ignore_missing_imports = true
+warn_unused_ignores = false
+no_implicit_optional = true
+disable_error_code = [
+  "arg-type",
+  "assignment",
+  "attr-defined",
+  "call-overload",
+  "dict-item",
+  "index",
+  "misc",
+  "union-attr",
+  "unused-ignore",
+  "var-annotated",
+]
+
+[tool.coverage.run]
+omit = ["archon/billing/*", "archon/runtime_installer.py"]

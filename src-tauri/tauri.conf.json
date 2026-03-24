@@ -1,0 +1,50 @@
+{
+  "build": {
+    "beforeDevCommand": "node -e \"process.exit(0)\"",
+    "beforeBuildCommand": "node -e \"process.exit(0)\"",
+    "devPath": "http://127.0.0.1:8000/dashboard/",
+    "distDir": "../archon/interfaces/web/dashboard"
+  },
+  "package": {
+    "productName": "archon-desktop",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "shell": {
+        "sidecar": true
+      },
+      "http": {
+        "all": true,
+        "scope": [
+          "http://localhost:8000/**",
+          "http://127.0.0.1:8000/**"
+        ]
+      }
+    },
+    "bundle": {
+      "identifier": "com.chaoscraftlabs.archon",
+      "icon": [
+        "icons/icon.ico",
+        "icons/icon.png"
+      ],
+      "resources": [
+        "../archon-ez"
+      ]
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src http://localhost:8000 ws://localhost:8000 http://127.0.0.1:8000 ws://127.0.0.1:8000; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:;"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "ARCHON",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true
+      }
+    ]
+  }
+}

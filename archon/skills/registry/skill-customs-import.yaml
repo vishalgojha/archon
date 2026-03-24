@@ -1,0 +1,123 @@
+# ARCHON Skill: Customs Import Assistant
+# Import documentation, customs clearance, and duty calculation for India
+
+name: customs-import
+version: 1
+description: >
+  Assists importers in navigating customs procedures, duty calculation,
+  Bill of Entry filing, ITC-HS codes, and restricted item compliance.
+  Supports manufacturers, traders, and e-commerce importers.
+
+category: trade_compliance
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: anthropic  # Strong customs reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - import
+    - customs
+    - duty
+    - Bill of Entry
+    - ITC-HS
+    - restricted
+    - clearance
+    - port
+    - freight
+    - आयात
+    - customs duty
+  patterns:
+    - "import documentation"
+    - "customs duty calculation"
+    - "Bill of Entry"
+    - "ITC-HS code"
+    - "restricted items"
+    - "customs clearance"
+    - "port charges"
+    - "import license"
+
+execution_config:
+  default_mode: debate  # Multi-regulation analysis
+  fallback_mode: pipeline
+  max_budget_usd: 2.00
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - product_type
+    - origin_country
+    - import_value
+    - port_of_entry
+  optional:
+    - iec_code
+    - state
+    - importer_type  # MSME/large
+    - language
+    - incoterms
+
+output_format:
+  structure:
+    - eligibility_check
+    - document_checklist
+    - hs_code_classification
+    - duty_calculation
+    - restricted_item_check
+    - clearance_procedures
+    - timeline_estimate
+    - cost_breakdown
+    - port_specific_requirements
+  language: from context
+  include_tables: true
+  include_calculations: true
+
+compliance:
+  data_sources:
+    - Customs Icegate portal
+    - DGFT ITC-HS codes
+    - Customs Tariff Act
+    - RBI import guidelines
+    - Origin country export docs
+  disclaimers:
+    - "Verify HS code with customs broker"
+    - "Duty rates subject to customs assessment"
+    - "Restricted items require additional licenses"
+
+metrics:
+  success_criteria:
+    - complete_document_list
+    - accurate_duty_calculation
+    - correct_hs_classification
+  tracking:
+    - product_type
+    - origin_country
+    - port
+    - clearance_time
+
+risk_management:
+  compliance_flags:
+    - prohibited_items
+    - restricted_without_license
+    - undervaluation
+    - misdeclaration
+    - duty_evasion_indicators
+  escalation_required: true
+  customs_broker_recommended: >
+    For shipment value > 50L or restricted items
+
+integration_points:
+  - Icegate customs portal
+  - DGFT ITC-HS database
+  - Port authority systems
+  - Freight forwarding APIs
+  - Bank import payment systems

@@ -1,0 +1,614 @@
+"""ARCHON config validation CLI with schema checks and provider health probes."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import threading
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Literal, Sequence
+from urllib.parse import urlparse
+
+import httpx
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from archon.config import SUPPORTED_PROVIDERS, ArchonConfig, resolve_config_path
+from archon.providers.router import DEFAULT_BASE_URL, PROVIDER_ENV_KEY
+
+RoleName = Literal["primary", "coding", "vision", "fast", "embedding", "fallback"]
+TierName = Literal["free", "pro", "enterprise"]
+ProviderStatus = Literal[
+    "PASS",
+    "FAIL",
+    "AUTH_FAILED",
+    "UNREACHABLE",
+    "TIMEOUT",
+    "NOT_CONFIGURED",
+    "SKIPPED",
+]
+
+ROLE_NAMES: tuple[RoleName, ...] = (
+    "primary",
+    "coding",
+    "vision",
+    "fast",
+    "embedding",
+    "fallback",
+)
+NON_FAILURE_STATUSES: set[ProviderStatus] = {"PASS", "NOT_CONFIGURED", "SKIPPED"}
+DEFAULT_TIMEOUT_SECONDS = 6.0
+
+_ANSI_RESET = "\033[0m"
+_ANSI_RED = "\033[31m"
+_ANSI_GREEN = "\033[32m"
+_ANSI_YELLOW = "\033[33m"
+
+
+def _disable_color() -> None:
+    global _ANSI_RESET, _ANSI_RED, _ANSI_GREEN, _ANSI_YELLOW
+    _ANSI_RESET = ""
+    _ANSI_RED = ""
+    _ANSI_GREEN = ""
+    _ANSI_YELLOW = ""
+
+
+class CustomEndpointSchema(BaseModel):
+    """Custom OpenAI-compatible provider endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    base_url: str = Field(min_length=1)
+    api_key: str = "none"
+    models: list[str] = Field(default_factory=list)
+    roles: list[RoleName] = Field(default_factory=list)
+
+
+class ProvidersSection(BaseModel):
+    """Provider role mapping and endpoint settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    primary: str
+    coding: str
+    vision: str
+    fast: str
+    embedding: str = "ollama"
+    fallback: str | None = "openrouter"
+
+    ollama_base_url: str = "http://localhost:11434/v1"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    custom_endpoints: list[CustomEndpointSchema] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_role_providers(self) -> "ProvidersSection":
+        custom_names = {endpoint.name for endpoint in self.custom_endpoints}
+        allowed = SUPPORTED_PROVIDERS | custom_names
+        for role in ROLE_NAMES:
+            value = getattr(self, role)
+            if value is None:
+                continue
+            if value not in allowed:
+                raise ValueError(
+                    f"Invalid provider '{value}' configured for role '{role}'. "
+                    f"Allowed providers: {', '.join(sorted(allowed))}."
+                )
+        return self
+
+
+class BudgetSection(BaseModel):
+    """Budget policy used for validation sanity checks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per_request_usd: float = Field(gt=0.0)
+    daily_usd: float = Field(gt=0.0)
+    monthly_usd: float = Field(gt=0.0)
+    alert_threshold: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_sanity(self) -> "BudgetSection":
+        if self.daily_usd > self.monthly_usd:
+            raise ValueError("Budget sanity failed: daily_usd must be <= monthly_usd.")
+        if self.per_request_usd > self.daily_usd:
+            raise ValueError("Budget sanity failed: per_request_usd must be <= daily_usd.")
+        return self
+
+
+class TenantSection(BaseModel):
+    """Tenant tier configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str = Field(min_length=1)
+    tier: TierName
+
+
+class MemorySection(BaseModel):
+    """Memory backend config constraints used by validator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["sqlite", "postgres", "memory"] = "sqlite"
+    path: str | None = None
+
+
+class EvolutionSection(BaseModel):
+    """Evolution policy config constraints used by validator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    max_experiments_per_day: int = Field(default=0, ge=0)
+
+
+class SkillsSection(BaseModel):
+    """Skill routing config constraints used by validator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    auto_propose: bool = False
+    staging_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+
+
+class RuntimeValidationConfig(BaseModel):
+    """Schema used by `archon.validate_config` CLI checks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    providers: ProvidersSection
+    budget: BudgetSection
+    tenants: list[TenantSection]
+    memory: MemorySection
+    evolution: EvolutionSection
+    skills: SkillsSection
+    supervised_mode: bool = False
+    deployment_mode: str | None = None
+    default_tier: str | None = None
+
+
+@dataclass(slots=True)
+class ProviderHealth:
+    """Health status for one provider probe."""
+
+    provider: str
+    status: ProviderStatus
+    detail: str = ""
+    http_status: int | None = None
+    url: str | None = None
+
+
+@dataclass(slots=True)
+class ValidationReport:
+    """Serializable output generated by validator CLI."""
+
+    config_path: str
+    schema_valid: bool
+    provider_health: list[ProviderHealth] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return self.schema_valid and not self.errors and not self.failed_provider_checks
+
+    @property
+    def failed_provider_checks(self) -> list[ProviderHealth]:
+        return [item for item in self.provider_health if item.status not in NON_FAILURE_STATUSES]
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "config_path": self.config_path,
+                "schema_valid": self.schema_valid,
+                "ok": self.ok,
+                "provider_health": [asdict(item) for item in self.provider_health],
+                "warnings": self.warnings,
+                "errors": self.errors,
+            },
+            indent=2,
+        )
+
+
+def validate_config(
+    path: str | Path = "config.archon.yaml",
+    *,
+    provider: str | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    dry_run: bool = False,
+) -> ValidationReport:
+    """Validate schema and run provider-level async health checks.
+
+    Example:
+        >>> report = validate_config("config.archon.yaml")
+        >>> isinstance(report.ok, bool)
+        True
+    """
+
+    config_path = resolve_config_path(path)
+    report = ValidationReport(config_path=str(config_path), schema_valid=False)
+
+    try:
+        raw = _load_raw_config(config_path)
+        normalized = _normalize_config(raw)
+        validated = RuntimeValidationConfig.model_validate(normalized)
+        report.schema_valid = True
+    except ValidationError as exc:
+        report.errors.append(f"Schema validation failed: {exc}")
+        return report
+    except Exception as exc:  # pragma: no cover - defensive guard
+        report.errors.append(f"Unable to read config: {exc}")
+        return report
+
+    checks = _providers_to_check(validated)
+    target_provider = provider.strip().lower() if provider else None
+
+    if target_provider:
+        if target_provider not in checks:
+            report.provider_health.append(
+                ProviderHealth(
+                    provider=target_provider,
+                    status="NOT_CONFIGURED",
+                    detail=f"Provider '{target_provider}' is not configured in this file.",
+                )
+            )
+            return report
+
+        skipped = sorted(item for item in checks if item != target_provider)
+        for skipped_provider in skipped:
+            report.provider_health.append(
+                ProviderHealth(
+                    provider=skipped_provider,
+                    status="SKIPPED",
+                    detail=f"Skipped by --provider filter ({target_provider}).",
+                )
+            )
+        checks = {target_provider}
+
+    if dry_run:
+        for provider_name in sorted(checks):
+            report.provider_health.append(
+                ProviderHealth(
+                    provider=provider_name,
+                    status="SKIPPED",
+                    detail="Dry run (provider checks skipped).",
+                )
+            )
+        return report
+
+    health_rows = _ping_configured_providers(
+        validated.providers, checks, timeout_seconds=timeout_seconds
+    )
+    report.provider_health.extend(health_rows)
+    for item in health_rows:
+        if item.status in NON_FAILURE_STATUSES:
+            continue
+        status = item.status.lower()
+        report.errors.append(
+            f"Provider '{item.provider}' health check {status}: "
+            f"{item.detail or 'no additional detail'}"
+        )
+
+    return report
+
+
+def _ping_configured_providers(
+    providers: ProvidersSection,
+    checks: set[str],
+    *,
+    timeout_seconds: float,
+) -> list[ProviderHealth]:
+    async def _run() -> list[ProviderHealth]:
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+            return [
+                await _ping_one_provider(client, provider=provider_name, providers=providers)
+                for provider_name in sorted(checks)
+            ]
+
+    return _run_sync(_run())
+
+
+async def _ping_one_provider(
+    client: httpx.AsyncClient,
+    *,
+    provider: str,
+    providers: ProvidersSection,
+) -> ProviderHealth:
+    url, headers = _build_health_request(provider, providers)
+    try:
+        response = await client.get(url, headers=headers)
+    except httpx.TimeoutException as exc:
+        return ProviderHealth(
+            provider=provider,
+            status="TIMEOUT",
+            detail=str(exc) or "Request timed out.",
+            url=url,
+        )
+    except httpx.HTTPError as exc:
+        return ProviderHealth(
+            provider=provider,
+            status="UNREACHABLE",
+            detail=str(exc) or "Provider endpoint unreachable.",
+            url=url,
+        )
+
+    if 200 <= response.status_code < 300:
+        return ProviderHealth(
+            provider=provider,
+            status="PASS",
+            detail=f"HTTP {response.status_code}",
+            http_status=response.status_code,
+            url=url,
+        )
+    if response.status_code in {401, 403}:
+        return ProviderHealth(
+            provider=provider,
+            status="AUTH_FAILED",
+            detail=f"HTTP {response.status_code}",
+            http_status=response.status_code,
+            url=url,
+        )
+    return ProviderHealth(
+        provider=provider,
+        status="FAIL",
+        detail=f"HTTP {response.status_code}",
+        http_status=response.status_code,
+        url=url,
+    )
+
+
+def _run_sync(coro):  # type: ignore[no-untyped-def]
+    """Run an async coroutine from sync code.
+
+    Uses `asyncio.run` normally, but falls back to a dedicated thread if already
+    running inside an event loop (e.g. invoked from async code).
+    """
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: Any = None
+    error: BaseException | None = None
+
+    def _runner():  # type: ignore[no-untyped-def]
+        nonlocal result, error
+        try:
+            result = asyncio.run(coro)
+        except BaseException as exc:
+            error = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if error is not None:
+        raise error
+    return result
+
+
+def _providers_to_check(validated: RuntimeValidationConfig) -> set[str]:
+    providers = validated.providers
+    checks: set[str] = set()
+    for role in ROLE_NAMES:
+        value = getattr(providers, role)
+        if value:
+            checks.add(value)
+
+    # If any role uses ollama, we must verify local Ollama reachability.
+    if any(getattr(providers, role) == "ollama" for role in ROLE_NAMES):
+        checks.add("ollama")
+    return checks
+
+
+def _build_health_request(provider: str, providers: ProvidersSection) -> tuple[str, dict[str, str]]:
+    custom = next((item for item in providers.custom_endpoints if item.name == provider), None)
+    if custom:
+        headers = _openai_compatible_auth_headers(api_key=custom.api_key)
+        return f"{custom.base_url.rstrip('/')}/models", headers
+
+    if provider == "ollama":
+        parsed = urlparse(providers.ollama_base_url)
+        root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+        if not root:
+            root = providers.ollama_base_url.rstrip("/")
+            if root.endswith("/v1"):
+                root = root[: -len("/v1")]
+        return f"{root.rstrip('/')}/api/tags", {}
+
+    if provider == "anthropic":
+        api_key = os.environ.get(PROVIDER_ENV_KEY["anthropic"], "")
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        return f"{DEFAULT_BASE_URL['anthropic'].rstrip('/')}/v1/models", headers
+
+    if provider == "gemini":
+        api_key = os.environ.get(PROVIDER_ENV_KEY["gemini"], "")
+        endpoint = f"{DEFAULT_BASE_URL['gemini'].rstrip('/')}/v1beta/models"
+        if api_key:
+            endpoint = f"{endpoint}?key={api_key}"
+        return endpoint, {}
+
+    if provider == "openrouter":
+        base_url = providers.openrouter_base_url
+    else:
+        base_url = DEFAULT_BASE_URL.get(provider, "")
+
+    if not base_url:
+        return "http://invalid-provider.local/models", {}
+
+    api_key = ""
+    env_name = PROVIDER_ENV_KEY.get(provider)
+    if env_name:
+        api_key = os.environ.get(env_name, "")
+    return f"{base_url.rstrip('/')}/models", _openai_compatible_auth_headers(api_key=api_key)
+
+
+def _openai_compatible_auth_headers(api_key: str) -> dict[str, str]:
+    if not api_key or api_key.lower() == "none":
+        return {}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _load_raw_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError("Config root must be a YAML mapping/object.")
+    return loaded
+
+
+def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = dict(raw)
+    defaults = ArchonConfig().byok
+
+    if "providers" not in normalized and isinstance(raw.get("byok"), dict):
+        byok = raw["byok"]
+        normalized["providers"] = {
+            "primary": byok.get("primary", defaults.primary),
+            "coding": byok.get("coding", defaults.coding),
+            "vision": byok.get("vision", defaults.vision),
+            "fast": byok.get("fast", defaults.fast),
+            "embedding": byok.get("embedding", defaults.embedding),
+            "fallback": byok.get("fallback", defaults.fallback),
+            "ollama_base_url": byok.get("ollama_base_url", defaults.ollama_base_url),
+            "openrouter_base_url": byok.get("openrouter_base_url", defaults.openrouter_base_url),
+            "custom_endpoints": byok.get("custom_endpoints", []),
+        }
+
+    per_request_default = float(defaults.budget_per_task_usd)
+    monthly_default = float(defaults.budget_per_month_usd)
+    alert_default = 0.80
+    budget_source = raw.get("budget") if isinstance(raw.get("budget"), dict) else {}
+    if not budget_source and isinstance(raw.get("byok"), dict):
+        byok = raw["byok"]
+        budget_source = {
+            "per_request_usd": byok.get("budget_per_task_usd", per_request_default),
+            "monthly_usd": byok.get("budget_per_month_usd", monthly_default),
+            "alert_threshold": alert_default,
+        }
+
+    if budget_source:
+        per_request = float(
+            budget_source.get(
+                "per_request_usd",
+                budget_source.get("per_request_limit_usd", per_request_default),
+            )
+        )
+        monthly = float(
+            budget_source.get(
+                "monthly_usd",
+                budget_source.get("monthly_limit_usd", monthly_default),
+            )
+        )
+        daily = float(
+            budget_source.get(
+                "daily_usd",
+                budget_source.get("daily_limit_usd", max(per_request, round(monthly / 30.0, 6))),
+            )
+        )
+        alert_threshold_raw = budget_source.get(
+            "alert_threshold",
+            budget_source.get("alert_threshold_pct", alert_default * 100.0),
+        )
+        alert_threshold = float(alert_threshold_raw)
+        if alert_threshold > 1.0:
+            alert_threshold = round(alert_threshold / 100.0, 4)
+        normalized["budget"] = {
+            "per_request_usd": per_request,
+            "daily_usd": daily,
+            "monthly_usd": monthly,
+            "alert_threshold": alert_threshold,
+        }
+
+    normalized.setdefault("tenants", [])
+    normalized.setdefault("memory", {"backend": "sqlite"})
+    normalized.setdefault("evolution", {"enabled": False, "max_experiments_per_day": 0})
+    normalized.setdefault(
+        "skills",
+        {"enabled": True, "auto_propose": False, "staging_threshold": 0.75},
+    )
+    normalized.pop("byok", None)
+    return normalized
+
+
+def _colorize_status(status: ProviderStatus) -> str:
+    if status == "PASS":
+        return f"{_ANSI_GREEN}{status}{_ANSI_RESET}"
+    if status in NON_FAILURE_STATUSES:
+        return f"{_ANSI_YELLOW}{status}{_ANSI_RESET}"
+    return f"{_ANSI_RED}{status}{_ANSI_RESET}"
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Validate ARCHON config and provider health.")
+    parser.add_argument(
+        "--config", default="config.archon.yaml", help="Path to ARCHON YAML config."
+    )
+    parser.add_argument(
+        "--provider",
+        default=None,
+        help="Validate one provider only (e.g. openai, openrouter, ollama).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate schema only; skip provider health checks.",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color output.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run config validation CLI and return shell-friendly exit code."""
+
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.no_color:
+        _disable_color()
+    report = validate_config(
+        path=args.config,
+        provider=args.provider,
+        dry_run=args.dry_run,
+    )
+
+    if args.json:
+        print(report.to_json())
+    else:
+        print(f"Config file: {report.config_path}")
+        print(f"Schema valid: {report.schema_valid}")
+        for item in sorted(report.provider_health, key=lambda row: row.provider):
+            status = _colorize_status(item.status)
+            detail = f" ({item.detail})" if item.detail else ""
+            print(f"[{status}] provider={item.provider}{detail}")
+        for warning in report.warnings:
+            print(f"[WARN] {warning}")
+        for error in report.errors:
+            print(f"[ERROR] {error}")
+        print("Validation: PASS" if report.ok else "Validation: FAIL")
+
+    return 0 if report.ok else 1
+
+
+def run() -> None:
+    """Console entrypoint for `python -m archon.validate_config`."""
+
+    raise SystemExit(main())
+
+
+if __name__ == "__main__":
+    run()

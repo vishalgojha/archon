@@ -1,0 +1,90 @@
+# ARCHON Skill: Kisan Advisory System
+# Agriculture advisory for Indian farmers with regional language support
+
+name: kisan-advisory
+version: 1
+description: >
+  Provides crop recommendations, weather advisories, and mandi price analysis
+  for Indian farmers in 22+ regional languages. Supports pipeline mode for
+  structured analysis (soil→weather→market→recommendation).
+
+category: agriculture
+language_support:
+  - hindi
+  - marathi
+  - punjabi
+  - tamil
+  - telugu
+  - kannada
+  - gujarati
+  - bengali
+  - odia
+  - assamese
+
+provider_preference: openai  # Good multilingual support
+cost_tier: low  # Price-sensitive users
+state: active
+
+triggers:
+  keywords:
+    - crop
+    - farming
+    - kisan
+    - किसान
+    - mandi
+    - weather
+    - soil
+    - fertilizer
+    - pesticide
+    - irrigation
+  patterns:
+    - "crop recommendation for.*"
+    - "best crop for.*season"
+    - "mandi price.*"
+    - "weather forecast.*"
+    - "soil test.*"
+
+execution_config:
+  default_mode: pipeline
+  fallback_mode: single
+  max_budget_usd: 0.50
+  timeout_seconds: 60
+
+context_requirements:
+  required:
+    - region
+    - season
+  optional:
+    - soil_type
+    - land_size_acres
+    - language
+    - crop_history
+
+output_format:
+  structure:
+    - crop_recommendations
+    - reasoning
+    - market_prices
+    - weather_advisory
+    - next_steps
+  language: auto-detect from context
+
+compliance:
+  data_sources:
+    - IMD (India Meteorological Dept)
+    - AGMARKNET (mandi prices)
+    - Soil Health Card scheme
+  disclaimers:
+    - "Consult local agriculture officer for final decisions"
+    - "Weather forecasts are indicative"
+
+metrics:
+  success_criteria:
+    - actionable_recommendation
+    - regional_language_output
+    - price_information_included
+  tracking:
+    - farmer_region
+    - crop_type
+    - season
+    - language_used

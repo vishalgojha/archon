@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp">
+
+    <ViewFlipper
+        android:id="@+id/onboarding_flipper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:id="@+id/page_connect"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Connect"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="Enter the Archon backend URL and API key." />
+
+            <EditText
+                android:id="@+id/input_backend_url"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="http://10.0.2.2:8000"
+                android:inputType="textUri"
+                android:paddingTop="16dp" />
+
+            <EditText
+                android:id="@+id/input_api_key"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="ARCHON_API_KEY"
+                android:inputType="textPassword"
+                android:paddingTop="12dp" />
+
+            <Button
+                android:id="@+id/btn_connect_next"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Next"
+                android:layout_marginTop="24dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/page_permissions"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Permissions"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="Enable notification access in system settings after tapping the button below." />
+
+            <Button
+                android:id="@+id/btn_enable_notification_listener"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Notification Listener"
+                android:layout_marginTop="16dp" />
+
+            <Button
+                android:id="@+id/btn_request_notifications"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Post Notifications"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btn_request_contacts"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Contacts"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btn_request_calendar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Calendar"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btn_request_location"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Location"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/btn_request_battery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ignore Battery Optimizations"
+                android:layout_marginTop="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="24dp">
+
+                <Button
+                    android:id="@+id/btn_permissions_back"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Back" />
+
+                <Button
+                    android:id="@+id/btn_permissions_next"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Next"
+                    android:layout_marginStart="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/page_test"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Test"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="Ping the backend to confirm connectivity." />
+
+            <Button
+                android:id="@+id/btn_test_connection"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Test Connection"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/text_test_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="Status: not tested" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="24dp">
+
+                <Button
+                    android:id="@+id/btn_test_back"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Back" />
+
+                <Button
+                    android:id="@+id/btn_test_next"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Next"
+                    android:layout_marginStart="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/page_done"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Done"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="Archon will run quietly in the background." />
+
+            <Button
+                android:id="@+id/btn_done_start"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Start Archon"
+                android:layout_marginTop="24dp" />
+
+            <Button
+                android:id="@+id/btn_done_back"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Back"
+                android:layout_marginTop="12dp" />
+        </LinearLayout>
+    </ViewFlipper>
+</FrameLayout>

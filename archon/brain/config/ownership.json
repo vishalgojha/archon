@@ -1,0 +1,4 @@
+{
+  "module_registry": ["planner_agent"],
+  "architecture": ["architect_agent"]
+}

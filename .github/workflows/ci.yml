@@ -1,0 +1,220 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ruff check
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: MyPy
+        run: mypy --ignore-missing-imports archon
+
+      - name: Build Bandit medium report
+        run: |
+          bandit -r archon/ -ll -f json -o bandit-all.json || true
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path("bandit-all.json")
+          output = Path("bandit-medium.json")
+          if not source.exists():
+              output.write_text('{"results": []}\n', encoding="utf-8")
+          else:
+              data = json.loads(source.read_text(encoding="utf-8"))
+              data["results"] = [
+                  issue
+                  for issue in data.get("results", [])
+                  if issue.get("issue_severity") == "MEDIUM"
+              ]
+              output.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload Bandit medium report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-medium-report
+          path: bandit-medium.json
+          if-no-files-found: error
+
+      - name: Fail on Bandit high severity findings
+        run: bandit -r archon/ -lll
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: python -m pytest tests/ archon/tests/ --cov=archon --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py3.12
+          path: |
+            coverage.xml
+            .coverage
+          if-no-files-found: error
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure minimal config exists
+        run: |
+          if [ ! -f config.archon.yaml ]; then
+            printf '%s\n' 'byok:' '  primary: anthropic' > config.archon.yaml
+          fi
+
+      - name: Validate config dry-run
+        run: |
+          python -m archon.validate_config --dry-run --no-color || python -m archon.validate_config --dry-run
+
+  redteam-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure minimal config exists
+        run: |
+          if [ ! -f config.archon.yaml ]; then
+            printf '%s\n' 'byok:' '  primary: openrouter' '  fallback: openrouter' > config.archon.yaml
+          fi
+
+      - name: Run automated red-team regression
+        env:
+          OPENROUTER_API_KEY: ci-simulated-openrouter-key
+        run: python -m archon.archon_cli redteam regression --output-dir .artifacts/redteam --payloads-per-vector 1
+
+      - name: Upload red-team regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-regression-report
+          path: .artifacts/redteam
+          if-no-files-found: error
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: archon:ci-test
+          push: false
+          load: true
+
+      - name: Smoke test image
+        run: docker run --rm archon:ci-test python -c "import archon; print('OK')"
+
+  all-checks:
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint
+      - test
+      - validate-config
+      - redteam-regression
+      - docker
+    steps:
+      - name: Enforce required jobs succeeded
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          VALIDATE_CONFIG_RESULT: ${{ needs['validate-config'].result }}
+          REDTEAM_RESULT: ${{ needs['redteam-regression'].result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+        run: |
+          echo "lint=$LINT_RESULT"
+          echo "test=$TEST_RESULT"
+          echo "validate-config=$VALIDATE_CONFIG_RESULT"
+          echo "redteam-regression=$REDTEAM_RESULT"
+          echo "docker=$DOCKER_RESULT"
+          for result in "$LINT_RESULT" "$TEST_RESULT" "$VALIDATE_CONFIG_RESULT" "$REDTEAM_RESULT" "$DOCKER_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "One or more required jobs did not succeed."
+              exit 1
+            fi
+          done

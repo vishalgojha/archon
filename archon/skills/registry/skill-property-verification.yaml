@@ -1,0 +1,123 @@
+# ARCHON Skill: Property Verification Assistant
+# Real estate title verification, RERA compliance, and agreement guidance
+
+name: property-verification
+version: 1
+description: >
+  Assists buyers and sellers in property title verification, RERA compliance
+  checking, rental agreement generation, and home loan comparison. Supports
+  residential, commercial, and agricultural property transactions.
+
+category: real_estate
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+
+provider_preference: anthropic  # Strong legal reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - property
+    - title
+    - RERA
+    - agreement
+    - rental
+    - lease
+    - home loan
+    - mortgage
+    - encumbrance
+    - registration
+    - संपत्ति
+    - property tax
+  patterns:
+    - "verify property title"
+    - "check RERA registration"
+    - "rental agreement"
+    - "home loan comparison"
+    - "property tax calculation"
+    - "encumbrance certificate"
+    - "sale deed"
+
+execution_config:
+  default_mode: debate  # Multi-source verification
+  fallback_mode: pipeline
+  max_budget_usd: 2.00
+  timeout_seconds: 150
+
+context_requirements:
+  required:
+    - property_type  # residential/commercial/agricultural
+    - location
+    - transaction_type  # buy/sell/rent
+  optional:
+    - property_value
+    - built_up_area
+    - age_of_property
+    - language
+    - state
+
+output_format:
+  structure:
+    - title_verification_status
+    - rera_compliance
+    - document_checklist
+    - encumbrance_details
+    - agreement_template
+    - loan_options
+    - registration_process
+    - tax_calculations
+    - due_diligence_steps
+  language: from context
+  include_warnings: true
+  include_checklists: true
+
+compliance:
+  data_sources:
+    - State RERA portals
+    - Land records (Bhulekh, Dharani, etc.)
+    - Registration department
+    - Bank loan guidelines
+    - Property tax portals
+  disclaimers:
+    - "Verify with registered lawyer before transaction"
+    - "Land records subject to state portal accuracy"
+    - "Loan approval subject to bank verification"
+
+metrics:
+  success_criteria:
+    - complete_verification_checklist
+    - accurate_rera_status
+    - comprehensive_document_list
+  tracking:
+    - property_type
+    - location
+    - transaction_type
+    - verification_outcome
+
+risk_management:
+  red_flags:
+    - disputed_title
+    - pending_litigation
+    - unapproved_construction
+    - zone_violation
+    - mortgage_not_cleared
+  escalation_required: true
+  legal_review_recommended: >
+    For property value > 1Cr or commercial transactions
+
+integration_points:
+  - State RERA portals
+  - Bhulekh land records
+  - Bank loan APIs
+  - Property tax portals
+  - Stamp duty calculators

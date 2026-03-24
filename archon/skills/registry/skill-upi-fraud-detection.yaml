@@ -1,0 +1,123 @@
+# ARCHON Skill: UPI Fraud Detection Assistant
+# Transaction pattern analysis and fraud prevention for Indian payment systems
+
+name: upi-fraud-detection
+version: 1
+description: >
+  Analyzes UPI transaction patterns for fraud indicators, provides merchant
+  verification, and guides users on fraud prevention and reporting. Integrates
+  with NPCI guidelines and bank fraud reporting systems.
+
+category: financial_services
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+
+provider_preference: anthropic  # Strong pattern analysis
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - UPI
+    - fraud
+    - scam
+    - transaction
+    - suspicious
+    - refund
+    - merchant
+    - verification
+    - chargeback
+    - phishing
+    - धोखाधड़ी
+  patterns:
+    - "suspicious transaction"
+    - "fraud alert"
+    - "merchant verification"
+    - "unauthorized payment"
+    - "refund scam"
+    - "phishing link"
+    - "report fraud"
+    - "chargeback"
+
+execution_config:
+  default_mode: debate  # Multi-perspective analysis
+  fallback_mode: pipeline
+  max_budget_usd: 1.00
+  timeout_seconds: 60  # Fast for fraud detection
+
+context_requirements:
+  required:
+    - transaction_count
+    - amount_range
+    - time_period
+  optional:
+    - merchant_vpa
+    - bank_name
+    - transaction_type  # P2P/P2M
+    - device_info
+    - location
+    - language
+
+output_format:
+  structure:
+    - fraud_risk_score
+    - risk_indicators
+    - merchant_verification_status
+    - immediate_actions
+    - reporting_steps
+    - prevention_tips
+    - bank_contact
+    - cybercrime_portal
+  language: from context
+  include_alerts: true
+  include_urgency: true
+
+compliance:
+  data_sources:
+    - NPCI UPI guidelines
+    - RBI fraud reporting
+    - Bank fraud policies
+    - Cybercrime portal (cybercrime.gov.in)
+    - Consumer protection guidelines
+  disclaimers:
+    - "Report to bank immediately for unauthorized transactions"
+    - "This is pattern analysis, not definitive fraud determination"
+    - "File FIR for significant fraud amounts"
+
+metrics:
+  success_criteria:
+    - accurate_risk_assessment
+    - actionable_reporting_steps
+    - timely_alert
+  tracking:
+    - risk_level
+    - transaction_type
+    - bank
+    - fraud_type
+
+risk_management:
+  high_risk_patterns:
+    - multiple_small_transactions
+    - new_merchant_large_amount
+    - unusual_time_transactions
+    - phishing_link_clicks
+    - otp_sharing_requests
+  immediate_action_required: true
+  escalate_to_bank: >
+    For risk score > 80 or amount > 50,000
+
+integration_points:
+  - Bank fraud reporting APIs
+  - NPCI transaction monitoring
+  - Cybercrime portal
+  - Consumer helpline (1930)
+  - Police reporting systems

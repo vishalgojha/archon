@@ -1,0 +1,120 @@
+# ARCHON Skill: GST Compliance Assistant
+# GST filing, return preparation, and compliance for Indian businesses
+
+name: gst-compliance
+version: 1
+description: >
+  Assists businesses in GST compliance including return filing (GSTR-1, GSTR-3B,
+  GSTR-9), invoice generation, input tax credit claims, and reconciliation.
+  Supports composition scheme, regular scheme, and sector-specific compliance.
+
+category: legal_compliance
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: anthropic  # Strong compliance reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - GST
+    - GSTR
+    - input tax credit
+    - ITC
+    - invoice
+    - return
+    - filing
+    - composition
+    - GSTIN
+    - जीएसटी
+    - tax
+  patterns:
+    - "file GSTR.*"
+    - "GST return"
+    - "claim ITC"
+    - "invoice format"
+    - "GST reconciliation"
+    - "composition scheme"
+    - "HSN code"
+    - "place of supply"
+
+execution_config:
+  default_mode: pipeline  # Structured: data→calculation→filing
+  fallback_mode: debate  # Complex compliance decisions
+  max_budget_usd: 1.50
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - gstin
+    - business_type
+    - return_type  # GSTR-1/3B/9
+    - tax_period
+  optional:
+    - turnover
+    - scheme_type  # regular/composition
+    - state
+    - sector
+    - language
+
+output_format:
+  structure:
+    - eligibility_check
+    - form_selection
+    - calculation_worksheet
+    - document_checklist
+    - filing_steps
+    - due_dates
+    - penalty_info
+    - reconciliation_guide
+  language: from context
+  include_calculations: true
+  include_tables: true
+
+compliance:
+  data_sources:
+    - GST Portal (gst.gov.in)
+    - CBIC notifications
+    - GST Council decisions
+    - State GST department guidelines
+  disclaimers:
+    - "Consult CA for complex transactions"
+    - "Verify rates on GST portal"
+    - "Penalties subject to actual filing delays"
+
+metrics:
+  success_criteria:
+    - accurate_form_selection
+    - correct_calculations
+    - complete_document_list
+  tracking:
+    - return_type
+    - scheme_type
+    - sector
+    - filing_status
+
+risk_management:
+  high_risk_indicators:
+    - mismatched_gstr1_gstr3b
+    - delayed_filing
+    - incorrect_hsn_classification
+    - reverse_charge_missed
+  escalation_required: true
+  escalate_to_human: >
+    For turnover > 5Cr, multi-state operations, or export claims
+
+integration_points:
+  - GST Portal API (when available)
+  - e-Invoice portal
+  - e-Way bill system
+  - TDS/TCS portals
+  - Income tax e-filing

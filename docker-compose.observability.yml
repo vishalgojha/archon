@@ -1,0 +1,41 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.97.0
+    container_name: archon-otel-collector
+    command:
+      - "--config=/etc/otelcol-contrib/config.yaml"
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+      - "13133:13133"
+    volumes:
+      - ./deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: archon-prometheus
+    depends_on:
+      - otel-collector
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./archon/observability/grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: archon-grafana
+    depends_on:
+      - prometheus
+      - otel-collector
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./archon/observability/grafana/archon-dashboard.json:/var/lib/grafana/dashboards/archon-dashboard.json:ro
+      - ./archon/observability/grafana/provisioning:/etc/grafana/provisioning:ro

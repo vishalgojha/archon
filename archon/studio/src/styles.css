@@ -1,0 +1,69 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --studio-base: #0b1118;
+  --studio-panel: #121a24;
+  --studio-panel-soft: #0f1620;
+  --studio-ink: #e6edf3;
+  --studio-ink-muted: #9fb0c4;
+  --studio-stroke: #1e2a3a;
+  --studio-accent: #6ee7ff;
+  --studio-accent-strong: #3cc0ff;
+  --studio-accent-warm: #f6b74f;
+  --studio-good: #54f1b4;
+  --studio-warn: #f6b74f;
+  --studio-danger: #ff5c74;
+}
+
+* {
+  scrollbar-color: rgba(110, 231, 255, 0.25) transparent;
+  scrollbar-width: thin;
+}
+
+body {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(60, 192, 255, 0.14), transparent 45%),
+    radial-gradient(circle at 20% 10%, rgba(246, 183, 79, 0.08), transparent 55%),
+    linear-gradient(160deg, #0b1118 0%, #0c121b 40%, #0a0f16 100%);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-stroke bg-panel shadow-panel backdrop-blur;
+  }
+
+  .panel-soft {
+    @apply rounded-2xl border border-stroke bg-panelSoft shadow-glow-soft;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-2 rounded-full border border-stroke px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em];
+  }
+
+  .ghost-button {
+    @apply inline-flex items-center justify-center rounded-full border border-stroke bg-transparent px-4 py-2 text-sm font-semibold text-ink transition hover:border-accent hover:text-accent;
+  }
+
+  .accent-button {
+    @apply inline-flex items-center justify-center rounded-full bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:bg-accentStrong;
+  }
+
+  .muted-text {
+    @apply text-sm text-inkMuted;
+  }
+
+  .glow-line {
+    background: linear-gradient(90deg, transparent 0%, rgba(110, 231, 255, 0.55) 50%, transparent 100%);
+  }
+}

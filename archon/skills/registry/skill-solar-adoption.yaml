@@ -1,0 +1,123 @@
+# ARCHON Skill: Solar Energy Adoption Assistant
+# Solar installation guidance, subsidy schemes, and ROI analysis for India
+
+name: solar-adoption
+version: 1
+description: >
+  Assists homeowners, businesses, and farmers in solar panel installation,
+  subsidy schemes (PM-KUSUM, rooftop solar), ROI analysis, and DISCOM
+  net-metering procedures. Supports residential, commercial, and agricultural
+  solar adoption.
+
+category: renewable_energy
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - odia
+
+provider_preference: openai  # Good technical + financial analysis
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - solar
+    - rooftop
+    - panel
+    - subsidy
+    - PM-KUSUM
+    - net-metering
+    - DISCOM
+    - installation
+    - ROI
+    - renewable
+    - सौर
+    - electricity
+  patterns:
+    - "solar installation"
+    - "rooftop solar"
+    - "solar subsidy"
+    - "PM-KUSUM scheme"
+    - "net-metering"
+    - "solar ROI"
+    - "DISCOM approval"
+    - "solar loan"
+
+execution_config:
+  default_mode: pipeline  # Technical→financial→installation
+  fallback_mode: single
+  max_budget_usd: 1.00
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - installation_type  # residential/commercial/agricultural
+    - state
+    - roof_area_sqft
+  optional:
+    - monthly_consumption_units
+    - budget_range
+    - language
+    - existing_connection_type
+
+output_format:
+  structure:
+    - system_size_recommendation
+    - subsidy_eligibility
+    - cost_breakdown
+    - roi_analysis
+    - installation_steps
+    - discom_procedures
+    - vendor_recommendations
+    - loan_options
+    - maintenance_guide
+  language: from context
+  include_calculations: true
+  include_tables: true
+
+compliance:
+  data_sources:
+    - MNRE (mnre.gov.in)
+    - State DISCOM portals
+    - PM-KUSUM scheme
+    - National Solar Mission
+    - State solar policies
+  disclaimers:
+    - "Subsidy subject to scheme availability"
+    - "ROI based on current electricity rates"
+    - "Installation subject to site assessment"
+
+metrics:
+  success_criteria:
+    - accurate_system_sizing
+    - correct_subsidy_scheme
+    - realistic_roi_estimate
+  tracking:
+    - installation_type
+    - state
+    - system_size_kw
+    - subsidy_claimed
+
+risk_management:
+  installation_flags:
+    - structural_integrity_concerns
+    - shadow_obstructions
+    - grid_connectivity_issues
+    - subsidy_fraud
+  escalation_required: true
+  site_survey_recommended: >
+    For systems > 10kW or commercial installations
+
+integration_points:
+  - MNRE subsidy portal
+  - State DISCOM net-metering
+  - Solar loan APIs (banks)
+  - Vendor marketplace
+  - PM-KUSUM portal

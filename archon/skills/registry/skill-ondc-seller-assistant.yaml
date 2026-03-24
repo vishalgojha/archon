@@ -1,0 +1,105 @@
+# ARCHON Skill: ONDC Seller Assistant
+# E-commerce onboarding and operations for Indian sellers (ONDC network)
+
+name: ondc-seller-assistant
+version: 1
+description: >
+  Assists Indian sellers in onboarding to ONDC (Open Network for Digital Commerce),
+  product listing optimization, order management, and customer support automation.
+  Supports kirana stores, manufacturers, and service providers.
+
+category: e_commerce
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+
+provider_preference: openai  # Good structured e-commerce knowledge
+cost_tier: low  # Small sellers, kirana stores
+state: active
+
+triggers:
+  keywords:
+    - ONDC
+    - seller
+    - listing
+    - product
+    - order
+    - delivery
+    - catalog
+    - e-commerce
+    - kirana
+    - विक्रेता
+  patterns:
+    - "register on ONDC"
+    - "list product on.*"
+    - "manage orders"
+    - "delivery partner"
+    - "customer return"
+    - "GST invoice"
+    - "commission rate"
+
+execution_config:
+  default_mode: pipeline  # Multi-stage: onboarding→listing→operations
+  fallback_mode: single
+  max_budget_usd: 0.60
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - business_type  # kirana/manufacturer/service
+    - state
+    - gst_number
+  optional:
+    - product_category
+    - pin_code
+    - language
+    - existing_platforms
+    - monthly_order_volume
+
+output_format:
+  structure:
+    - onboarding_steps
+    - document_checklist
+    - listing_optimization
+    - logistics_partners
+    - commission_structure
+    - customer_support_templates
+    - gst_invoice_guide
+  language: from context
+  include_checklists: true
+
+compliance:
+  data_sources:
+    - ONDC documentation
+    - NPCI guidelines
+    - GSTN invoicing rules
+    - Consumer protection e-commerce rules
+  disclaimers:
+    - "Commission rates subject to platform policies"
+    - "Verify ONDC partner network availability"
+
+metrics:
+  success_criteria:
+    - complete_onboarding_guide
+    - optimized_listing_tips
+    - logistics_match
+  tracking:
+    - business_type
+    - product_category
+    - state
+    - go_live_date
+
+integration_points:
+  - ONDC seller app APIs
+  - GST invoice generation
+  - Logistics aggregator APIs
+  - Payment gateway (UPI, cards)
+  - Inventory management systems

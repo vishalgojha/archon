@@ -1,0 +1,107 @@
+# ARCHON Skill: Healthcare Triage Assistant
+# Rural telemedicine symptom assessment and facility guidance
+
+name: healthcare-triage
+version: 1
+description: >
+  Provides initial symptom assessment, facility level recommendation, and
+  government health scheme eligibility checking for rural India. Supports
+  22+ languages and integrates with Ayushman Bharat data.
+
+category: healthcare
+language_support:
+  - hindi
+  - tamil
+  - telugu
+  - kannada
+  - malayalam
+  - bengali
+  - gujarati
+  - marathi
+  - punjabi
+  - odia
+  - assamese
+  - urdu
+
+provider_preference: anthropic  # Strong medical reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - symptom
+    - fever
+    - pain
+    - doctor
+    - hospital
+    - clinic
+    - medicine
+    - patient
+    - लक्षण
+    - बुखार
+  patterns:
+    - "I have.*symptoms"
+    - "feeling.*since.*days"
+    - "which doctor to consult"
+    - "nearest hospital"
+    - "Ayushman Bharat eligibility"
+    - "medicine for.*"
+
+execution_config:
+  default_mode: single  # Fast for urgent care
+  fallback_mode: pipeline
+  max_budget_usd: 0.30
+  timeout_seconds: 30
+
+context_requirements:
+  required:
+    - symptoms
+    - duration_days
+  optional:
+    - patient_age
+    - location
+    - language
+    - existing_conditions
+    - insurance_scheme
+
+output_format:
+  structure:
+    - triage_level  # emergency/urgent/routine
+    - facility_recommendation  # PHC/CHC/district hospital
+    - immediate_actions
+    - scheme_eligibility
+    - warning_signs
+  language: from context
+  disclaimers_required: true
+
+compliance:
+  medical_disclaimer: >
+    "This is not a diagnosis. Consult a qualified healthcare professional."
+  data_sources:
+    - Ayushman Bharat PM-JAY
+    - National Health Portal
+    - State health department guidelines
+  hipaa_equivalent: >
+    Follow India's Digital Information Security in Healthcare Act (DISHA)
+    guidelines for data privacy.
+
+metrics:
+  success_criteria:
+    - appropriate_triage_level
+    - facility_match
+    - language_accessibility
+  tracking:
+    - triage_outcome
+    - facility_type
+    - scheme_matched
+    - response_time_seconds
+
+risk_management:
+  high_risk_keywords:
+    - chest pain
+    - breathing difficulty
+    - unconscious
+    - bleeding
+    - stroke
+  escalation_required: true
+  emergency_instruction: "Call 108 ambulance immediately"

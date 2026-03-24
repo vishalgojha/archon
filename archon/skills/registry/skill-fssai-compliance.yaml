@@ -1,0 +1,122 @@
+# ARCHON Skill: FSSAI Food Safety Compliance
+# Food license, safety standards, and compliance for Indian food businesses
+
+name: fssai-compliance
+version: 1
+description: >
+  Assists food businesses in FSSAI licensing, food safety compliance, label
+  requirements, hygiene standards, and recall procedures. Supports manufacturers,
+  retailers, restaurants, and cloud kitchens.
+
+category: food_safety
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - malayalam
+
+provider_preference: anthropic  # Strong regulatory reasoning
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - FSSAI
+    - food license
+    - food safety
+    - hygiene
+    - recall
+    - label
+    - ingredients
+    - expiry
+    - contamination
+    - खाद्य
+    - restaurant
+  patterns:
+    - "FSSAI license"
+    - "food safety compliance"
+    - "label requirements"
+    - "hygiene standards"
+    - "product recall"
+    - "ingredient declaration"
+    - "shelf life"
+    - "food testing"
+
+execution_config:
+  default_mode: pipeline  # Structured: license→compliance→labeling
+  fallback_mode: single
+  max_budget_usd: 1.00
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - business_type  # manufacturer/retailer/restaurant
+    - food_category
+    - state
+  optional:
+    - annual_turnover
+    - license_type  # basic/state/central
+    - language
+    - product_count
+
+output_format:
+  structure:
+    - license_type_required
+    - application_process
+    - document_checklist
+    - hygiene_standards
+    - labeling_requirements
+    - testing_requirements
+    - renewal_process
+    - penalty_info
+    - recall_procedures
+  language: from context
+  include_checklists: true
+  include_templates: true
+
+compliance:
+  data_sources:
+    - FSSAI (fssai.gov.in)
+    - Food Safety Standards Act 2006
+    - FSS Regulations
+    - State food safety departments
+    - FSSAI recall portal
+  disclaimers:
+    - "Verify license requirements with FSSAI portal"
+    - "Label requirements subject to product category"
+    - "Penalties subject to actual violations"
+
+metrics:
+  success_criteria:
+    - correct_license_type
+    - complete_compliance_checklist
+    - accurate_labeling_guide
+  tracking:
+    - business_type
+    - food_category
+    - state
+    - license_status
+
+risk_management:
+  high_risk_indicators:
+    - contamination_reported
+    - multiple_violations
+    - expired_license
+    - mislabeling
+    - adulteration
+  escalation_required: true
+  food_safety_officer_recommended: >
+    For central license or high-risk food categories
+
+integration_points:
+  - FSSAI licensing portal (FoSCoS)
+  - Food testing labs (NABL)
+  - State food safety departments
+  - FSSAI recall system
+  - Consumer complaint portal

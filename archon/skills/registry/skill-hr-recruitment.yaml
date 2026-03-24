@@ -1,0 +1,122 @@
+# ARCHON Skill: HR Recruitment Assistant
+# Resume screening, job matching, and compliance for Indian job market
+
+name: hr-recruitment
+version: 1
+description: >
+  Assists HR teams and recruiters in resume screening, candidate matching,
+  salary benchmarking, and employment compliance. Supports Indian education
+  equivalence, experience validation, and labor law compliance.
+
+category: hr_recruitment
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+
+provider_preference: openai  # Strong HR domain knowledge
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - resume
+    - candidate
+    - job
+    - hiring
+    - salary
+    - notice period
+    - background verification
+    - offer letter
+    - PF
+    -ESI
+    - labor law
+    - नौकरी
+  patterns:
+    - "screen resume"
+    - "match candidate"
+    - "salary benchmark"
+    - "offer letter"
+    - "notice period"
+    - "background check"
+    - "employment agreement"
+    - "PF calculation"
+
+execution_config:
+  default_mode: pipeline  # Screening→matching→compliance
+  fallback_mode: single
+  max_budget_usd: 0.80
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - job_role
+    - location
+    - experience_range
+  optional:
+    - industry
+    - salary_range
+    - education_requirement
+    - language_requirement
+    - company_size
+    - remote_option
+
+output_format:
+  structure:
+    - candidate_match_score
+    - education_equivalence
+    - experience_validation
+    - salary_recommendation
+    - notice_period_match
+    - compliance_checklist
+    - offer_letter_template
+    - background_verification_steps
+  language: from context
+  include_scoring: true
+
+compliance:
+  data_sources:
+    - Labour Code 2020
+    - PF/ESI guidelines
+    - State Shops & Establishments Act
+    - Factory Act
+    - Minimum Wages Act
+    - Professional Tax slabs
+  disclaimers:
+    - "Verify education with institution"
+    - "Salary subject to negotiation"
+    - "Compliance subject to state regulations"
+
+metrics:
+  success_criteria:
+    - accurate_match_score
+    - correct_salary_benchmark
+    - complete_compliance_checklist
+  tracking:
+    - job_role
+    - industry
+    - location
+    - hire_rate
+
+risk_management:
+  compliance_flags:
+    - minimum_wage_violation
+    - pf_esi_non_compliance
+    - contract_missing_clauses
+    - notice_period_violation
+  escalation_required: true
+  legal_review_recommended: >
+    For senior roles (CXO, VP) or unionized positions
+
+integration_points:
+  - Job portals (Naukri, LinkedIn, Indeed)
+  - Background verification APIs
+  - Payroll systems
+  - PF/ESI portals
+  - Assessment platforms

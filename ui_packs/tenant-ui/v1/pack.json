@@ -1,0 +1,42 @@
+{
+  "assets": {
+    "index.js": {
+      "content_type": "text/javascript",
+      "sha256": "f259ed33a1420a5dad8e6cda40e6d5897b870579a6c047a62061bf207b15fa30"
+    },
+    "styles.css": {
+      "content_type": "text/css",
+      "sha256": "134599adda4a6d7ddaa9b49f96e80bca2dac388e8b154bf4c7c33ec599eae4f9"
+    }
+  },
+  "entrypoint": "index.js",
+  "manifest": {
+    "drawers": [
+      {
+        "columns": [],
+        "description": "Describe your workflow and desired outcomes.",
+        "id": "overview",
+        "items": [],
+        "title": "Overview",
+        "type": "summary"
+      }
+    ],
+    "summary": "Self-evolving operator console.",
+    "theme": {
+      "accent": "#ff6b35",
+      "accentSoft": "#f7b267",
+      "bg": "#0f1115",
+      "font": "Sora",
+      "muted": "#9aa3b2",
+      "panel": "#171c2b",
+      "text": "#f8fafc"
+    },
+    "title": "Custom Workspace"
+  },
+  "metadata": {
+    "created_at": 1773718264.3525164,
+    "created_by": "tenant-ui"
+  },
+  "schema_version": 1,
+  "version": "v1"
+}

@@ -1,0 +1,100 @@
+# ARCHON Skill: Scholarship Application Assistant
+# Guide students through government scholarship applications (NSP, state schemes)
+
+name: scholarship-application
+version: 1
+description: >
+  Assists students in navigating scholarship applications including National
+  Scholarship Portal (NSP), state schemes, and category-based scholarships.
+  Provides document checklist, eligibility verification, and step-by-step guidance.
+
+category: education
+language_support:
+  - hindi
+  - english
+  - tamil
+  - telugu
+  - kannada
+  - marathi
+  - gujarati
+  - bengali
+  - punjabi
+  - odia
+
+provider_preference: openai  # Good structured guidance
+cost_tier: low  # Student budget-conscious
+state: active
+
+triggers:
+  keywords:
+    - scholarship
+    - NSP
+    - financial aid
+    - fee reimbursement
+    - stipend
+    - छात्रवृत्ति
+    - post-matric
+    - pre-matric
+  patterns:
+    - "apply for scholarship"
+    - "NSP registration"
+    - "scholarship eligibility"
+    - "document list for.*"
+    - "scholarship status"
+    - "renew.*scholarship"
+
+execution_config:
+  default_mode: pipeline  # Structured multi-step
+  fallback_mode: single
+  max_budget_usd: 0.40
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - student_category  # SC/ST/OBC/General/EWS
+    - education_level
+    - state
+  optional:
+    - family_income
+    - gender
+    - domicile
+    - institution_type
+    - previous_year_recipient
+    - language
+
+output_format:
+  structure:
+    - eligible_schemes
+    - eligibility_criteria
+    - document_checklist
+    - application_steps
+    - deadlines
+    - contact_information
+  language: from context
+  include_links: true
+
+compliance:
+  data_sources:
+    - National Scholarship Portal (scholarships.gov.in)
+    - State scholarship portals
+    - UGC guidelines
+    - AICTE schemes
+  privacy: >
+    Do not store personal student data. Clear context after session.
+
+metrics:
+  success_criteria:
+    - scheme_match_accuracy
+    - complete_document_list
+    - clear_steps_provided
+  tracking:
+    - category_served
+    - state
+    - scheme_type
+    - application_stage
+
+integration_points:
+  - NSP API (when available)
+  - State scholarship portals
+  - DigiLocker for document verification
+  - UMANG app integration
