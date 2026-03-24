@@ -1190,8 +1190,8 @@ class ArchonTuiApp(App[None]):
 
     def _resolve_mode(self, mode: str) -> TaskMode:
         if mode == "tools":
-            return "tools"
-        return "swarm"
+            return "single"
+        return "debate"
 
 
 def _swarm_stage_label(agent: str, skill: str | None) -> str:
