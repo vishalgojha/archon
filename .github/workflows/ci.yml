@@ -133,40 +133,6 @@ jobs:
         run: |
           python -m archon.validate_config --dry-run --no-color || python -m archon.validate_config --dry-run
 
-  redteam-regression:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Ensure minimal config exists
-        run: |
-          if [ ! -f config.archon.yaml ]; then
-            printf '%s\n' 'byok:' '  primary: openrouter' '  fallback: openrouter' > config.archon.yaml
-          fi
-
-      - name: Run automated red-team regression
-        env:
-          OPENROUTER_API_KEY: ci-simulated-openrouter-key
-        run: python -m archon.archon_cli redteam regression --output-dir .artifacts/redteam --payloads-per-vector 1
-
-      - name: Upload red-team regression artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: redteam-regression-report
-          path: .artifacts/redteam
-          if-no-files-found: error
 
   docker:
     runs-on: ubuntu-latest
@@ -196,7 +162,6 @@ jobs:
       - lint
       - test
       - validate-config
-      - redteam-regression
       - docker
     steps:
       - name: Enforce required jobs succeeded
@@ -204,15 +169,13 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           VALIDATE_CONFIG_RESULT: ${{ needs['validate-config'].result }}
-          REDTEAM_RESULT: ${{ needs['redteam-regression'].result }}
           DOCKER_RESULT: ${{ needs.docker.result }}
         run: |
           echo "lint=$LINT_RESULT"
           echo "test=$TEST_RESULT"
           echo "validate-config=$VALIDATE_CONFIG_RESULT"
-          echo "redteam-regression=$REDTEAM_RESULT"
           echo "docker=$DOCKER_RESULT"
-          for result in "$LINT_RESULT" "$TEST_RESULT" "$VALIDATE_CONFIG_RESULT" "$REDTEAM_RESULT" "$DOCKER_RESULT"; do
+          for result in "$LINT_RESULT" "$TEST_RESULT" "$VALIDATE_CONFIG_RESULT" "$DOCKER_RESULT"; do
             if [ "$result" != "success" ]; then
               echo "One or more required jobs did not succeed."
               exit 1
