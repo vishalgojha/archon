@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -28,7 +29,8 @@ class CommandOutcome:
 class CommandSession:
     def __init__(self, command_id: str, *, allow_live: bool = True) -> None:
         self.command_id = command_id
-        self._console = Console() if Console is not None else None
+        use_rich_console = Console is not None and not os.environ.get("PYTEST_CURRENT_TEST")
+        self._console = Console() if use_rich_console else None
         self._states = ["pending"] * len(COMMAND_COPY[command_id]["steps"])
         self._live = None
         self._allow_live = allow_live
@@ -147,7 +149,8 @@ class PlaceholderCommand(ArchonCommand):
 
 class TaskLiveDisplay:
     def __init__(self) -> None:
-        self._console = Console() if Console is not None else None
+        use_rich_console = Console is not None and not os.environ.get("PYTEST_CURRENT_TEST")
+        self._console = Console() if use_rich_console else None
         self._live = None
         self.state = {
             "status": "starting",

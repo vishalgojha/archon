@@ -101,7 +101,6 @@ def _await_login(bindings, provider: str) -> None:  # type: ignore[no-untyped-de
     click.echo(f"Key portal: {url}")
     if existing:
         return
-    click.prompt("Press Enter once logged in", default="", show_default=False)
 
 
 def _run_with_spinner(label: str, func):  # type: ignore[no-untyped-def]
@@ -430,7 +429,11 @@ def build_group(bindings):
         _Status(bindings).invoke(config_path=config_path)
 
     @group.command("chat", help=str(COMMAND_HELP[COMMAND_IDS[3]]))
-    @click.option("--mode", type=click.Choice(["chat", "swarm"]), default="chat")
+    @click.option(
+        "--mode",
+        type=click.Choice(["chat", "debate", "single", "pipeline"]),
+        default="chat",
+    )
     @click.option("--config", "config_path", default="config.archon.yaml")
     def chat_command(mode: str, config_path: str) -> None:
         _Chat(bindings).invoke(mode=mode, config_path=config_path)

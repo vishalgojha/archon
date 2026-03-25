@@ -7,17 +7,16 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable
 
+from archon.config import ArchonConfig
+from archon.core.cost_governor import CostGovernor
+from archon.providers import ProviderRouter
 from archon.skills.skill_executor import SkillExecutor
+from archon.swarm.agents import PlannerAgent, SkillAgent, SynthesizerAgent, ValidatorAgent
 from archon.swarm.evolution import EvolutionEngine
 from archon.swarm.memory import SwarmMemory
 from archon.swarm.spawn_decider import SpawnDeciderAgent
 from archon.swarm.tools.registry import ToolRegistry
 from archon.swarm.types import AgentResult, AgentSpec, PoolState, SwarmResult
-
-from archon.config import ArchonConfig
-from archon.core.cost_governor import CostGovernor
-from archon.providers import ProviderRouter
-from archon.swarm.agents import PlannerAgent, SkillAgent, SynthesizerAgent, ValidatorAgent
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 

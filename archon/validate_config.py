@@ -235,6 +235,7 @@ def validate_config(
 
     try:
         raw = _load_raw_config(config_path)
+        explicitly_configured = _explicitly_configured_providers(raw)
         normalized = _normalize_config(raw)
         validated = RuntimeValidationConfig.model_validate(normalized)
         report.schema_valid = True
@@ -247,9 +248,10 @@ def validate_config(
 
     checks = _providers_to_check(validated)
     target_provider = provider.strip().lower() if provider else None
+    configured_providers = explicitly_configured or checks
 
     if target_provider:
-        if target_provider not in checks:
+        if target_provider not in configured_providers:
             report.provider_health.append(
                 ProviderHealth(
                     provider=target_provider,
@@ -390,6 +392,27 @@ def _run_sync(coro):  # type: ignore[no-untyped-def]
     if error is not None:
         raise error
     return result
+
+
+def _explicitly_configured_providers(raw: dict[str, Any]) -> set[str]:
+    checks: set[str] = set()
+
+    providers = raw.get("providers") if isinstance(raw.get("providers"), dict) else None
+    if providers:
+        for role in ROLE_NAMES:
+            value = providers.get(role)
+            if isinstance(value, str) and value:
+                checks.add(value)
+        return checks
+
+    byok = raw.get("byok") if isinstance(raw.get("byok"), dict) else None
+    if byok:
+        for role in ROLE_NAMES:
+            value = byok.get(role)
+            if isinstance(value, str) and value:
+                checks.add(value)
+
+    return checks
 
 
 def _providers_to_check(validated: RuntimeValidationConfig) -> set[str]:

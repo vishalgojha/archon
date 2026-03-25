@@ -229,9 +229,6 @@ class ProviderRouter:
             True
         """
 
-        if _is_test_mode():
-            return self._test_response(role=role, prompt=prompt, model_override=model_override)
-
         effective_provider_override = provider_override
         if task_id and effective_provider_override is None:
             override = self._task_overrides.get(task_id) or {}
@@ -248,6 +245,11 @@ class ProviderRouter:
             provider_override=effective_provider_override,
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
+
+        if self._should_use_test_mode():
+            response = self._test_response(selection=selection, prompt=prompt)
+            self._record_usage(task_id=task_id, role=role, selection=selection, response=response)
+            return response
 
         providers_to_try = self._provider_priority_chain(role, effective_provider_override)
         try_order: list[ProviderSelection] = []
@@ -286,21 +288,7 @@ class ProviderRouter:
                     selection=attempt,
                     provider_override=effective_provider_override,
                 )
-            if task_id and self._cost_governor:
-                self._cost_governor.add_cost(
-                    task_id=task_id,
-                    cost_usd=response.usage.cost_usd,
-                    provider=attempt.provider,
-                    model=attempt.model,
-                )
-            if task_id and self._cost_optimizer is not None:
-                self._cost_optimizer.observe_selection(
-                    task_id,
-                    role=role,
-                    provider=attempt.provider,
-                    model=attempt.model,
-                    cost_usd=response.usage.cost_usd,
-                )
+            self._record_usage(task_id=task_id, role=role, selection=attempt, response=response)
             return response
 
         if last_error is not None:
@@ -354,9 +342,6 @@ class ProviderRouter:
             True
         """
 
-        if _is_test_mode():
-            return self._test_response(role=role, prompt=text, model_override=model_override)
-
         effective_provider_override = provider_override
         if task_id and effective_provider_override is None:
             override = self._task_overrides.get(task_id) or {}
@@ -373,6 +358,11 @@ class ProviderRouter:
             provider_override=effective_provider_override,
         )
         selection = self._optimize_selection_if_needed(task_id=task_id, selection=selection)
+
+        if self._should_use_test_mode():
+            response = self._test_response(selection=selection, prompt=text)
+            self._record_usage(task_id=task_id, role=role, selection=selection, response=response)
+            return response
 
         providers_to_try = self._provider_priority_chain(role, effective_provider_override)
         try_order: list[ProviderSelection] = []
@@ -426,21 +416,7 @@ class ProviderRouter:
                     selection=attempt,
                     provider_override=effective_provider_override,
                 )
-            if task_id and self._cost_governor:
-                self._cost_governor.add_cost(
-                    task_id=task_id,
-                    cost_usd=response.usage.cost_usd,
-                    provider=attempt.provider,
-                    model=attempt.model,
-                )
-            if task_id and self._cost_optimizer is not None:
-                self._cost_optimizer.observe_selection(
-                    task_id,
-                    role=role,
-                    provider=attempt.provider,
-                    model=attempt.model,
-                    cost_usd=response.usage.cost_usd,
-                )
+            self._record_usage(task_id=task_id, role=role, selection=attempt, response=response)
             return response
 
         if last_error is not None:
@@ -539,6 +515,7 @@ class ProviderRouter:
             model=model,
             base_url=base_url,
             api_key=api_key,
+            source="built_in",
         )
 
     def _resolve_base_url(self, provider: str) -> str:
@@ -907,6 +884,38 @@ class ProviderRouter:
             raw=data,
         )
 
+    def _should_use_test_mode(self) -> bool:
+        if os.environ.get("ARCHON_TEST_MODE"):
+            return True
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            return False
+        transport = getattr(self._http, "_transport", None)
+        return not isinstance(transport, httpx.MockTransport)
+
+    def _record_usage(
+        self,
+        *,
+        task_id: str | None,
+        role: str,
+        selection: ProviderSelection,
+        response: ProviderResponse,
+    ) -> None:
+        if task_id and self._cost_governor:
+            self._cost_governor.add_cost(
+                task_id=task_id,
+                cost_usd=response.usage.cost_usd,
+                provider=selection.provider,
+                model=selection.model,
+            )
+        if task_id and self._cost_optimizer is not None:
+            self._cost_optimizer.observe_selection(
+                task_id,
+                role=role,
+                provider=selection.provider,
+                model=selection.model,
+                cost_usd=response.usage.cost_usd,
+            )
+
     def _usage_for(
         self, provider: str, prompt_tokens: int, completion_tokens: int
     ) -> ProviderUsage:
@@ -919,19 +928,15 @@ class ProviderRouter:
             cost_usd=round(cost_usd, 6),
         )
 
-    def _test_response(
-        self, *, role: str, prompt: str, model_override: str | None
-    ) -> ProviderResponse:
-        provider = self._config.byok.primary
-        if provider not in SUPPORTED_PROVIDERS:
-            provider = "openrouter"
-        model = self._resolve_model(provider, role, model_override)
+    def _test_response(self, *, selection: ProviderSelection, prompt: str) -> ProviderResponse:
+        provider = selection.provider
+        model = selection.model
         prompt_tokens = _estimate_tokens(prompt)
         completion_tokens = _estimate_tokens("Test response")
         usage = self._usage_for(provider, prompt_tokens, completion_tokens)
         return ProviderResponse(
             text="Test response",
-            provider=provider,  # type: ignore[arg-type]
+            provider=provider,
             model=model,
             usage=usage,
             raw={"test_mode": True},
@@ -943,7 +948,3 @@ def _estimate_tokens(text: str) -> int:
         return 1
     # Fast approximation for cost governance when token data is unavailable.
     return max(1, int(math.ceil(len(text) / 4)))
-
-
-def _is_test_mode() -> bool:
-    return bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("ARCHON_TEST_MODE"))

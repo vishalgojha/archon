@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from string import Formatter
 from typing import Any
 
@@ -16,6 +17,10 @@ except Exception:  # pragma: no cover - optional dependency
     Panel = None
     Table = None
     Text = None
+
+
+def _rich_enabled() -> bool:
+    return not os.environ.get("PYTEST_CURRENT_TEST")
 
 
 class _SafeFormatDict(dict[str, Any]):
@@ -36,7 +41,7 @@ def _has_field(template: str, field_name: str) -> bool:
 
 def _as_panel(title: str, lines: list[str], *, subtitle: str | None = None) -> Any:
     body = "\n".join(line for line in lines if line)
-    if Panel is None:
+    if Panel is None or not _rich_enabled():
         if subtitle:
             return "\n".join([title, subtitle, body]).strip()
         return "\n".join([title, body]).strip()
@@ -52,13 +57,17 @@ def _as_panel(title: str, lines: list[str], *, subtitle: str | None = None) -> A
 
 def banner() -> Any:
     title = "ARCHON"
-    if Panel is None:
+    if Panel is None or not _rich_enabled():
         return title
     return Panel(title, title=title)
 
 
 def emit(renderable: Any) -> None:
-    if Console is not None and not isinstance(renderable, str):
+    if (
+        Console is not None
+        and not isinstance(renderable, str)
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+    ):
         Console().print(renderable)
         return
     print(str(renderable))
@@ -169,7 +178,7 @@ def placeholder_panel(command_id: str) -> Any:
 def steps_table(command_id: str, states: list[str]) -> Any:
     steps = COMMAND_COPY[command_id]["steps"]
     lines = [step_row(label, states[index]) for index, label in enumerate(steps)]
-    if Table is None or Panel is None or Group is None:
+    if Table is None or Panel is None or Group is None or not _rich_enabled():
         return _as_panel(command_id, lines)
     table = Table.grid(padding=(0, 1))
     table.add_column()

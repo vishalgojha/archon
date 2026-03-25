@@ -6,9 +6,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from archon.swarm.types import AgentResult, AgentStatus
-
 from archon.providers import ProviderRouter
+from archon.swarm.types import AgentResult, AgentStatus
 
 
 @dataclass(slots=True)

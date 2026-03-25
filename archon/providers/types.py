@@ -47,6 +47,27 @@ class ProviderResponse:
 
 
 @dataclass
+class ProviderToolCall:
+    """Normalized tool call emitted by a provider response."""
+
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class ProviderToolResponse:
+    """Normalized tool-calling response from any provider."""
+
+    text: str
+    provider: ProviderName
+    model: str
+    usage: dict[str, int]
+    tool_calls: list[ProviderToolCall]
+    raw: Any | None = None
+
+
+@dataclass
 class ProviderUsage:
     """Token and cost usage tracking."""
 
