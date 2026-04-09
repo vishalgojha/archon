@@ -1304,7 +1304,101 @@ class ArchonTuiApp(App[None]):
         self._flush_audit_log()
         self._safe_refresh()
 
+    async def _handle_slash_command(self, goal: str) -> None:
+        """Handle slash commands like /ollama, /pull, /config."""
+        import httpx
+
+        parts = goal.strip().split(maxsplit=1)
+        cmd = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if cmd == "/ollama":
+            try:
+                response = httpx.get(f"{self._config.byok.ollama_base_url.rstrip('/v1')}/api/tags", timeout=10)
+                response.raise_for_status()
+                models = response.json().get("models", [])
+                if models:
+                    lines = ["🦙 Available Ollama Models:"]
+                    for m in models:
+                        size_mb = m.get("size", 0) // 1024 // 1024
+                        lines.append(f"  • {m['name']} ({size_mb}MB)")
+                    self._state.log("\n".join(lines))
+                else:
+                    self._state.log("🦙 No models found. Pull one with /pull <model>")
+            except Exception as exc:
+                self._state.log(f"🦙 Ollama unreachable: {exc}")
+
+        elif cmd == "/pull":
+            if not arg:
+                self._state.log("Usage: /pull <model> (e.g., /pull gemma4:e4b)")
+                return
+            self._state.log(f"⬇️ Pulling {arg}... (may take a while)")
+            self._flush_audit_log()
+            try:
+                import subprocess
+                result = subprocess.run(["ollama", "pull", arg], capture_output=True, text=True)
+                if result.returncode == 0:
+                    self._state.log(f"✅ Successfully pulled {arg}")
+                    self._state.log("Analyzing model for best role...")
+                    
+                    model_lower = arg.lower()
+                    role = "primary"
+                    if any(x in model_lower for x in ["code", "coder", "qwen"]):
+                        role = "coding"
+                    elif any(x in model_lower for x in ["vision", "llava", "vision"]):
+                        role = "vision"
+                    elif any(x in model_lower for x in ["embed"]):
+                        role = "embedding"
+                    elif any(x in model_lower for x in ["3b", "1b", "2b", "mini", "small"]):
+                        role = "fast"
+                    
+                    config_path = self._config_path
+                    with open(config_path, "r") as f:
+                        import yaml
+                        cfg = yaml.safe_load(f)
+                    
+                    role_map = {
+                        "primary": "ollama_primary_model",
+                        "coding": "ollama_coding_model", 
+                        "fast": "ollama_fast_model",
+                        "vision": "ollama_vision_model",
+                        "embedding": "ollama_embedding_model",
+                    }
+                    key = role_map.get(role, "ollama_primary_model")
+                    old_model = cfg["byok"].get(key, "")
+                    cfg["byok"][key] = arg
+                    
+                    with open(config_path, "w") as f:
+                        yaml.dump(cfg, f, default_flow_style=False)
+                    
+                    self._state.log(f"🔧 Auto-configured {arg} as {role} (was: {old_model})")
+                    self._state.log("Config updated! Restart chat or run /models to verify.")
+                else:
+                    self._state.log(f"❌ Failed: {result.stderr}")
+            except Exception as exc:
+                self._state.log(f"❌ Error: {exc}")
+
+        elif cmd == "/models":
+            byok = self._config.byok
+            self._state.log(f"📋 Current config:\n  primary: {byok.ollama_primary_model}\n  coding: {byok.ollama_coding_model}\n  fast: {byok.ollama_fast_model}\n  vision: {byok.ollama_vision_model}")
+
+        elif cmd == "/config":
+            import subprocess
+            editor = subprocess.run(["cmd", "/c", "echo %EDITOR%"], capture_output=True, text=True).stdout.strip() or "notepad"
+            if editor == "notepad":
+                subprocess.Popen(["notepad", self._config_path])
+            else:
+                subprocess.Popen([editor, self._config_path])
+            self._state.log(f"📝 Opened config in {editor}")
+
+        else:
+            self._state.log(f"Unknown command: {cmd}")
+            self._state.log("Available: /ollama, /pull <model>, /models, /config")
+
     async def _run_chat_goal(self, goal: str) -> None:
+        if goal.startswith("/"):
+            await self._handle_slash_command(goal)
+            return
         try:
             session = await self._ensure_chat_session()
             self._state.activity = "Thinking..."
