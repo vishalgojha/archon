@@ -7,6 +7,7 @@ const NAV_SECTIONS = [
     items: [
       { id: "overview", label: "Overview" },
       { id: "builder", label: "Builder" },
+      { id: "visual", label: "Visual Builder" },
       { id: "skills", label: "Capabilities" }
     ]
   },
@@ -231,6 +232,9 @@ export default function App() {
     task: "",
     date: ""
   });
+  const [visualMode, setVisualMode] = useState<"idle" | "camera">("idle");
+  const [visualDescription, setVisualDescription] = useState<string>("");
+  const [visualCode, setVisualCode] = useState<string>("");
 
   const activeWorkflow = useMemo(
     () => workflows.find((wf) => wf.id === activeWorkflowId) ?? null,
@@ -371,6 +375,51 @@ export default function App() {
     };
     loadEvolution();
   }, [activeView, evolutionFilter]);
+
+  useEffect(() => {
+    if (activeView !== "visual") return;
+    if (visualMode === "camera") {
+      const video = document.getElementById("visual-camera-feed") as HTMLVideoElement;
+      if (video) {
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then((stream) => {
+            video.srcObject = stream;
+          })
+          .catch((err) => {
+            console.error("Camera error:", err);
+            setVisualMode("idle");
+          });
+      }
+    }
+  }, [activeView, visualMode]);
+
+  const handleVisualCapture = async () => {
+    const video = document.getElementById("visual-camera-feed") as HTMLVideoElement;
+    if (!video) return;
+    
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    
+    const imageData = canvas.toDataURL("image/jpeg", 0.8);
+    setVisualDescription("Analyzing visual input...");
+    setVisualCode("");
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/vision/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: imageData })
+      });
+      const data = await response.json();
+      setVisualDescription(data.description || "No description");
+      setVisualCode(data.code || "");
+    } catch {
+      setVisualDescription("Camera capture simulated - real vision analysis requires vision model");
+      setVisualCode("/* Visual Builder ready - connect to vision model for full functionality */");
+    }
+  };
 
   const availableProviders = useMemo(() => {
     return providers?.providers.map((item) => item.name) ?? [];
@@ -1153,6 +1202,106 @@ export default function App() {
                           Drop capabilities here to build an execution chain.
                         </div>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeView === "visual" && (
+              <div className="flex h-full flex-col gap-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Visual Builder</h2>
+                    <p className="muted-text">
+                      Show Archon what you want to build using your camera - perfect for explaining ideas visually
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      className="accent-button"
+                      onClick={() => setVisualMode(visualMode === "camera" ? "idle" : "camera")}
+                    >
+                      {visualMode === "camera" ? "Stop Camera" : "Start Camera"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                  <div className="panel-soft flex flex-col gap-4 p-4">
+                    <h3 className="text-lg font-semibold">Camera Feed</h3>
+                    {visualMode === "camera" ? (
+                      <div className="relative aspect-video overflow-hidden rounded-xl bg-black">
+                        <video 
+                          id="visual-camera-feed"
+                          autoPlay 
+                          playsInline 
+                          muted
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute bottom-4 left-4 right-4 flex gap-2">
+                          <button 
+                            className="flex-1 rounded-lg bg-accent px-4 py-2 font-semibold text-black"
+                            onClick={handleVisualCapture}
+                          >
+                            📸 Capture & Explain
+                          </button>
+                        </div>
+                        <div className="absolute top-4 right-4 rounded-lg bg-red-500 px-2 py-1 text-xs font-bold text-white animate-pulse">
+                          LIVE
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-stroke">
+                        <div className="text-center text-inkMuted">
+                          <div className="text-4xl mb-2">📹</div>
+                          <p>Click "Start Camera" to begin</p>
+                          <p className="text-xs mt-2">Show your screen, sketches, or describe what you want to build</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="panel-soft flex flex-col gap-4 p-4">
+                    <h3 className="text-lg font-semibold">Archon's Understanding</h3>
+                    <div className="flex-1 overflow-auto rounded-lg bg-black/50 p-4 font-mono text-sm">
+                      {visualDescription ? (
+                        <div className="space-y-3">
+                          <div className="text-accent">Vision Analysis:</div>
+                          <p className="text-ink">{visualDescription}</p>
+                          {visualCode && (
+                            <>
+                              <div className="border-t border-stroke pt-3">
+                                <div className="text-accent">Generated Code:</div>
+                                <pre className="mt-2 overflow-auto text-xs text-green-400">{visualCode}</pre>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-inkMuted">Capture from camera to see Archon's interpretation...</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel-soft p-4">
+                  <h3 className="text-lg font-semibold mb-3">How Visual Builder Works</h3>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-lg bg-black/30 p-4">
+                      <div className="text-2xl mb-2">📹</div>
+                      <h4 className="font-semibold">1. Show, Don't Tell</h4>
+                      <p className="text-sm text-inkMuted">Point your camera at wireframes, sketches, or your existing UI</p>
+                    </div>
+                    <div className="rounded-lg bg-black/30 p-4">
+                      <div className="text-2xl mb-2">🤖</div>
+                      <h4 className="font-semibold">2. AI Analysis</h4>
+                      <p className="text-sm text-inkMuted">Archon sees your design and understands the structure</p>
+                    </div>
+                    <div className="rounded-lg bg-black/30 p-4">
+                      <div className="text-2xl mb-2">💻</div>
+                      <h4 className="font-semibold">3. Code Generation</h4>
+                      <p className="text-sm text-inkMuted">Get working code that matches what you showed</p>
                     </div>
                   </div>
                 </div>
