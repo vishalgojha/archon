@@ -97,6 +97,7 @@ DRAWER_COPY = {
         "commands": {
             "providers.list": "Show the configured provider assigned to each role.",
             "providers.test": "Run live provider health checks and latency probes.",
+            "providers.ollama": "Show Ollama configuration and detected local models.",
         },
     },
     "ops": {
@@ -412,6 +413,21 @@ COMMAND_COPY = {
         "next_steps": [
             "Fix failed keys and rerun providers test.",
             "Run archon agents task to confirm outputs.",
+        ],
+    },
+    "providers.ollama": {
+        "what": "Show Ollama configuration and detected local models.",
+        "steps": [
+            "Load config and read current Ollama settings.",
+            "Probe Ollama server for available models.",
+            "Display role assignments with model suggestions.",
+        ],
+        "results": {
+            "success": "Found {model_count} Ollama models at {base_url}.",
+        },
+        "next_steps": [
+            "Edit config.archon.yaml to assign models to roles.",
+            "Run archon providers test to verify Ollama connectivity.",
         ],
     },
     "ops.serve": {

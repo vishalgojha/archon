@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,6 +209,155 @@ class ListDirTool(BaseTool):
         return ToolResult(ok=True, output=json.dumps(entries, ensure_ascii=False))
 
 
+@dataclass(slots=True)
+class GlobTool(BaseTool):
+    """Find files matching a glob pattern."""
+
+    policy: PathPolicy
+    name: str = "glob"
+    description: str = "Find files matching a glob pattern (e.g. **/*.py, src/**/*.ts)."
+    input_schema: dict[str, Any] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Glob pattern to match."},
+                "path": {"type": "string", "description": "Directory to search in (defaults to current directory)."},
+                "max_results": {"type": "integer", "description": "Maximum number of results to return."},
+            },
+            "required": ["pattern"],
+            "additionalProperties": False,
+        }
+
+    async def execute(self, **kwargs) -> ToolResult:
+        pattern = str(kwargs.get("pattern", "")).strip()
+        if not pattern:
+            return ToolResult(ok=False, output="pattern is required")
+
+        search_path_raw = str(kwargs.get("path", "")).strip()
+        search_path = Path(search_path_raw) if search_path_raw else Path.cwd()
+
+        try:
+            resolved = self.policy.assert_allowed(str(search_path))
+        except Exception as exc:
+            return ToolResult(ok=False, output=str(exc))
+
+        if not resolved.exists():
+            return ToolResult(ok=False, output=f"path not found: {resolved}")
+        if not resolved.is_dir():
+            return ToolResult(ok=False, output=f"path is not a directory: {resolved}")
+
+        max_results = int(kwargs.get("max_results", 500) or 500)
+        matches: list[str] = []
+
+        # Handle ** recursive glob
+        if "**" in pattern:
+            for path in resolved.rglob("*"):
+                rel = path.relative_to(resolved)
+                if fnmatch.fnmatch(str(rel), pattern) or fnmatch.fnmatch(path.name, pattern.split("/")[-1]):
+                    matches.append(str(rel))
+                    if len(matches) >= max_results:
+                        break
+        else:
+            # Simple glob in current directory only
+            for path in resolved.glob(pattern):
+                rel = path.relative_to(resolved)
+                matches.append(str(rel))
+                if len(matches) >= max_results:
+                    break
+
+        matches.sort()
+        if not matches:
+            return ToolResult(ok=True, output=f"no files matching pattern: {pattern}")
+
+        return ToolResult(ok=True, output="\n".join(matches))
+
+
+@dataclass(slots=True)
+class GrepTool(BaseTool):
+    """Search file contents using a regex pattern."""
+
+    policy: PathPolicy
+    name: str = "grep"
+    description: str = "Search file contents using a regex pattern. Returns matching lines with file and line number."
+    input_schema: dict[str, Any] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        self.input_schema = {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Regex pattern to search for."},
+                "path": {"type": "string", "description": "Directory to search in (defaults to current directory)."},
+                "include": {"type": "string", "description": "File pattern to include (e.g. *.py, *.{ts,tsx})."},
+                "max_results": {"type": "integer", "description": "Maximum number of matching lines to return."},
+            },
+            "required": ["pattern"],
+            "additionalProperties": False,
+        }
+
+    async def execute(self, **kwargs) -> ToolResult:
+        pattern = str(kwargs.get("pattern", "")).strip()
+        if not pattern:
+            return ToolResult(ok=False, output="pattern is required")
+
+        try:
+            regex = re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+        except re.error as exc:
+            return ToolResult(ok=False, output=f"invalid regex: {exc}")
+
+        search_path_raw = str(kwargs.get("path", "")).strip()
+        search_path = Path(search_path_raw) if search_path_raw else Path.cwd()
+
+        try:
+            resolved = self.policy.assert_allowed(str(search_path))
+        except Exception as exc:
+            return ToolResult(ok=False, output=str(exc))
+
+        if not resolved.exists():
+            return ToolResult(ok=False, output=f"path not found: {resolved}")
+
+        include_pattern = str(kwargs.get("include", "")).strip() or None
+        max_results = int(kwargs.get("max_results", 200) or 200)
+
+        results: list[str] = []
+        files_searched = 0
+
+        for path in resolved.rglob("*"):
+            if not path.is_file():
+                continue
+
+            # Skip binary files and common non-text files
+            skip_extensions = {".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".o", ".a"}
+            if path.suffix in skip_extensions:
+                continue
+
+            # Apply include filter
+            if include_pattern and not fnmatch.fnmatch(path.name, include_pattern):
+                continue
+
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+            except (PermissionError, OSError):
+                continue
+
+            files_searched += 1
+            rel_path = path.relative_to(resolved)
+
+            for line_num, line in enumerate(content.splitlines(), 1):
+                if regex.search(line):
+                    results.append(f"{rel_path}:{line_num}: {line.strip()}")
+                    if len(results) >= max_results:
+                        results.append(f"\n... truncated (searched {files_searched} files)")
+                        return ToolResult(ok=True, output="\n".join(results))
+
+        if not results:
+            return ToolResult(ok=True, output=f"no matches for pattern: {pattern}\n(searched {files_searched} files)")
+
+        summary = f"\n---\n(searched {files_searched} files, {len(results)} matches)"
+        return ToolResult(ok=True, output="\n".join(results) + summary)
+
+
 def build_system_tool_registry(policy: PathPolicy | None = None) -> ToolRegistry:
     if policy is None:
         raw_roots = os.getenv("ARCHON_ALLOWED_ROOTS", "")
@@ -217,5 +368,7 @@ def build_system_tool_registry(policy: PathPolicy | None = None) -> ToolRegistry
         ReadFileTool(policy=policy),
         WriteFileTool(policy=policy),
         ListDirTool(policy=policy),
+        GlobTool(policy=policy),
+        GrepTool(policy=policy),
     ]
     return ToolRegistry(tools)

@@ -1,0 +1,8 @@
+# ARCHON Skill: msme-udyam
+name: msme-udyam
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "msme-udyam"

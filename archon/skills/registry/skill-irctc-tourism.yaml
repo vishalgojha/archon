@@ -1,0 +1,8 @@
+# ARCHON Skill: irctc-tourism
+name: irctc-tourism
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "irctc-tourism"

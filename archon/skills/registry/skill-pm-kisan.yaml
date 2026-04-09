@@ -1,0 +1,8 @@
+# ARCHON Skill: pm-kisan
+name: pm-kisan
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "pm-kisan"

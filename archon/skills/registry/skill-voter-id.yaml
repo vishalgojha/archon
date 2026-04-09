@@ -1,0 +1,8 @@
+# ARCHON Skill: voter-id
+name: voter-id
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "voter-id"

@@ -1,0 +1,8 @@
+# ARCHON Skill: tax-itr
+name: tax-itr
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "tax-itr"

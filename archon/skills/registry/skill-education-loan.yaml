@@ -1,0 +1,58 @@
+# ARCHON Skill: Education Loan & Financial Aid
+# Student loan guidance for Indian students
+
+name: education-loan
+version: 1
+description: >
+  Education loan guidance for Indian students covering bank loans,
+  Vidya Lakshmi portal, scholarship search, interest subsidies,
+  and international education financing.
+
+category: education
+language_support: [hindi, english]
+
+provider_preference: openai
+cost_tier: low
+state: active
+
+triggers:
+  keywords:
+    - education loan
+    - student loan
+    - vidya lakshmi
+    - college fee
+    - study abroad loan
+    - interest subsidy
+    - ccss scheme
+    - bank loan education
+    - शिक्षा ऋण
+    - पढ़ाई का खर्च
+  patterns:
+    - "education.*loan.*apply"
+    - "student.*loan.*bank"
+    - "vidya.*lakshmi"
+    - "study.*abroad.*finance"
+    - "tuition.*fee.*loan"
+
+execution_config:
+  default_mode: single
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required: [course_level]
+  optional: [institution, course, loan_amount, income, category, state]
+
+output_format:
+  structure: [eligibility, banks, process, documents, subsidy]
+  language: auto-detect from context
+
+compliance:
+  data_sources: [Vidya Lakshmi, RBI, bank portals, MHRD]
+  disclaimers:
+    - "Interest rates vary by bank"
+    - "Verify eligibility with bank directly"
+
+metrics:
+  success_criteria: [bank_matched, process_clear, subsidy_info]
+  tracking: [course_level, bank_chosen, loan_amount]

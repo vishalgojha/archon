@@ -1,0 +1,58 @@
+# ARCHON Skill: Women Entrepreneurship & Schemes
+# Government schemes and support for women entrepreneurs in India
+
+name: women-entrepreneur
+version: 1
+description: >
+  Women entrepreneurship support including MUDRA Shishu loans, Stand-Up India,
+  Mahila Udyam Nidhi, SHG schemes, and women-specific business guidance.
+
+category: startup
+language_support: [hindi, english, marathi, tamil, telugu, bengali]
+
+provider_preference: openai
+cost_tier: low
+state: active
+
+triggers:
+  keywords:
+    - women entrepreneur
+    - mahila
+    - women business loan
+    - stand-up india
+    - shg scheme
+    - mahila udyam
+    - stree shakti
+    - self help group
+    - women startup
+    - महिला उद्यमी
+    - स्त्री शक्ति
+  patterns:
+    - "women.*business.*loan"
+    - "mahila.*udyam"
+    - "stand.*up.*india"
+    - "self.*help.*group.*scheme"
+    - "women.*startup.*funding"
+
+execution_config:
+  default_mode: single
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required: [business_type]
+  optional: [state, income, category, experience, loan_needed]
+
+output_format:
+  structure: [schemes, eligibility, process, documents, support]
+  language: auto-detect from context
+
+compliance:
+  data_sources: [NABARD, MUDRA, Ministry of Women & Child Development]
+  disclaimers:
+    - "Eligibility varies by scheme"
+    - "Contact bank for final approval"
+
+metrics:
+  success_criteria: [scheme_matched, process_clear, contacts_provided]
+  tracking: [business_type, state, scheme_applied]

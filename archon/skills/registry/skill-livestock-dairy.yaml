@@ -1,0 +1,64 @@
+# ARCHON Skill: Livestock & Dairy Advisory
+# India is world's #1 milk producer - massive need for farmer guidance
+
+name: livestock-dairy
+version: 1
+description: >
+  Livestock management, dairy farming guidance, animal health, breeding,
+  and government schemes for Indian livestock farmers (cattle, buffalo,
+  poultry, goat, sheep).
+
+category: agriculture
+language_support: [hindi, marathi, gujarati, tamil, telugu, kannada, bengali]
+
+provider_preference: openai
+cost_tier: low
+state: active
+
+triggers:
+  keywords:
+    - dairy
+    - livestock
+    - cattle
+    - buffalo
+    - poultry
+    - goat farming
+    - animal health
+    - fodder
+    - milk price
+    - nddb
+    - animal husbandry
+    - pmmpby
+    - गाय
+    - भैंस
+    - पशुपालन
+  patterns:
+    - "dairy farming.*india"
+    - "animal.*disease"
+    - "milk.*coop"
+    - "livestock.*scheme"
+    - "pmmsy.*fisheries"
+
+execution_config:
+  default_mode: single
+  fallback_mode: single
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required: [animal_type, state]
+  optional: [herd_size, breed, purpose, farm_size]
+
+output_format:
+  structure: [recommendations, schemes, health_tips, market_info]
+  language: auto-detect from context
+
+compliance:
+  data_sources: [NDDB, DAHD, state animal husbandry dept]
+  disclaimers:
+    - "Consult local veterinarian for medical advice"
+    - "Scheme eligibility varies by state"
+
+metrics:
+  success_criteria: [actionable_advice, scheme_info, health_guidance]
+  tracking: [animal_type, state, scheme_applied]

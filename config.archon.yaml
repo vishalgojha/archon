@@ -10,11 +10,11 @@ byok:
   prefer_cheapest: false
   free_tier_first: false
   ollama_base_url: http://localhost:11434/v1
-  ollama_primary_model: llama3.3:70b
-  ollama_coding_model: qwen2.5-coder:32b
-  ollama_fast_model: llama3.2:3b
-  ollama_embedding_model: nomic-embed-text
-  ollama_vision_model: llava:34b
+  ollama_primary_model: gemma4:e4b
+  ollama_coding_model: gemma4:e4b
+  ollama_fast_model: gemma4:e2b
+  ollama_embedding_model: gemma4:e2b
+  ollama_vision_model: gemma4:e4b
   vision_model: null
   openrouter_base_url: https://openrouter.ai/api/v1
   openrouter_fallback_chain:

@@ -1,0 +1,8 @@
+# ARCHON Skill: court-efile
+name: court-efile
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "court-efile"

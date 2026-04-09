@@ -1,0 +1,8 @@
+# ARCHON Skill: pm-surya-ghar
+name: pm-surya-ghar
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "pm-surya-ghar"

@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -37,7 +39,56 @@ from archon.core.orchestrator import Orchestrator
 from archon.core.types import TaskMode
 from archon.logging_utils import append_log, log_path
 from archon.skills.skill_registry import SkillRegistry
+from archon.tooling import build_default_tool_registry
 from archon.versioning import resolve_version
+
+
+def _get_workspace_context() -> dict[str, Any]:
+    """Get current workspace context (git branch, dir, modified files)."""
+    ctx: dict[str, Any] = {
+        "dir": str(Path.cwd()),
+        "git_branch": None,
+        "git_dirty": False,
+        "git_ahead": 0,
+        "modified_files": [],
+    }
+
+    # Check for git
+    git = shutil.which("git")
+    if not git:
+        return ctx
+
+    try:
+        # Get branch
+        result = subprocess.run(
+            [git, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+        )
+        if result.returncode == 0:
+            ctx["git_branch"] = result.stdout.strip()
+
+        # Get dirty status
+        result = subprocess.run(
+            [git, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+        )
+        if result.returncode == 0:
+            lines = [l for l in result.stdout.strip().splitlines() if l]
+            ctx["git_dirty"] = len(lines) > 0
+            ctx["modified_files"] = lines[:10]  # Limit to 10
+
+        # Get ahead count
+        result = subprocess.run(
+            [git, "rev-list", "--count", "HEAD..@{upstream}"],
+            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+        )
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            ctx["git_ahead"] = int(result.stdout.strip())
+
+    except Exception:
+        pass
+
+    return ctx
 
 
 @dataclass(slots=True)
@@ -235,6 +286,89 @@ class ApprovalScreen(ModalScreen[bool]):
 
     def action_approve(self) -> None:
         self.dismiss(True)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "approve")
+
+
+class CommandPaletteScreen(ModalScreen[str | None]):
+    """VS Code-style command palette."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Close"),
+        Binding("enter", "select", "Select"),
+    ]
+
+    COMMANDS: list[tuple[str, str, str]] = [
+        ("chat", "💬", "Start interactive chat"),
+        ("overview", "📊", "Show overview panel"),
+        ("tasks", "🔄", "Show tasks panel"),
+        ("skills", "🧠", "Show skills panel"),
+        ("history", "📜", "Show history panel"),
+        ("ollama", "🦙", "Show Ollama configuration"),
+        ("providers", "🔌", "List providers"),
+        ("validate", "✓", "Validate config"),
+        ("config", "⚙️", "Edit configuration"),
+        ("files", "📁", "Open file browser"),
+        ("clear", "🗑️", "Clear chat log"),
+    ]
+
+    def __init__(self, *, commands: list[tuple[str, str, str]] | None = None):
+        super().__init__()
+        self._commands = commands or self.COMMANDS
+        self._filtered = list(self._commands)
+        self._selected_index = 0
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Input(placeholder="Type to search commands...", id="palette-input"),
+            Label(id="palette-results"),
+            id="command-palette",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#palette-input", Input).focus()
+        self._render_results()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        query = event.value.lower().strip()
+        if not query:
+            self._filtered = list(self._commands)
+        else:
+            self._filtered = [
+                (name, icon, desc) for name, icon, desc in self._commands
+                if query in name.lower() or query in desc.lower()
+            ]
+        self._selected_index = 0
+        self._render_results()
+
+    def _render_results(self) -> None:
+        lines = []
+        for i, (name, icon, desc) in enumerate(self._filtered[:10]):
+            marker = "▸" if i == self._selected_index else " "
+            lines.append(f"{marker} {icon} [bold cyan]{name}[/] - {desc}")
+        if not self._filtered:
+            lines.append("[dim]No matching commands[/]")
+        self.query_one("#palette-results", Label).update("\n".join(lines))
+
+    def on_key(self, event) -> None:
+        if event.key == "up":
+            self._selected_index = max(0, self._selected_index - 1)
+            self._render_results()
+            event.prevent_default()
+        elif event.key == "down":
+            self._selected_index = min(len(self._filtered) - 1, self._selected_index + 1)
+            self._render_results()
+            event.prevent_default()
+
+    def action_select(self) -> None:
+        if self._filtered:
+            self.dismiss(self._filtered[self._selected_index][0])
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "approve")
@@ -558,11 +692,13 @@ class ArchonTuiApp(App[None]):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+p", "command_palette", "Palette"),
         Binding("ctrl+1", "show_chat", "Chat"),
         Binding("ctrl+2", "show_overview", "Overview"),
         Binding("ctrl+3", "show_tasks", "Tasks"),
         Binding("ctrl+4", "show_skills", "Skills"),
         Binding("ctrl+5", "show_history", "History"),
+        Binding("ctrl+6", "show_files", "Files"),
         Binding("ctrl+r", "refresh", "Refresh"),
         Binding("ctrl+l", "clear_log", "Clear"),
         Binding("ctrl+n", "new_task", "New"),
@@ -617,6 +753,7 @@ class ArchonTuiApp(App[None]):
                 Tab("🔄 Tasks", id="tab-tasks"),
                 Tab("🧠 Skills", id="tab-skills"),
                 Tab("📜 History", id="tab-history"),
+                Tab("📁 Files", id="tab-files"),
                 id="tabs-container",
             )
 
@@ -639,6 +776,11 @@ class ArchonTuiApp(App[None]):
                     yield Rule()
                     yield Label("Evolution Insights", id="evolution-label")
                     yield DataTable(id="evolution-table")
+
+                with ScrollableContainer(id="files-panel"):
+                    yield Label("File Browser", id="files-label")
+                    yield Input(placeholder="Glob pattern (e.g. **/*.py)...", id="files-search-input")
+                    yield DataTable(id="files-table")
 
             with Container(id="input-bar"):
                 yield Static(id="budget-display")
@@ -806,6 +948,46 @@ class ArchonTuiApp(App[None]):
                 str(skill.version),
             )
 
+    def _refresh_files_table(self, pattern: str = "**/*.py") -> None:
+        """Refresh the files table with glob pattern."""
+        table = self.query_one("#files-table", DataTable)
+        table.clear()
+        table.add_columns("Type", "Name", "Size")
+
+        import fnmatch
+        from pathlib import Path as PathLib
+
+        base = PathLib.cwd()
+        count = 0
+        try:
+            for path in base.rglob("*"):
+                if count >= 200:
+                    break
+                rel = str(path.relative_to(base))
+                if not fnmatch.fnmatch(rel, pattern):
+                    continue
+                file_type = "dir" if path.is_dir() else "file"
+                size = ""
+                if path.is_file():
+                    try:
+                        s = path.stat().st_size
+                        size = f"{s:,}"
+                    except OSError:
+                        size = "?"
+                table.add_row(file_type, rel, size)
+                count += 1
+        except Exception:
+            pass
+
+        if count == 0:
+            self._state.log(f"📁 No files matching: {pattern}")
+
+    def on_files_search_input_changed(self, event: Input.Changed) -> None:
+        """Handle file search input changes."""
+        if event.input.id == "files-search-input":
+            pattern = event.value.strip() or "**/*.py"
+            self._refresh_files_table(pattern)
+
     def _refresh_budget_display(self) -> None:
         spent = self._state.total_spent_usd
         limit = self._state.total_budget_usd
@@ -839,9 +1021,20 @@ class ArchonTuiApp(App[None]):
             activity = "Ready for chat" if self._state.mode == "chat" else "Idle"
         work_label = "Turns" if self._state.mode == "chat" else "Tasks"
         mode_label = "interactive chat" if self._state.mode == "chat" else self._state.mode
+
+        # Workspace context
+        ws = _get_workspace_context()
+        branch = ws.get("git_branch")
+        branch_str = f" [{branch}]" if branch else ""
+        dirty_str = " *" if ws.get("git_dirty") else ""
+        dir_short = Path(ws.get("dir", ".")).name
+
         status = (
-            f"{spinner}{activity} | 📡 Connected | 🎯 Mode: {mode_label} | "
-            f"📝 {work_label}: {active} active, {len(self._state.history)} completed"
+            f"{spinner}{activity} | "
+            f"📁 {dir_short}{branch_str}{dirty_str} | "
+            f"🎯 {mode_label} | "
+            f"📝 {work_label}: {active} active, {len(self._state.history)} done | "
+            f"Ctrl+P: palette | Ctrl+Q: quit"
         )
         self.query_one("#status-bar", Static).update(status)
 
@@ -887,6 +1080,79 @@ class ArchonTuiApp(App[None]):
         self.current_tab = 4
         self._switch_tab("history-panel")
 
+    def action_show_files(self) -> None:
+        self.current_tab = 5
+        self._switch_tab("files-panel")
+        self._refresh_files_table()
+
+    async def action_command_palette(self) -> None:
+        """Open the command palette."""
+        def on_dismiss(command: str | None) -> None:
+            if not command:
+                return
+            self._handle_palette_command(command)
+
+        self.push_screen(CommandPaletteScreen(), on_dismiss)
+
+    def _handle_palette_command(self, command: str) -> None:
+        """Execute a command from the palette."""
+        self._state.log(f"📋 Command: {command}")
+        if command == "chat":
+            self.action_show_chat()
+        elif command == "overview":
+            self.action_show_overview()
+        elif command == "tasks":
+            self.action_show_tasks()
+        elif command == "skills":
+            self.action_show_skills()
+        elif command == "history":
+            self.action_show_history()
+        elif command == "files":
+            self.action_show_files()
+        elif command == "clear":
+            self.action_clear_log()
+        elif command == "providers":
+            self._show_providers_info()
+        elif command == "ollama":
+            self._show_ollama_info()
+        elif command == "validate":
+            self._validate_config()
+        elif command == "config":
+            self._open_config_editor()
+
+    def _show_providers_info(self) -> None:
+        """Show providers info in overview."""
+        self._refresh_overview()
+        self.action_show_overview()
+
+    def _show_ollama_info(self) -> None:
+        """Show Ollama info in log."""
+        from archon.cli.drawers.providers import _probe_ollama
+        probe = _probe_ollama(self._config.byok.ollama_base_url)
+        reachable = probe.get("reachable", False)
+        models = probe.get("models", [])
+        self._state.log(f"🦙 Ollama: {'reachable' if reachable else 'unreachable'}")
+        for m in models[:10]:
+            self._state.log(f"   - {m}")
+
+    def _validate_config(self) -> None:
+        """Run config validation."""
+        from archon.validate_config import validate_config
+        self._state.log("✓ Validating config...")
+        report = validate_config(self._config_path)
+        status = "PASSED" if report.ok else "FAILED"
+        self._state.log(f"✓ Config validation: {status}")
+
+    def _open_config_editor(self) -> None:
+        """Open config in default editor."""
+        import subprocess
+        editor = os.environ.get("EDITOR", "notepad")
+        try:
+            subprocess.Popen([editor, self._config_path])
+            self._state.log(f"📝 Opened {self._config_path} in {editor}")
+        except Exception as exc:
+            self._state.log(f"✗ Failed to open editor: {exc}")
+
     def _switch_tab(self, panel_id: str) -> None:
         for panel in [
             "chat-panel",
@@ -894,6 +1160,7 @@ class ArchonTuiApp(App[None]):
             "tasks-panel",
             "skills-panel",
             "history-panel",
+            "files-panel",
         ]:
             widget = self.query_one(f"#{panel}", ScrollableContainer)
             widget.display = panel == panel_id
@@ -910,6 +1177,8 @@ class ArchonTuiApp(App[None]):
             self.action_show_skills()
         elif tab_id == "tab-history":
             self.action_show_history()
+        elif tab_id == "tab-files":
+            self.action_show_files()
 
     def action_refresh(self) -> None:
         self._safe_refresh()
@@ -930,11 +1199,13 @@ class ArchonTuiApp(App[None]):
         help_text = """
 # 📖 Keyboard Shortcuts
 
+- `Ctrl+P`: Command palette
 - `Ctrl+1`: Chat panel
 - `Ctrl+2`: Overview panel
 - `Ctrl+3`: Tasks panel  
 - `Ctrl+4`: Skills panel
 - `Ctrl+5`: History panel
+- `Ctrl+6`: Files panel
 - `Ctrl+R`: Refresh all
 - `Ctrl+L`: Clear log
 - `Ctrl+N`: New task
@@ -1034,9 +1305,21 @@ class ArchonTuiApp(App[None]):
     async def _run_chat_goal(self, goal: str) -> None:
         try:
             session = await self._ensure_chat_session()
-            self._state.activity = "Agent planning reply"
-            self._safe_refresh()
+            self._state.activity = "Thinking..."
+            self._flush_audit_log()
+
+            # Show thinking indicator
+            log = self.query_one("#evolution-log", RichLog)
+            thinking_id = len(self._state.audit_log)
+            self._state.audit_log.append(f"[dim][{time.strftime('%H:%M:%S')}] 🤔 Thinking...[/dim]")
+            self._flush_audit_log()
+
             result = await session.send(message=goal, event_sink=self._handle_chat_event)
+
+            # Remove thinking indicator
+            if thinking_id < len(self._state.audit_log):
+                self._state.audit_log[thinking_id] = ""
+
         except Exception as exc:
             detail = str(exc) or repr(exc)
             self._state.log(f"❌ Chat failed: {detail}")
@@ -1058,7 +1341,10 @@ class ArchonTuiApp(App[None]):
                 budget_usd=budget_limit,
             )
         )
-        self._state.log(f"🤖 Archon: {result.reply or '[no reply]'}")
+
+        # Show reply with typing effect
+        reply = result.reply or "[no reply]"
+        self._state.log(f"🤖 Archon: {reply}")
         self.notify("Reply ready", title="Archon", timeout=3, severity="information")
         self._flush_audit_log()
         self._state.activity = ""

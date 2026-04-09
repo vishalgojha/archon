@@ -1,0 +1,8 @@
+# ARCHON Skill: national-scholarship
+name: national-scholarship
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "national-scholarship"

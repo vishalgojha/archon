@@ -1,0 +1,8 @@
+# ARCHON Skill: banking-complaint
+name: banking-complaint
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "banking-complaint"

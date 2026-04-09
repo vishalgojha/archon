@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
+from typing import Any
 
 import click
 
@@ -9,7 +11,7 @@ from archon.cli.base_command import ArchonCommand
 from archon.cli.copy import DRAWER_COPY
 
 DRAWER_ID = "providers"
-COMMAND_IDS = ("providers.list", "providers.test")
+COMMAND_IDS = ("providers.list", "providers.test", "providers.ollama")
 DRAWER_META = DRAWER_COPY[DRAWER_ID]
 COMMAND_HELP = DRAWER_META["commands"]
 
@@ -95,6 +97,88 @@ class _Test(ArchonCommand):
         return {"provider_count": len(providers), "pass_count": pass_count}
 
 
+def _probe_ollama(base_url: str, timeout_s: float = 3.0) -> dict[str, Any]:
+    """Probe Ollama server for available models."""
+    import httpx
+
+    try:
+        response = httpx.get(f"{base_url.rstrip('/v1')}/api/tags", timeout=timeout_s)
+        response.raise_for_status()
+        payload = response.json()
+        models = [m["name"] for m in payload.get("models", [])]
+        return {"reachable": True, "models": models, "base_url": base_url}
+    except Exception as exc:
+        return {"reachable": False, "models": [], "base_url": base_url, "error": str(exc)}
+
+
+def _model_matches_role(model: str, role: str) -> bool:
+    """Check if a model name matches a role pattern."""
+    model_lower = model.lower()
+    role_hints = {
+        "coding": ["code", "coder", "qwen", "deepseek-coder", "starcoder", "codellama"],
+        "vision": ["vision", "llava", "bakllava", "moondream", "minicpm-v"],
+        "embedding": ["embed", "nomic", "mxbai", "bge"],
+        "fast": ["3b", "1b", "2b", "mini", "small", "flash"],
+        "primary": ["70b", "72b", "405b", "llama3", "mistral-large", "command-r-plus"],
+    }
+    hints = role_hints.get(role, [])
+    return any(hint in model_lower for hint in hints)
+
+
+class _OllamaConfig(ArchonCommand):
+    """Interactive Ollama model configuration."""
+
+    command_id = COMMAND_IDS[2]
+    allow_live = False
+
+    def run(  # type: ignore[no-untyped-def,override]
+        self,
+        session,
+        *,
+        config_path: str,
+    ):
+        config = session.run_step(0, self.bindings._load_config, config_path)
+        byok = config.byok
+
+        # Probe Ollama
+        probe = session.run_step(1, _probe_ollama, byok.ollama_base_url)
+        reachable = probe.get("reachable", False)
+        models: list[str] = probe.get("models", [])
+
+        # Display current config
+        lines = [
+            f"base_url: {byok.ollama_base_url}",
+            f"status: {'reachable' if reachable else 'unreachable'}",
+            f"models found: {len(models)}",
+            "",
+            "current role assignments:",
+            f"  primary:     {byok.ollama_primary_model}",
+            f"  coding:      {byok.ollama_coding_model}",
+            f"  fast:        {byok.ollama_fast_model}",
+            f"  vision:      {byok.ollama_vision_model}",
+            f"  embedding:   {byok.ollama_embedding_model}",
+        ]
+
+        if models:
+            lines.extend(["", "available models:"])
+            for m in sorted(models):
+                roles_hint = []
+                for role in ("primary", "coding", "fast", "vision", "embedding"):
+                    if _model_matches_role(m, role):
+                        roles_hint.append(role)
+                hint = f" (suggested: {', '.join(roles_hint)})" if roles_hint else ""
+                lines.append(f"  - {m}{hint}")
+
+        session.run_step(2, lambda: None)
+        session.print(renderer.detail_panel(self.command_id, lines))
+
+        return {
+            "reachable": reachable,
+            "model_count": len(models),
+            "base_url": byok.ollama_base_url,
+        }
+
+
 def build_group(bindings):
     @click.group(
         name=DRAWER_ID,
@@ -116,5 +200,10 @@ def build_group(bindings):
     @click.option("--timeout", "timeout_s", default=6.0, type=float)
     def test_command(config_path: str, timeout_s: float) -> None:
         _Test(bindings).invoke(config_path=config_path, timeout_s=timeout_s)
+
+    @group.command("ollama", help="Show Ollama configuration and detected models.")
+    @click.option("--config", "config_path", default="config.archon.yaml")
+    def ollama_command(config_path: str) -> None:
+        _OllamaConfig(bindings).invoke(config_path=config_path)
 
     return group

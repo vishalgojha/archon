@@ -1,0 +1,8 @@
+# ARCHON Skill: weather-imd
+name: weather-imd
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "weather-imd"

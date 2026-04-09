@@ -1,0 +1,112 @@
+# ARCHON Skill: Startup Funding & Investor Matching
+# Comprehensive startup funding guidance for Indian entrepreneurs
+
+name: startup-funding
+version: 1
+description: >
+  Provides comprehensive startup funding guidance including government grants,
+  angel investors, VCs, crowdfunding, bank loans, and DPIIT schemes. Matches
+  startups with appropriate funding sources based on stage, sector, and location.
+
+category: startup
+stage_support:
+  - idea
+  - pre-seed
+  - seed
+  - series-a
+  - series-b+
+  - growth
+
+provider_preference: anthropic
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - startup funding
+    - seed funding
+    - angel investor
+    - venture capital
+    - vc funding
+    - grant
+    - pitch deck
+    - fundraising
+    - dpiit
+    - startup india
+    - atal innovation
+    - fund of funds
+    - incubator
+    - accelerator
+    - y combinator
+    - investors
+    - valuation
+    - term sheet
+    - convertible note
+    - esop
+    - फंडिंग
+    - निवेशक
+  patterns:
+    - "how to raise.*funding"
+    - "startup.*funding.*india"
+    - "where to find.*investors"
+    - "government.*grant.*startup"
+    - "dpiit.*registration"
+    - "pitch.*investor"
+    - "pre-seed.*seed.*funding"
+    - "venture.*fund.*india"
+    - "angel.*network.*india"
+    - "incubator.*accelerator.*india"
+
+execution_config:
+  default_mode: pipeline
+  fallback_mode: single
+  max_budget_usd: 1.00
+  timeout_seconds: 90
+
+context_requirements:
+  required:
+    - startup_stage
+    - sector
+    - current_revenue
+  optional:
+    - location
+    - team_size
+    - funding_amount
+    - previous_funding
+    - incorporation_date
+    - dpiit_registered
+    - traction_metrics
+
+output_format:
+  structure:
+    - funding_options
+    - eligibility_check
+    - application_process
+    - documents_required
+    - timeline
+    - success_tips
+    - investor_matching
+  language: english
+
+compliance:
+  data_sources:
+    - Startup India Portal
+    - DPIIT Database
+    - SEBI Registry
+    - Incubator Networks
+  disclaimers:
+    - "Funding availability varies; verify current status"
+    - "Consult CA/Legal advisor for investment agreements"
+    - "Valuations are indicative and negotiable"
+
+metrics:
+  success_criteria:
+    - funding_sources_identified
+    - eligibility_verified
+    - application_process_clear
+    - documents_listed
+  tracking:
+    - startup_stage
+    - sector
+    - funding_type
+    - location

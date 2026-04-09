@@ -1,0 +1,60 @@
+# ARCHON Skill: Tourism Guide & Booking
+# India tourism - homestay, hotel, visa, attractions
+
+name: tourism-guide
+version: 1
+description: >
+  Indian tourism assistance covering destination recommendations, hotel/homestay
+  booking, tourist visa, UNESCO sites, adventure tourism, medical tourism,
+  and government tourism schemes.
+
+category: services
+language_support: [hindi, english, french, german, japanese, chinese]
+
+provider_preference: openai
+cost_tier: low
+state: active
+
+triggers:
+  keywords:
+    - tourism
+    - travel
+    - hotel booking
+    - tourist visa
+    - destination
+    - homestay
+    - medical tourism
+    - adventure travel
+    - heritage site
+    - unesco india
+    - पर्यटन
+    - यात्रा
+  patterns:
+    - "best.*place.*visit.*india"
+    - "hotel.*booking.*india"
+    - "tourist.*visa.*india"
+    - "travel.*itinerary"
+    - "homestay.*registration"
+
+execution_config:
+  default_mode: single
+  max_budget_usd: 0.30
+  timeout_seconds: 45
+
+context_requirements:
+  required: [travel_type]
+  optional: [destination, duration, budget, interests, nationality]
+
+output_format:
+  structure: [recommendations, bookings, tips, regulations]
+  language: auto-detect from context
+
+compliance:
+  data_sources: [Incredible India, IRCTC Tourism, state tourism boards]
+  disclaimers:
+    - "Verify travel advisories before travel"
+    - "Prices are indicative"
+
+metrics:
+  success_criteria: [destination_recommended, practical_info]
+  tracking: [destination, travel_type, nationality]

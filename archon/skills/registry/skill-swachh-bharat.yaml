@@ -1,0 +1,8 @@
+# ARCHON Skill: swachh-bharat
+name: swachh-bharat
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "swachh-bharat"

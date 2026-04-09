@@ -1,0 +1,8 @@
+# ARCHON Skill: digi-yatra
+name: digi-yatra
+version: 1
+state: active
+provider_preference: openai
+cost_tier: low
+trigger_patterns:
+  - "digi-yatra"
