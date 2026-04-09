@@ -60,8 +60,7 @@ class SelfPromptEngineer:
                 success_rate REAL DEFAULT 0.0,
                 total_uses INTEGER DEFAULT 0,
                 created_at REAL,
-                last_used REAL,
-                FOREIGN KEY (parent_gene_id) REFERENCES prompt_genes(gene_id)
+                last_used REAL
             )
         """)
         conn.execute("""
@@ -71,8 +70,7 @@ class SelfPromptEngineer:
                 input_type TEXT,
                 output_quality REAL,
                 feedback TEXT,
-                observed_at REAL,
-                FOREIGN KEY (gene_id) REFERENCES prompt_genes(gene_id)
+                observed_at REAL
             )
         """)
         conn.execute("""
@@ -82,8 +80,7 @@ class SelfPromptEngineer:
                 content TEXT NOT NULL,
                 is_active INTEGER DEFAULT 1,
                 active_gene_id TEXT,
-                updated_at REAL,
-                FOREIGN KEY (active_gene_id) REFERENCES prompt_genes(gene_id)
+                updated_at REAL
             )
         """)
         conn.commit()
@@ -124,7 +121,7 @@ Suggest alternative approaches.""",
         conn = sqlite3.connect(self.db_path)
         for prompt_type, content in foundation_prompts.items():
             cursor = conn.execute(
-                "SELECT gene_id FROM system_prompts WHERE prompt_type = ?",
+                "SELECT prompt_id FROM system_prompts WHERE prompt_type = ?",
                 (prompt_type,)
             )
             if not cursor.fetchone():

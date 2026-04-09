@@ -152,7 +152,7 @@ class AgentGenealogy:
         if pattern not in successful:
             successful.append(pattern)
         if insight and insight not in insights:
-            insights.append(Insight)
+            insights.append(insight)
         
         new_rate = (count + 1) / (count + 1) if count > 0 else 1.0
         
