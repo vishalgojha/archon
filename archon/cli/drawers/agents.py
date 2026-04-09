@@ -169,8 +169,6 @@ class _Tui(ArchonCommand):
             initial_mode=mode,
             initial_context=context,
             config_path=config_path,
-            onboarding=onboarding,
-            show_launcher=True,
         )
         session.update_step(2, "success")
         session.run_step(3, lambda: None)
