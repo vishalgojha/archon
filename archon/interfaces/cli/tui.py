@@ -680,7 +680,7 @@ class ArchonTuiApp(App[None]):
 
     #evolution-log {
         background: rgba(10, 10, 20, 0.8);
-        border: 1px solid rgba(0, 255, 255, 0.2);
+        border: solid rgba(0, 255, 255, 0.2);
         color: #c0c0d0;
         overflow-y: auto;
     }
@@ -720,7 +720,7 @@ class ArchonTuiApp(App[None]):
 
     #side-log {
         background: rgba(5, 5, 15, 0.9);
-        border: 1px solid rgba(255, 0, 255, 0.2);
+        border: solid rgba(255, 0, 255, 0.2);
     }
 
     /* ─────────────────────────────────────────────────────────────────────────────
@@ -729,7 +729,7 @@ class ArchonTuiApp(App[None]):
     .hud-container {
         padding: 1;
         background: rgba(0, 0, 0, 0.3);
-        border: 1px solid $border;
+        border: solid $border;
     }
 
     .hud-label {
@@ -745,7 +745,7 @@ class ArchonTuiApp(App[None]):
         width: 100%;
         height: 12;
         background: #1a1a2e;
-        border: 1px solid #2a2a4e;
+        border: solid #2a2a4e;
     }
 
     .hud-bar {
@@ -772,7 +772,7 @@ class ArchonTuiApp(App[None]):
         width: 100%;
         height: 200;
         background: rgba(0, 20, 0, 0.5);
-        border: 2px solid #00ff88;
+        border: solid #00ff88;
     }
 
     #radar-sweep {
@@ -787,7 +787,7 @@ class ArchonTuiApp(App[None]):
        STATUS BARS - GAME STYLE
     ───────────────────────────────────────────────────────────────────────────── */
     .status-frame {
-        border: 1px solid #2a2a4e;
+        border: solid #2a2a4e;
         background: rgba(10, 10, 30, 0.8);
     }
 
@@ -815,14 +815,14 @@ class ArchonTuiApp(App[None]):
     #goal-input {
         width: 1fr;
         height: 50;
-        border: 2px solid #00ffff;
+        border: solid #00ffff;
         background: #0a0a15;
         color: #00ffff;
         padding: 0 1;
     }
 
     #goal-input:focus {
-        border: 2px solid #ff00ff;
+        border: solid #ff00ff;
         box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
     }
 
@@ -866,7 +866,7 @@ class ArchonTuiApp(App[None]):
     ───────────────────────────────────────────────────────────────────────────── */
     DataTable {
         background: #0a0a15;
-        border: 1px solid #2a2a4e;
+        border: solid #2a2a4e;
     }
 
     DataTable > .datatable--header {
@@ -951,7 +951,7 @@ class ArchonTuiApp(App[None]):
     Button {
         background: #1a1a3e;
         color: #00ffff;
-        border: 1px solid #00ffff;
+        border: solid #00ffff;
     }
 
     Button:hover {
@@ -969,11 +969,11 @@ class ArchonTuiApp(App[None]):
     Input {
         background: #0a0a15;
         color: #ffffff;
-        border: 1px solid #2a2a4e;
+        border: solid #2a2a4e;
     }
 
     Input:focus {
-        border: 1px solid #00ffff;
+        border: solid #00ffff;
     }
 
     /* ─────────────────────────────────────────────────────────────────────────────
