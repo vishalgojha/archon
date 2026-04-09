@@ -4,7 +4,7 @@ byok:
   vision: ollama
   fast: ollama
   embedding: ollama
-  fallback: openrouter
+  fallback: null
   budget_per_task_usd: 0.5
   budget_per_month_usd: 150.0
   prefer_cheapest: false
@@ -14,13 +14,8 @@ byok:
   ollama_coding_model: qwen3.5:latest
   ollama_fast_model: gemma4:e2b
   ollama_embedding_model: gemma4:e2b
-  ollama_vision_model: llava:34b
+  ollama_vision_model: gemma4:e4b
   vision_model: null
-  openrouter_base_url: https://openrouter.ai/api/v1
-  openrouter_fallback_chain:
-  - anthropic/claude-sonnet-4-5
-  - openai/gpt-4o
-  - meta-llama/llama-4-maverick:free
   custom_endpoints: []
 budget:
   daily_limit_usd: 5.0
