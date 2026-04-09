@@ -1327,10 +1327,13 @@ class ArchonTuiApp(App[None]):
         arg = parts[1].strip() if len(parts) > 1 else ""
 
         if cmd == "/ollama":
+            self._state.activity = "🦙 Fetching models..."
+            self._flush_audit_log()
             try:
                 response = httpx.get(f"{self._config.byok.ollama_base_url.rstrip('/v1')}/api/tags", timeout=10)
                 response.raise_for_status()
                 models = response.json().get("models", [])
+                self._state.activity = ""
                 if models:
                     lines = ["🦙 Available Ollama Models:"]
                     for m in models:
@@ -1346,11 +1349,12 @@ class ArchonTuiApp(App[None]):
             if not arg:
                 self._state.log("Usage: /pull <model> (e.g., /pull gemma4:e4b)")
                 return
-            self._state.log(f"⬇️ Pulling {arg}... (may take a while)")
+            self._state.activity = f"⬇️ Pulling {arg}..."
             self._flush_audit_log()
             try:
                 import subprocess
                 result = subprocess.run(["ollama", "pull", arg], capture_output=True, text=True)
+                self._state.activity = ""
                 if result.returncode == 0:
                     self._state.log(f"✅ Successfully pulled {arg}")
                     self._state.log("Analyzing model for best role...")
@@ -1397,12 +1401,15 @@ class ArchonTuiApp(App[None]):
             self._state.log(f"📋 Current config:\n  primary: {byok.ollama_primary_model}\n  coding: {byok.ollama_coding_model}\n  fast: {byok.ollama_fast_model}\n  vision: {byok.ollama_vision_model}")
 
         elif cmd == "/config":
+            self._state.activity = "📝 Opening config..."
+            self._flush_audit_log()
             import subprocess
             editor = subprocess.run(["cmd", "/c", "echo %EDITOR%"], capture_output=True, text=True).stdout.strip() or "notepad"
             if editor == "notepad":
                 subprocess.Popen(["notepad", self._config_path])
             else:
                 subprocess.Popen([editor, self._config_path])
+            self._state.activity = ""
             self._state.log(f"📝 Opened config in {editor}")
 
         else:
