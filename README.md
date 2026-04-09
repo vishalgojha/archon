@@ -1,219 +1,140 @@
 # ARCHON
 
-Autonomous Recursive Cognitive Hierarchy Orchestration Network.
+**Autonomous Recursive Cognitive Hierarchy Orchestration Network**
 
-This repository bootstraps the ARCHON runtime with:
+An AI-powered CLI assistant for India with 67 domain skills, local Ollama support, voice interaction, and browser automation.
 
-- A provider-agnostic BYOK router (cloud, local, OpenAI-compatible custom endpoints)
-- A persistent interactive chat runtime for terminal-driven operator sessions
-- A WhatsApp-native path powered by a local Baileys sidecar
-- FastAPI + WebSocket service entrypoint
-- CLI + TUI control plane with config validation
-- Swarm orchestration, memory, evolution, and UI pack shell support
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Tests](https://img.shields.io/badge/Tests-178%20passing-brightgreen)
+![Skills](https://img.shields.io/badge/Skills-67-orange)
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **67 India Skills** | Agriculture, legal, finance, healthcare, government schemes, startup funding |
+| **Ollama Local** | Run with local models (gemma4, qwen3.5) - no API keys needed |
+| **ElevenLabs Voice** | Text-to-speech with 11+ voices including Hindi |
+| **6 Tools** | bash, read, write, glob, grep, list_dir |
+| **TUI** | Interactive terminal with command palette (Ctrl+P), file browser (Ctrl+6) |
+| **Cult UI** | 12 AI-first React components for web dashboard |
+| **Page Agent** | Browser automation with natural language |
 
 ## Quick Start
 
-1. Install ARCHON globally for your user with the command that matches your shell:
-
-Windows PowerShell:
-
-```powershell
-cd path\\to\\archon
-.\install.ps1
-```
-
-Windows Command Prompt (`cmd.exe`):
-
-```cmd
-cd path\\to\\archon
-install.cmd
-```
-
-WSL, Linux, or macOS:
-
 ```bash
-cd /path/to/archon
-./install.sh
-```
-
-Notes:
-
-- Do not run `.\install.ps1` inside WSL or bash.
-- Do not run `install.sh` without `./` from bash.
-- Do not run `install.ps1` directly from `cmd.exe`; use `install.cmd` there.
-- Use `.\install.ps1 --dev`, `install.cmd --dev`, or `./install.sh --dev` if you want the lint/test toolchain inside the dedicated ARCHON runtime.
-
-The installer:
-
-- uses your available `py -3` or `python` interpreter instead of hardcoding `py -3.11`
-- creates an isolated runtime under `%LOCALAPPDATA%\Programs\Archon` on Windows, `~/.local/share/archon` on Linux/WSL, or `~/Library/Application Support/Archon` on macOS
-- writes `archon` and `archon-server` shims into the runtime `bin` directory
-- avoids replacing the shared `archon.exe` in your system Python
-- refreshes the current PowerShell session when run via `install.ps1`
-
-Open a new shell after installation if you used `install.cmd` or `install.sh`; `install.ps1` updates the current PowerShell session automatically.
-You can re-run the same flow later with `archon install`.
-Remove the dedicated runtime with `archon uninstall --yes`.
-
-2. Manual development setup is still available if you want a repo-local virtual environment:
-
-```powershell
-py -3 -m venv .venv
-.venv\Scripts\Activate.ps1
+# Clone and install
+git clone https://github.com/vishalgojha/archon.git
+cd archon
 pip install -e ".[dev]"
-```
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
+# Configure for Ollama (local, free)
+export OLLAMA_API_KEY="ollama"
+export OLLAMA_BASE_URL="http://localhost:11434/v1"
 
-3. Set at least one provider key in your environment:
-
-```powershell
-$env:ANTHROPIC_API_KEY = "..."
-$env:OPENAI_API_KEY = "..."
-```
-
-```bash
+# Or use cloud providers
 export ANTHROPIC_API_KEY="..."
 export OPENAI_API_KEY="..."
+
+# Start chatting
+archon core chat
 ```
 
-4. Validate config:
-
-```powershell
-python -m archon.validate_config
-```
+## Commands
 
 ```bash
-python -m archon.validate_config
+archon core chat              # Interactive TUI with local Ollama
+archon providers ollama       # Check Ollama status and models
+archon providers test         # Test all configured providers
+python -m archon.validate_config  # Validate configuration
 ```
 
-5. Start API server:
+## 67 India Skills
 
-```powershell
-archon ops serve
+### Agriculture (6)
+kisan-advisory, soil-health, e-nam, pm-kisan, swachh-bharat, water-harvest
+
+### Government (9)
+passport, voter-id, pan-aadhaar, digilocker, e-district, ration-card, gas-subsidy, umang, govt-form
+
+### Finance (8)
+gst, msme-loan, msme-udyam, tax-itr, banking, epfo, upi-fraud, education-loan
+
+### Healthcare (5)
+healthcare-triage, ayushman-bharat, cowin-vaccine, jan-aushadhi, livestock-dairy
+
+### Legal (5)
+legal-aid, court-efile, land-record, property-verification, nalsa-legal
+
+### Startup (4)
+startup-india, startup-funding, women-entrepreneur, msme-udyam
+
+### Services (7)
+railway, vehicle-rto, telecom, insurance, water, electricity, e-shram
+
+### Commerce (4)
+customs, export, fssai, ondc
+
+### Education (4)
+scholarship, ncs-career, explain-theorem, national-scholarship
+
+### More (15)
+tourism-guide, irctc-tourism, digi-yatra, fisheries, cyber-crime, police-service, senior-citizen, disability, solar-adoption, weather-imd, ceir, pm-awas, pm-surya-ghar, browser-automation, voice-assistant
+
+## Ollama Configuration
+
+Archon works with local Ollama models:
+
+```yaml
+# config.archon.yaml
+byok:
+  primary: ollama
+  coding: ollama
+  fast: ollama
+  ollama_base_url: http://localhost:11434/v1
+  ollama_primary_model: gemma4:e4b    # 8B, good for coding
+  ollama_fast_model: gemma4:e2b       # 5B, fast responses
 ```
 
-You can also run the dedicated server shim via `archon-server`.
+**Recommended models for 8GB+ RAM:**
+- `gemma4:e4b` — 8B, balanced (primary)
+- `gemma4:e2b` — 5B, fast (secondary)
+- `qwen3.5:latest` — 9.7B, coding
 
-## CLI
+**Memory tip:** Close browser before running local models.
 
-Once installed, ARCHON exposes a capability-oriented `archon` command surface.
+## Voice (ElevenLabs)
 
-### Enhanced TUI
+```bash
+export ELEVENLABS_API_KEY="your-key"
 
-Run `archon agents tui` to open the enhanced terminal dashboard with:
-
-- **Tabbed interface** - Overview, Tasks, History, Log panels
-- **Real-time progress bars** - Visual task tracking
-- **Live budget display** - Spending analytics
-- **Keyboard shortcuts** - Ctrl+1-4 for tabs, Ctrl+R refresh, Ctrl+Q quit
-- **Modal dialogs** - Approval workflows
-- **Notifications** - Success/error toasts
-
-### Interactive Chat
-
-`archon core chat` is now the primary terminal experience. Use it, or `archon agents tui`,
-for a transcript-driven session where ARCHON responds turn by turn and can call tools as
-needed.
-
-The terminal session uses a markdown-first, low-noise layout (overview header +
-streaming log + input line). Press `Ctrl+H` inside the session to toggle the
-overview panel.
-
-Recommended commands:
-
-```powershell
-archon
-archon core
+# Voice is used automatically in TUI responses
 archon core chat
-archon agents tui
-archon ops serve
-archon ops health
-archon agents task "Increase qualified leads in Indian pharmacy SMBs"
-archon agents swarm "Find the biggest bottleneck in our lead funnel"
 ```
 
-### WhatsApp Native
+## Architecture
 
-ARCHON now has a WhatsApp-native path under `archon/whatsapp_native`.
-
-What this means:
-
-- the chat runtime can use WhatsApp tools without assuming a third-party gateway
-- a local Node/Baileys sidecar is the default transport when `ARCHON_BAILEYS_NATIVE=1`
-- the Python side owns lifecycle and the Node side owns the live WhatsApp session
-
-Setup:
-
-```powershell
-cd archon\whatsapp_native\sidecar
-npm install
 ```
-
-See `archon/whatsapp_native/README.md` for the sidecar endpoints, pairing notes, and env vars.
-
-Useful entry points:
-
-- `archon` shows the capability drawers and available control surfaces.
-- `archon core chat` opens the primary interactive terminal session.
-- `archon agents tui` opens the same chat runtime inside the richer terminal UI.
-- `archon ops serve` starts the API server.
-- `archon ops health` checks the running server.
-- `archon agents task` sends a task to the running API when you want request/response execution.
-- `archon agents swarm` runs the local orchestration path directly.
-- Some drawers intentionally expose staged placeholder commands before the full operator flow is wired.
-
-6. Use the task API when you want a single request/response run:
-
-```json
-POST /v1/tasks
-{
-  "goal": "Increase qualified leads in Indian pharmacy SMBs",
-  "mode": "swarm",
-  "context": {
-    "market": "India",
-    "sector": "pharmacy"
-  }
-}
-```
-
-The task API remains swarm-oriented today. Interactive chat and WhatsApp-native sessions are
-the primary operator-facing flows.
-
-## Architecture (Implemented Runtime)
-
-```text
 archon/
-├── core/
-│   ├── orchestrator.py
-│   ├── approval_gate.py
-│   └── cost_governor.py
-├── swarm/
-│   ├── coordinator.py
-│   ├── spawn_decider.py
-│   ├── evolution.py
-│   ├── memory.py
-│   ├── agents/
-│   └── tools/
-├── providers/
-├── memory/
-├── evolution/
-├── interfaces/api/
-├── interfaces/cli/
-├── interfaces/web/shell/
-└── ui_packs/
+├── core/           # Orchestrator, approval gate, cost governor
+├── providers/      # Multi-provider router (Ollama, OpenAI, Anthropic)
+├── tooling/        # Tools: bash, read, write, glob, grep
+├── skills/         # 67 India-specific skills
+├── voice/          # ElevenLabs TTS integration
+├── interfaces/
+│   ├── cli/        # TUI with Textual
+│   ├── api/        # FastAPI server
+│   └── web/cult-ui/# AI-first React components
+└── tests/          # 178 tests
 ```
-
-Beyond the core orchestrator, provider, and API layers, the repo includes memory,
-evolution, and the UI pack registry + shell for browser-based operator experiences.
 
 ## BYOK Guarantees
 
-- Keys are loaded from `os.environ` only.
-- Keys are never written into config files.
-- Router never logs raw key values.
-- Missing providers fail with actionable errors and fallback options.
+- Keys loaded from `os.environ` only
+- Keys never written to config files
+- Router never logs raw key values
+- Ollama works without any API key
+
+## License
+
+MIT
