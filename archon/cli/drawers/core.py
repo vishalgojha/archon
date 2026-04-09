@@ -329,8 +329,6 @@ class _Chat(ArchonCommand):
             initial_mode=mode,
             initial_context={},
             config_path=config_path,
-            onboarding=onboarding,
-            show_launcher=True,
         )
         session.update_step(2, "success")
         return {"mode": mode}
