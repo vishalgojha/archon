@@ -750,19 +750,19 @@ class ArchonTuiApp(App[None]):
 
     .hud-bar {
         height: 100%;
-        background: linear-gradient(90deg, #00ffff, #00ff88);
+        background: #00ff88;
     }
 
     .hud-bar-health {
-        background: linear-gradient(90deg, #ff00ff, #ff4444);
+        background: #ff00ff;
     }
 
     .hud-bar-energy {
-        background: linear-gradient(90deg, #00ffff, #0088ff);
+        background: #0088ff;
     }
 
     .hud-bar-xp {
-        background: linear-gradient(90deg, #f5b86c, #ffff00);
+        background: #f5b86c;
     }
 
     /* ─────────────────────────────────────────────────────────────────────────────
@@ -829,13 +829,13 @@ class ArchonTuiApp(App[None]):
     #submit-btn {
         width: 100;
         height: 50;
-        background: linear-gradient(180deg, #00ffff, #0088aa);
+        background: #00aaaa;
         color: #000000;
         text-style: bold;
     }
 
     #submit-btn:hover {
-        background: linear-gradient(180deg, #ff00ff, #aa0088);
+        background: #aa0088;
     }
 
     /* ─────────────────────────────────────────────────────────────────────────────
@@ -870,7 +870,7 @@ class ArchonTuiApp(App[None]):
     }
 
     DataTable > .datatable--header {
-        background: linear-gradient(180deg, #1a1a3e, #0a0a2e);
+        background: #1a1a3e;
         color: #00ffff;
     }
 
