@@ -359,6 +359,9 @@ class CommandPaletteScreen(ModalScreen[str | None]):
             self._selected_index = min(len(self._filtered) - 1, self._selected_index + 1)
             self._render_results()
             event.prevent_default()
+        elif event.key == "enter":
+            self.action_select()
+            event.prevent_default()
 
     def action_select(self) -> None:
         if self._filtered:
