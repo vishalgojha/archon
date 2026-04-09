@@ -1,0 +1,67 @@
+{
+  "name": "cult-ui",
+  "version": "1.0.0",
+  "description": "AI-first UI components for Archon's web dashboard",
+  "source": "https://github.com/vishalgojha/cult-ui",
+  "components": {
+    "agent": {
+      "file": "agent.tsx",
+      "description": "Agent status indicator with model info",
+      "props": ["status", "model", "usage"]
+    },
+    "message": {
+      "file": "message.tsx",
+      "description": "Chat message bubble for user and assistant",
+      "props": ["role", "children", "avatar"]
+    },
+    "prompt-input": {
+      "file": "prompt-input.tsx",
+      "description": "Text input with file attachment support",
+      "props": ["placeholder", "onSubmit", "attachments"]
+    },
+    "model-selector": {
+      "file": "model-selector.tsx",
+      "description": "LLM model picker dropdown",
+      "props": ["models", "selected", "onChange"]
+    },
+    "conversation": {
+      "file": "conversation.tsx",
+      "description": "Scrollable message list with auto-scroll",
+      "props": ["messages", "isLoading"]
+    },
+    "chain-of-thought": {
+      "file": "chain-of-thought.tsx",
+      "description": "Expandable reasoning/thinking display",
+      "props": ["content", "defaultOpen"]
+    },
+    "artifact": {
+      "file": "artifact.tsx",
+      "description": "Code/file artifact display panel",
+      "props": ["type", "content", "language"]
+    },
+    "code-block": {
+      "file": "code-block.tsx",
+      "description": "Syntax-highlighted code block with copy",
+      "props": ["code", "language", "showLineNumbers"]
+    },
+    "tool": {
+      "file": "tool.tsx",
+      "description": "Tool call display with input/output",
+      "props": ["name", "input", "output", "status"]
+    },
+    "canvas": {
+      "file": "canvas.tsx",
+      "description": "Canvas workspace for artifacts",
+      "props": ["children"]
+    },
+    "panel": {
+      "file": "panel.tsx",
+      "description": "Side panel layout",
+      "props": ["title", "children"]
+    }
+  },
+  "dependencies": {
+    "required": ["@ai-sdk/react", "ai", "lucide-react"],
+    "optional": ["@uiw/react-codemirror", "shiki"]
+  }
+}

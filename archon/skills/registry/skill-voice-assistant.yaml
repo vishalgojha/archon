@@ -1,0 +1,62 @@
+# ARCHON Skill: Voice Assistant (ElevenLabs)
+# Voice-enabled AI interaction with speech input/output
+
+name: voice-assistant
+version: 1
+description: >
+  Voice-enabled AI assistant using ElevenLabs TTS and STT. Speak your queries
+  and hear AI responses. Supports multiple languages and voices.
+
+category: voice
+language_support: [english, hindi, and 29 more]
+
+provider_preference: fast
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - voice
+    - speak
+    - listen
+    - talk
+    - audio
+    - speech
+    - elevenlabs
+    - tts
+    - stt
+    - transcription
+    - dictation
+    - voice input
+    - voice output
+    - microphone
+  patterns:
+    - "speak.*to.*me"
+    - "voice.*input"
+    - "talk.*instead.*type"
+    - "eleven.?labs"
+    - "text.*to.*speech"
+    - "speech.*to.*text"
+
+execution_config:
+  default_mode: single
+  max_budget_usd: 0.10
+  timeout_seconds: 30
+
+context_requirements:
+  required: [action]
+  optional: [text, voice_id, language]
+
+output_format:
+  structure: [audio_url, transcription, response]
+  language: auto-detect
+
+compliance:
+  data_sources: [ElevenLabs API]
+  disclaimers:
+    - "Voice data is processed by ElevenLabs"
+    - "Check token usage for large audio files"
+
+metrics:
+  success_criteria: [audio_generated, transcription_accurate]
+  tracking: [action, language, tokens_used]

@@ -1,0 +1,62 @@
+# ARCHON Skill: Cult UI Component Generator
+# Generate React components using cult-ui AI patterns
+
+name: cult-ui
+version: 1
+description: >
+  Generate React/Next.js UI components using cult-ui's AI-first design system.
+  Includes 180+ pre-built components for chat interfaces, agent UIs, and
+  AI-powered applications.
+
+category: frontend
+language_support: [typescript, react]
+
+provider_preference: openai
+cost_tier: low
+state: active
+
+triggers:
+  keywords:
+    - react component
+    - ui component
+    - chat interface
+    - ai chat ui
+    - cult ui
+    - shadcn
+    - tailwind component
+    - next.js component
+    - frontend code
+    - ui design
+    - prompt input
+    - message bubble
+    - model selector
+  patterns:
+    - "create.*react.*component"
+    - "build.*chat.*interface"
+    - "generate.*ui.*code"
+    - "cult.?ui"
+    - "ai.*chat.*component"
+    - "message.*bubble.*react"
+
+execution_config:
+  default_mode: single
+  max_budget_usd: 0.30
+  timeout_seconds: 60
+
+context_requirements:
+  required: [component_type]
+  optional: [framework, styling, features]
+
+output_format:
+  structure: [component_code, installation, usage]
+  language: typescript
+
+compliance:
+  data_sources: [cult-ui GitHub, component registry]
+  disclaimers:
+    - "Check component licenses before commercial use"
+    - "Adapt code to your project's styling"
+
+metrics:
+  success_criteria: [code_generated, installable, functional]
+  tracking: [component_type, framework]
