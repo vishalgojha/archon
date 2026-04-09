@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import shutil
 import sqlite3
 import subprocess
@@ -13,6 +14,117 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# ════════════════════════════════════════════════════════════════════════════════
+# CYBERPUNK VISUAL EFFECTS ENGINE - PARTICLES, RADAR, HOLOGRAPHIC UI
+# ════════════════════════════════════════════════════════════════════════════════
+
+PARTICLE_COLORS = ["#00ffff", "#ff00ff", "#00ff88", "#f5b86c", "#ff4444"]
+
+
+@dataclass
+class Particle:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    color: str
+    size: int
+    life: float
+
+
+class ParticleSystem:
+    """Animated particle system for visual effects."""
+    
+    def __init__(self, width: int = 80, height: int = 24):
+        self.width = width
+        self.height = height
+        self.particles: list[Particle] = []
+    
+    def spawn(self, count: int = 5) -> None:
+        for _ in range(count):
+            self.particles.append(Particle(
+                x=random.random() * self.width,
+                y=random.random() * self.height,
+                vx=(random.random() - 0.5) * 0.5,
+                vy=(random.random() - 0.5) * 0.5,
+                color=random.choice(PARTICLE_COLORS),
+                size=random.randint(1, 3),
+                life=random.random() * 100 + 50
+            ))
+    
+    def update(self) -> list[Particle]:
+        for p in self.particles[:]:
+            p.x += p.vx
+            p.y += p.vy
+            p.life -= 1
+            if p.life <= 0 or p.x < 0 or p.x >= self.width or p.y < 0 or p.y >= self.height:
+                self.particles.remove(p)
+        if len(self.particles) < 20:
+            self.spawn(3)
+        return self.particles
+    
+    def render(self) -> str:
+        grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
+        for p in self.particles:
+            gx, gy = int(p.x), int(p.y)
+            if 0 <= gx < self.width and 0 <= gy < self.height:
+                char = "●" if p.size > 1 else "·"
+                grid[gy][gx] = f"[{p.color}]{char}[/{p.color}]"
+        return "\n".join("".join(row) for row in grid)
+
+
+@dataclass
+class RadarBlip:
+    angle: float
+    distance: float
+    label: str = ""
+
+
+class RadarWidget:
+    """Animated radar display for tracking agents/tasks."""
+    
+    def __init__(self, radius: int = 10):
+        self.radius = radius
+        self.blips: list[RadarBlip] = []
+        self.sweep_angle = 0.0
+    
+    def add_blip(self, angle: float, distance: float, label: str = "") -> None:
+        self.blips.append(RadarBlip(angle, distance, label))
+    
+    def clear_blips(self) -> None:
+        self.blips.clear()
+    
+    def update(self) -> None:
+        self.sweep_angle = (self.sweep_angle + 5) % 360
+    
+    def render(self) -> str:
+        lines = []
+        center = self.radius + 1
+        for y in range(self.radius * 2 + 3):
+            line = ""
+            for x in range(self.radius * 2 + 3):
+                dist = ((x - center) ** 2 + (y - center) ** 2) ** 0.5
+                if dist <= self.radius:
+                    if dist < 1:
+                        line += "◎"
+                    elif dist < self.radius * 0.3:
+                        line += "○"
+                    elif dist < self.radius * 0.6:
+                        line += "◔"
+                    elif dist < self.radius * 0.9:
+                        line += "◑"
+                    else:
+                        line += "◉"
+                else:
+                    line += " "
+            lines.append(line)
+        return "\n".join(lines)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# MAIN TUI IMPORTS
+# ════════════════════════════════════════════════════════════════════════════════
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -421,345 +533,481 @@ class TaskProgressPanel(Static):
 
 class ArchonTuiApp(App[None]):
     CSS = """
+    /* ═══════════════════════════════════════════════════════════════════════════════
+       ARCHON CYBERPUNK TUI - VISUAL EXPERIENCE
+    ═══════════════════════════════════════════════════════════════════════════════ */
+    
     Screen {
-        background: #0b0b0b;
-        color: #e8e8e8;
+        background: #050508;
     }
 
     Header {
-        background: #1a1a2e;
-        color: #f5b86c;
+        background: $surface;
+        color: $text;
     }
 
     Footer {
-        background: #1a1a2e;
-        color: #8a8a8a;
+        background: $surface;
+        color: $text-muted;
     }
 
+    /* ─────────────────────────────────────────────────────────────────────────────
+       ROOT LAYOUT
+    ───────────────────────────────────────────────────────────────────────────── */
     #root {
-        height: 1fr;
-        min-height: 0;
-        padding: 1 2;
+        height: 100%;
+        width: 100%;
     }
 
-    #main-container {
-        height: 1fr;
-        min-height: 0;
+    /* ─────────────────────────────────────────────────────────────────────────────
+       CYBERPUNK GLOW EFFECTS
+    ───────────────────────────────────────────────────────────────────────────── */
+    .glow-cyan {
+        text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff, 0 0 30px #00ffff;
+    }
+    
+    .glow-magenta {
+        text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff, 0 0 30px #ff00ff;
+    }
+    
+    .glow-gold {
+        text-shadow: 0 0 10px #f5b86c, 0 0 20px #f5b86c;
+    }
+    
+    .glow-green {
+        text-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88;
     }
 
+    .glow-red {
+        text-shadow: 0 0 10px #ff4444, 0 0 20px #ff4444;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       SCANLINES OVERLAY
+    ───────────────────────────────────────────────────────────────────────────── */
+    #scanlines {
+        background: transparent;
+        opacity: 0.03;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       BACKGROUND GRID
+    ───────────────────────────────────────────────────────────────────────────── */
+    #background-grid {
+        background: #030308;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       PARTICLE CANVAS
+    ───────────────────────────────────────────────────────────────────────────── */
+    #particles {
+        background: transparent;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       SIDEBAR NAVIGATION
+    ───────────────────────────────────────────────────────────────────────────── */
     #sidebar {
-        width: 12;
-        min-width: 12;
-        background: #12121a;
-        border-right: solid #2a2a3e;
+        width: 80;
+        min-width: 80;
+        background: $surface;
+        border-right: solid $border;
     }
 
     #sidebar-tabs {
-        height: 1fr;
-        background: #12121a;
+        height: 100%;
+        background: $surface;
     }
 
     #sidebar-tabs Tabs {
-        background: #12121a;
+        background: $surface;
     }
 
     #sidebar-tabs Tabs > Tab {
-        background: #12121a;
-        color: #8a8a9a;
+        background: $surface;
+        color: $text-muted;
         width: 100%;
-        padding: 1 2;
+        height: 60;
+        padding: 8 0;
     }
 
     #sidebar-tabs Tabs > Tab:hover {
-        background: #1a1a2a;
-        color: #e8e8e8;
+        background: $surface-hover;
+        color: $text;
     }
 
     #sidebar-tabs Tabs > Tab.-active {
-        background: #1a1a2e;
-        color: #f5b86c;
-        border-left: solid #f5b86c;
+        background: $surface-active;
+        color: #00ffff;
+        border-left: 3px solid #00ffff;
     }
 
+    #sidebar-tabs Tabs > Tab.-active > .tab--label {
+        color: #00ffff;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       MAIN CONTENT AREA
+    ───────────────────────────────────────────────────────────────────────────── */
     #main-area {
-        height: 1fr;
-        min-height: 0;
+        height: 100%;
+        width: 1fr;
+        background: #080810;
     }
 
     #content-area {
         width: 1fr;
         height: 1fr;
-        min-height: 0;
     }
 
-    #side-panel {
-        width: 25;
-        min-width: 20;
-        background: #0f0f18;
-        border-left: solid #2a2a3e;
-        padding: 1;
-    }
-
-    #side-panel-title {
-        color: #f5b86c;
-        text-style: bold;
-        padding-bottom: 1;
-    }
-
-    #side-log {
-        background: #0f0f18;
-        color: #a0a0b0;
-    }
-
-    Tabs {
-        background: #1a1a2e;
-    }
-
-    Tabs > Tab {
-        background: #2a2a3e;
-        color: #e8e8e8;
-    }
-
-    Tabs > Tab:hover {
-        background: #3a3a4e;
-    }
-
-    Tabs > Tab.-active {
-        background: #f5b86c;
-        color: #0b0b0b;
-    }
-
-    #content-area {
-        height: 1fr;
-        min-height: 0;
-    }
-
-    #overview-panel {
-        width: 100%;
-        height: 100%;
-        padding: 1 2;
-    }
-
-    #tasks-panel {
-        width: 100%;
-        height: 100%;
-        padding: 1 2;
-    }
-
-    #history-panel {
-        width: 100%;
-        height: 100%;
-        padding: 1 2;
-    }
-
-    #skills-panel {
-        width: 100%;
-        height: 100%;
-        padding: 1 2;
-    }
-
-
+    /* ─────────────────────────────────────────────────────────────────────────────
+       CHAT PANEL - FLOATING MESSAGES
+    ───────────────────────────────────────────────────────────────────────────── */
     #chat-panel {
         width: 100%;
         height: 100%;
         padding: 1 2;
+        background: transparent;
     }
 
-    DataTable {
-        background: #0f0f0f;
-        border: solid #2a2a2a;
-    }
-
-    DataTable > .datatable--header {
-        background: #1a1a2e;
-        color: #f5b86c;
-    }
-
-    DataTable > .datatable--cursor {
-        background: #2a2a3e;
-    }
-
-    Markdown {
-        color: #e8e8e8;
-        background: #0f0f0f;
-        border: solid #2a2a2a;
-    }
-
-    Markdown H1 {
-        color: #f5b86c;
-        border-bottom: solid #2a2a2a;
-    }
-
-    Markdown H2 {
-        color: #f5b86c;
-    }
-
-    Markdown Code {
-        color: #a6d8ff;
-        background: #1a1a2e;
-    }
-
-    RichLog {
-        border: solid #2a2a2a;
-        background: #0f0f0f;
-        color: #e8e8e8;
+    #evolution-log {
+        background: rgba(10, 10, 20, 0.8);
+        border: 1px solid rgba(0, 255, 255, 0.2);
+        color: #c0c0d0;
         overflow-y: auto;
     }
 
-    #input-bar {
-        height: 5;
-        min-height: 5;
-        padding: 0 2;
+    #evolution-log UserInput {
+        color: #00ffff;
+        text-style: bold;
+    }
+
+    #evolution-log BotResponse {
+        color: #ff00ff;
+    }
+
+    #evolution-log SystemMessage {
+        color: #f5b86c;
+        text-style: italic;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       SIDE PANEL - HUD
+    ───────────────────────────────────────────────────────────────────────────── */
+    #side-panel {
+        width: 320;
+        min-width: 280;
+        background: $surface;
+        border-left: 2px solid #00ffff;
+    }
+
+    #side-panel-title {
+        color: #00ffff;
+        text-style: bold;
+        text-align: center;
+        padding: 1 0;
+        background: rgba(0, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+    }
+
+    #side-log {
+        background: rgba(5, 5, 15, 0.9);
+        border: 1px solid rgba(255, 0, 255, 0.2);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       HUD ELEMENTS
+    ───────────────────────────────────────────────────────────────────────────── */
+    .hud-container {
+        padding: 1;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid $border;
+    }
+
+    .hud-label {
+        color: #00ffff;
+        text-style: bold;
+    }
+
+    .hud-value {
+        color: #ffffff;
+    }
+
+    .hud-bar-container {
+        width: 100%;
+        height: 12;
         background: #1a1a2e;
-        border-top: solid #2a2a2a;
+        border: 1px solid #2a2a4e;
+    }
+
+    .hud-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #00ffff, #00ff88);
+    }
+
+    .hud-bar-health {
+        background: linear-gradient(90deg, #ff00ff, #ff4444);
+    }
+
+    .hud-bar-energy {
+        background: linear-gradient(90deg, #00ffff, #0088ff);
+    }
+
+    .hud-bar-xp {
+        background: linear-gradient(90deg, #f5b86c, #ffff00);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       RADAR WIDGET
+    ───────────────────────────────────────────────────────────────────────────── */
+    #radar-container {
+        width: 100%;
+        height: 200;
+        background: rgba(0, 20, 0, 0.5);
+        border: 2px solid #00ff88;
+    }
+
+    #radar-sweep {
+        background: rgba(0, 255, 136, 0.3);
+    }
+
+    #radar-blip {
+        background: #00ff88;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       STATUS BARS - GAME STYLE
+    ───────────────────────────────────────────────────────────────────────────── */
+    .status-frame {
+        border: 1px solid #2a2a4e;
+        background: rgba(10, 10, 30, 0.8);
+    }
+
+    .status-frame-title {
+        color: #f5b86c;
+        text-style: bold;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       INPUT BAR
+    ───────────────────────────────────────────────────────────────────────────── */
+    #input-bar {
+        height: 80;
+        min-height: 80;
+        padding: 0 2;
+        background: $surface;
+        border-top: 2px solid #00ffff;
     }
 
     #input-container {
-        height: 3;
-        min-height: 3;
-        align: left middle;
-    }
-
-    #goal-label {
-        width: 6;
-        color: #f5b86c;
-        text-style: bold;
-        padding-right: 1;
+        height: 60;
+        min-height: 60;
     }
 
     #goal-input {
         width: 1fr;
-        height: 3;
-        border: solid #2a2a2a;
-        background: #0f0f0f;
-        color: #e8e8e8;
+        height: 50;
+        border: 2px solid #00ffff;
+        background: #0a0a15;
+        color: #00ffff;
         padding: 0 1;
-    }
-
-    #suggestions-panel {
-        height: 6;
-        background: #1a1a1a;
-        border: solid #2a2a2a;
-        padding: 0 1;
-    }
-
-    #suggestions-panel:focus {
-        border: solid #f5b86c;
     }
 
     #goal-input:focus {
-        border: solid #f5b86c;
+        border: 2px solid #ff00ff;
+        box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
     }
 
     #submit-btn {
-        width: 12;
-        height: 3;
-        margin-left: 1;
-        background: #f5b86c;
-        color: #0b0b0b;
+        width: 100;
+        height: 50;
+        background: linear-gradient(180deg, #00ffff, #0088aa);
+        color: #000000;
         text-style: bold;
     }
 
+    #submit-btn:hover {
+        background: linear-gradient(180deg, #ff00ff, #aa0088);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       SUGGESTIONS
+    ───────────────────────────────────────────────────────────────────────────── */
+    #suggestions-panel {
+        height: 40;
+        background: $surface;
+        border-top: 1px solid $border;
+    }
+
+    #suggestions-text {
+        color: #808090;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       STATUS BAR
+    ───────────────────────────────────────────────────────────────────────────── */
     #status-bar {
-        height: 1;
-        color: #8a8a8a;
-        padding: 0 1;
-    }
-
-    #budget-display {
-        height: 1;
-        color: #6bcb77;
-        padding: 0 1;
-    }
-
-    #provider-panel {
-        width: 30;
-        height: 1fr;
-        padding: 1;
-        background: #0f0f0f;
-        border: solid #2a2a2a;
-        margin: 1;
-    }
-
-    #active-tasks-panel {
-        width: 1fr;
-        height: 10;
-        padding: 1;
-        background: #0f0f0f;
-        border: solid #2a2a2a;
-        margin: 1;
-    }
-
-    #approval-modal {
-        width: 80;
-        height: auto;
-        padding: 1 2;
-        border: round #f5b86c;
-        background: #1a1a2e;
-    }
-
-    #approval-summary {
-        padding: 1 0;
-        color: #e8e8e8;
-    }
-
-    Button {
-        border: solid #2a2a2a;
-        background: #0f0f0f;
-        color: #e8e8e8;
+        height: 30;
+        background: $surface;
+        color: #00ff88;
         text-style: bold;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       DATA TABLES
+    ───────────────────────────────────────────────────────────────────────────── */
+    DataTable {
+        background: #0a0a15;
+        border: 1px solid #2a2a4e;
+    }
+
+    DataTable > .datatable--header {
+        background: linear-gradient(180deg, #1a1a3e, #0a0a2e);
+        color: #00ffff;
+    }
+
+    DataTable > .datatable--cursor {
+        background: rgba(0, 255, 255, 0.2);
+    }
+
+    DataTable > .datatable--row:hover {
+        background: rgba(0, 255, 255, 0.1);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       TABS
+    ───────────────────────────────────────────────────────────────────────────── */
+    #tabs-container {
+        height: 50;
+        dock: top;
+        background: $surface;
+        border-bottom: 2px solid #00ffff;
+    }
+
+    Tabs {
+        background: $surface;
+    }
+
+    Tabs > Tab {
+        background: $surface;
+        color: $text-muted;
+    }
+
+    Tabs > Tab:hover {
+        background: $surface-hover;
+        color: $text;
+    }
+
+    Tabs > Tab.-active {
+        background: rgba(0, 255, 255, 0.1);
+        color: #00ffff;
+        border-bottom: 3px solid #ff00ff;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       MARKDOWN
+    ───────────────────────────────────────────────────────────────────────────── */
+    Markdown {
+        color: #c0c0d0;
+        background: transparent;
+    }
+
+    Markdown H1 {
+        color: #00ffff;
+        text-style: bold;
+        text-shadow: 0 0 10px #00ffff;
+    }
+
+    Markdown H2 {
+        color: #ff00ff;
+        text-style: bold;
+    }
+
+    Markdown H3 {
+        color: #f5b86c;
+    }
+
+    Markdown Code {
+        color: #00ff88;
+        background: rgba(0, 255, 136, 0.1);
+    }
+
+    Markdown BlockQuote {
+        color: #8080a0;
+        border-left: 3px solid #00ffff;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       BUTTONS
+    ───────────────────────────────────────────────────────────────────────────── */
+    Button {
+        background: #1a1a3e;
+        color: #00ffff;
+        border: 1px solid #00ffff;
     }
 
     Button:hover {
-        background: #2a2a3e;
+        background: #2a2a5e;
+        border-color: #ff00ff;
     }
 
-    Button#approve {
-        background: #4a4a5e;
-        color: #6bcb77;
-        border: solid #6bcb77;
+    Button:focus {
+        border-color: #ff00ff;
     }
 
-    Button#approve:hover {
-        background: #6bcb77;
-        color: #0b0b0b;
+    /* ─────────────────────────────────────────────────────────────────────────────
+       INPUT FIELDS
+    ───────────────────────────────────────────────────────────────────────────── */
+    Input {
+        background: #0a0a15;
+        color: #ffffff;
+        border: 1px solid #2a2a4e;
     }
 
-    Button#deny {
-        background: #4a4a5e;
-        color: #ff6b6b;
-        border: solid #ff6b6b;
+    Input:focus {
+        border: 1px solid #00ffff;
     }
 
-    Button#deny:hover {
-        background: #ff6b6b;
-        color: #0b0b0f;
-    }
-
-    #approval-buttons {
-        margin-top: 1;
-        height: 3;
-        align: center middle;
-    }
-
-    .success {
-        background: #6bcb77;
-        color: #0b0b0b;
-    }
-
-    .error {
-        background: #ff6b6b;
-        color: #0b0b0b;
-    }
-
+    /* ─────────────────────────────────────────────────────────────────────────────
+       LABELS
+    ───────────────────────────────────────────────────────────────────────────── */
     Label {
-        color: #8a8a8a;
+        color: #a0a0b0;
     }
 
-    Rule {
-        color: #2a2a2a;
+    /* ─────────────────────────────────────────────────────────────────────────────
+       SCROLLBARS
+    ───────────────────────────────────────────────────────────────────────────── */
+    ScrollableContainer {
+        background: transparent;
     }
-    """
+
+    /* ─────────────────────────────────────────────────────────────────────────────
+       ANIMATIONS
+    ───────────────────────────────────────────────────────────────────────────── */
+    @keyframes pulse-cyan {
+        0%, 100% { text-shadow: 0 0 10px #00ffff; }
+        50% { text-shadow: 0 0 20px #00ffff, 0 0 30px #00ffff; }
+    }
+
+    @keyframes pulse-magenta {
+        0%, 100% { text-shadow: 0 0 10px #ff00ff; }
+        50% { text-shadow: 0 0 20px #ff00ff, 0 0 30px #ff00ff; }
+    }
+
+    @keyframes scan {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+    }
+
+    .animate-pulse {
+        animation: pulse-cyan 2s infinite;
+    }
+
+    .animate-glow {
+        animation: pulse-magenta 1.5s infinite;
+    }
+"""
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
@@ -803,6 +1051,22 @@ class ArchonTuiApp(App[None]):
         self._chat_runtime: ChatRuntime | None = None
         self._chat_session: ChatSession | None = None
         self._initialize_providers()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # CYBERPUNK VISUAL EFFECTS - PARTICLES & RADAR
+        # ════════════════════════════════════════════════════════════════════════
+        self._particles = ParticleSystem(width=60, height=15)
+        self._radar = RadarWidget(radius=8)
+        self._holographic_glitch = 0
+        self._effects_enabled = True
+
+    def _tick_particles(self) -> None:
+        """Update particle system for visual effects."""
+        if not self._effects_enabled:
+            return
+        self._particles.update()
+        self._radar.update()
+        self._holographic_glitch = (self._holographic_glitch + 1) % 100
 
     def _initialize_providers(self) -> None:
         """Initialize provider status from config."""
@@ -856,8 +1120,17 @@ class ArchonTuiApp(App[None]):
                         yield DataTable(id="files-table")
 
                 with Container(id="side-panel"):
-                    yield Static("📋 Status", id="side-panel-title")
+                    yield Static("◈ HUD PANEL ◈", id="side-panel-title")
+                    yield Static("╔═══════════════════╗", id="radar-display")
+                    yield Static("║   RADAR SCAN     ║", id="radar-display")
+                    yield Static("╚═══════════════════╝", id="radar-display")
                     yield RichLog(id="side-log", wrap=True, highlight=True, markup=True)
+                    yield Static("┌─ STATUS ────────┐", id="stats-title")
+                    yield Static("│ ● SYSTEM: OK   │", id="stats-system")
+                    yield Static("│ ⚡ CPU: 12%    │", id="stats-cpu")
+                    yield Static("│ ♻ MEM: 4.2GB   │", id="stats-mem")
+                    yield Static("│ ◷ UPTIME: 5m   │", id="stats-uptime")
+                    yield Static("└────────────────┘", id="stats-footer")
 
             with Container(id="input-bar"):
                 yield Static(id="budget-display")
@@ -872,9 +1145,12 @@ class ArchonTuiApp(App[None]):
 
     def on_mount(self) -> None:
         if self._state.mode == "chat":
-            self._state.log("🚀 ARCHON online - Ready for interactive chat")
+            self._state.log("🚀 ARCHON v3.0 [CYBERPUNK] - Online")
         else:
-            self._state.log("🚀 ARCHON online - Ready for orchestration")
+            self._state.log("🚀 ARCHON v3.0 [CYBERPUNK] - Ready")
+        self._state.log("╔════════════════════════════════════════════════════════════╗")
+        self._state.log("║  ⚡ PARTICLE SYSTEM ACTIVE  │  RADAR TRACKING  ⚡       ║")
+        self._state.log("╚════════════════════════════════════════════════════════════╝")
         self._state.log(f"Log file: {self._log_file}")
         self._flush_audit_log()
         self.action_show_chat()
@@ -887,6 +1163,7 @@ class ArchonTuiApp(App[None]):
         self.query_one("#goal-input", Input).focus()
         self.set_interval(2.0, self._safe_refresh)
         self.set_interval(0.2, self._tick_spinner)
+        self.set_interval(0.1, self._tick_particles)
 
     def _refresh_side_panel(self) -> None:
         """Refresh the side panel with current status."""
