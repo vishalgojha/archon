@@ -447,10 +447,68 @@ class ArchonTuiApp(App[None]):
         min-height: 0;
     }
 
-    #tabs-container {
-        height: 3;
-        dock: top;
+    #sidebar {
+        width: 12;
+        min-width: 12;
+        background: #12121a;
+        border-right: solid #2a2a3e;
+    }
+
+    #sidebar-tabs {
+        height: 1fr;
+        background: #12121a;
+    }
+
+    #sidebar-tabs Tabs {
+        background: #12121a;
+    }
+
+    #sidebar-tabs Tabs > Tab {
+        background: #12121a;
+        color: #8a8a9a;
+        width: 100%;
+        padding: 1 2;
+    }
+
+    #sidebar-tabs Tabs > Tab:hover {
+        background: #1a1a2a;
+        color: #e8e8e8;
+    }
+
+    #sidebar-tabs Tabs > Tab.-active {
         background: #1a1a2e;
+        color: #f5b86c;
+        border-left: solid #f5b86c;
+    }
+
+    #main-area {
+        height: 1fr;
+        min-height: 0;
+    }
+
+    #content-area {
+        width: 1fr;
+        height: 1fr;
+        min-height: 0;
+    }
+
+    #side-panel {
+        width: 25;
+        min-width: 20;
+        background: #0f0f18;
+        border-left: solid #2a2a3e;
+        padding: 1;
+    }
+
+    #side-panel-title {
+        color: #f5b86c;
+        text-style: bold;
+        padding-bottom: 1;
+    }
+
+    #side-log {
+        background: #0f0f18;
+        color: #a0a0b0;
     }
 
     Tabs {
@@ -760,49 +818,55 @@ class ArchonTuiApp(App[None]):
         yield Header(show_clock=True)
 
         with Vertical(id="root"):
-            yield Tabs(
-                Tab("💬 Chat", id="tab-chat"),
-                Tab("📊 Overview", id="tab-overview"),
-                Tab("🔄 Tasks", id="tab-tasks"),
-                Tab("🧠 Skills", id="tab-skills"),
-                Tab("📜 History", id="tab-history"),
-                Tab("📁 Files", id="tab-files"),
-                id="tabs-container",
-            )
+            with Horizontal(id="sidebar"):
+                yield Tabs(
+                    Tab("💬", id="tab-chat", title="Chat"),
+                    Tab("📊", id="tab-overview", title="Overview"),
+                    Tab("🔄", id="tab-tasks", title="Tasks"),
+                    Tab("🧠", id="tab-skills", title="Skills"),
+                    Tab("📜", id="tab-history", title="History"),
+                    Tab("📁", id="tab-files", title="Files"),
+                    id="sidebar-tabs",
+                )
 
-            with Container(id="content-area"):
-                with ScrollableContainer(id="chat-panel"):
-                    yield RichLog(id="evolution-log", wrap=True, highlight=True, markup=True)
+            with Horizontal(id="main-area"):
+                with Container(id="content-area"):
+                    with ScrollableContainer(id="chat-panel"):
+                        yield RichLog(id="evolution-log", wrap=True, highlight=True, markup=True)
 
-                with ScrollableContainer(id="overview-panel"):
-                    yield Markdown(id="overview-markdown")
+                    with ScrollableContainer(id="overview-panel"):
+                        yield Markdown(id="overview-markdown")
 
-                with ScrollableContainer(id="tasks-panel"):
-                    yield DataTable(id="tasks-table")
+                    with ScrollableContainer(id="tasks-panel"):
+                        yield DataTable(id="tasks-table")
 
-                with ScrollableContainer(id="skills-panel"):
-                    yield DataTable(id="skills-table")
+                    with ScrollableContainer(id="skills-panel"):
+                        yield DataTable(id="skills-table")
 
-                with ScrollableContainer(id="history-panel"):
-                    yield Label("Task History", id="history-label")
-                    yield DataTable(id="history-table")
-                    yield Rule()
-                    yield Label("Evolution Insights", id="evolution-label")
-                    yield DataTable(id="evolution-table")
+                    with ScrollableContainer(id="history-panel"):
+                        yield Label("Task History", id="history-label")
+                        yield DataTable(id="history-table")
+                        yield Rule()
+                        yield Label("Evolution Insights", id="evolution-label")
+                        yield DataTable(id="evolution-table")
 
-                with ScrollableContainer(id="files-panel"):
-                    yield Label("File Browser", id="files-label")
-                    yield Input(placeholder="Glob pattern (e.g. **/*.py)...", id="files-search-input")
-                    yield DataTable(id="files-table")
+                    with ScrollableContainer(id="files-panel"):
+                        yield Label("File Browser", id="files-label")
+                        yield Input(placeholder="Glob pattern (e.g. **/*.py)...", id="files-search-input")
+                        yield DataTable(id="files-table")
+
+                with Container(id="side-panel"):
+                    yield Static("📋 Status", id="side-panel-title")
+                    yield RichLog(id="side-log", wrap=True, highlight=True, markup=True)
 
             with Container(id="input-bar"):
                 yield Static(id="budget-display")
                 with Horizontal(id="input-container"):
-                    yield Input(placeholder="Message Archon or type / for commands...", id="goal-input")
+                    yield Input(placeholder="Message / command...", id="goal-input")
                     yield Button("Send", id="submit-btn", variant="primary")
 
             with Container(id="suggestions-panel"):
-                yield Static("💡 Commands: /ollama, /pull <model>, /models, /config", id="suggestions-text")
+                yield Static("💡 /ollama, /pull, /models, /config", id="suggestions-text")
 
             yield Static(id="status-bar")
 
@@ -815,6 +879,7 @@ class ArchonTuiApp(App[None]):
         self._flush_audit_log()
         self.action_show_chat()
         self._refresh_overview()
+        self._refresh_side_panel()
         self._refresh_budget_display()
         self._refresh_status_bar()
         self._setup_data_tables()
@@ -822,6 +887,23 @@ class ArchonTuiApp(App[None]):
         self.query_one("#goal-input", Input).focus()
         self.set_interval(2.0, self._safe_refresh)
         self.set_interval(0.2, self._tick_spinner)
+
+    def _refresh_side_panel(self) -> None:
+        """Refresh the side panel with current status."""
+        side_log = self.query_one("#side-log", RichLog)
+        byok = self._config.byok
+        lines = [
+            f"📦 Model: {byok.ollama_primary_model}",
+            f"💻 Coding: {byok.ollama_coding_model}",
+            f"⚡ Fast: {byok.ollama_fast_model}",
+            f"👁️ Vision: {byok.ollama_vision_model}",
+            "",
+            f"💰 Budget: ${byok.budget_per_task_usd}/task",
+            f"📊 Daily: ${byok.budget_per_month_usd}/mo",
+        ]
+        side_log.clear()
+        for line in lines:
+            side_log.write(line)
 
     def _setup_data_tables(self) -> None:
         tasks_table = self.query_one("#tasks-table", DataTable)
