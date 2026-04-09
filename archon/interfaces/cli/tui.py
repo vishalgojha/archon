@@ -539,17 +539,25 @@ class ArchonTuiApp(App[None]):
     
     Screen {
         background: #050508;
+        color: #e0e0e0;
     }
 
     Header {
-        background: $surface;
-        color: $text;
+        background: #0a0a15;
+        color: #00ffff;
     }
 
     Footer {
-        background: $surface;
-        color: $text-muted;
+        background: #0a0a15;
+        color: #808090;
     }
+
+    $surface: #0a0a15;
+    $surface-hover: #151525;
+    $surface-active: #1a1a2e;
+    $text: #e0e0e0;
+    $text-muted: #808090;
+    $border: #2a2a4e;
 
     /* ─────────────────────────────────────────────────────────────────────────────
        ROOT LAYOUT
