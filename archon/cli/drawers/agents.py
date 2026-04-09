@@ -162,7 +162,7 @@ class _Tui(ArchonCommand):
         context = session.run_step(
             1, self.bindings._parse_context, context_text or None, context_file
         )
-        onboarding = _build_onboarding(self.bindings)
+        _onboarding = _build_onboarding(self.bindings)
         session.update_step(2, "running")
         await run_agentic_tui(
             config=config,

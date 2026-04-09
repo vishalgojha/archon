@@ -19,7 +19,7 @@ def run_mumbai_re_swarm():
     log = SwarmConsciousnessLog()
     genealogy = AgentGenealogy()
     prompts = SelfPromptEngineer()
-    red_team = AdversarialSelfTester()
+    _red_team = AdversarialSelfTester()
     
     # Start the stream
     stream_id = log.start_stream(
