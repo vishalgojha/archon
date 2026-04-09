@@ -28,16 +28,13 @@ git clone https://github.com/vishalgojha/archon.git
 cd archon
 pip install -e ".[dev]"
 
-# Configure for Ollama (local, free)
-export OLLAMA_API_KEY="ollama"
-export OLLAMA_BASE_URL="http://localhost:11434/v1"
+# Start with local Ollama (default, no API key needed)
+# Ensure Ollama is running: ollama serve
+archon core chat
 
-# Or use cloud providers
+# Optional: Add cloud providers for more capabilities
 export ANTHROPIC_API_KEY="..."
 export OPENAI_API_KEY="..."
-
-# Start chatting
-archon core chat
 ```
 
 ## Commands
