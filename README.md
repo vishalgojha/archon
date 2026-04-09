@@ -5,7 +5,7 @@
 An AI-powered CLI assistant for India with 67 domain skills, local Ollama support, voice interaction, and browser automation.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![Tests](https://img.shields.io/badge/Tests-178%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-72%20passing-brightgreen)
 ![Skills](https://img.shields.io/badge/Skills-67-orange)
 
 ## Features
@@ -64,7 +64,7 @@ gst, msme-loan, msme-udyam, tax-itr, banking, epfo, upi-fraud, education-loan
 healthcare-triage, ayushman-bharat, cowin-vaccine, jan-aushadhi, livestock-dairy
 
 ### Legal (5)
-legal-aid, court-efile, land-record, property-verification, nalsa-legal
+legal-aid, land-record, property-verification, nalsa-legal, consumer-court
 
 ### Startup (4)
 startup-india, startup-funding, women-entrepreneur, msme-udyam
@@ -125,7 +125,7 @@ archon/
 │   ├── cli/        # TUI with Textual
 │   ├── api/        # FastAPI server
 │   └── web/cult-ui/# AI-first React components
-└── tests/          # 178 tests
+└── tests/          # 72 tests
 ```
 
 ## BYOK Guarantees
