@@ -11,7 +11,7 @@ byok:
   free_tier_first: false
   ollama_base_url: http://localhost:11434/v1
   ollama_primary_model: gemma4:e4b
-  ollama_coding_model: gemma4:e4b
+  ollama_coding_model: qwen3.5:latest
   ollama_fast_model: gemma4:e2b
   ollama_embedding_model: gemma4:e2b
   ollama_vision_model: llava:34b
