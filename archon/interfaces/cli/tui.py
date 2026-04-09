@@ -1092,7 +1092,7 @@ class ArchonTuiApp(App[None]):
         def on_dismiss(command: str | None) -> None:
             if not command:
                 return
-            self._handle_palette_command(command)
+            self.call_later(self._handle_palette_command, command)
 
         self.push_screen(CommandPaletteScreen(), on_dismiss)
 
