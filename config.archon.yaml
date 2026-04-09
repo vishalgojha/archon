@@ -14,7 +14,7 @@ byok:
   ollama_coding_model: gemma4:e4b
   ollama_fast_model: gemma4:e2b
   ollama_embedding_model: gemma4:e2b
-  ollama_vision_model: gemma4:e4b
+  ollama_vision_model: llava:34b
   vision_model: null
   openrouter_base_url: https://openrouter.ai/api/v1
   openrouter_fallback_chain:
