@@ -32,6 +32,12 @@ def build_cli(bindings: Any) -> click.Group:
         studio_alias = core_group.commands.get("studio")
         if studio_alias is not None:
             app.add_command(studio_alias, "studio")
+        chat_alias = core_group.commands.get("chat")
+        if chat_alias is not None:
+            app.add_command(chat_alias, "chat")
+        status_alias = core_group.commands.get("status")
+        if status_alias is not None:
+            app.add_command(status_alias, "status")
 
     legacy = getattr(bindings, "legacy_cli", None)
     if legacy is not None:
