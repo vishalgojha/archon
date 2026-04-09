@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from archon.swarm.tools.base import BaseSMBTool
+from archon.swarm.tools.base import ToolResult as SMBToolResult
 from archon.tooling.base import BaseTool, ToolResult
-from archon.swarm.tools.base import BaseSMBTool, ToolResult as SMBToolResult
 
 
 @dataclass(slots=True)

@@ -1,0 +1,77 @@
+# ARCHON Skill: Browser Automation (Page Agent)
+# Control web pages with natural language using Page Agent
+
+name: browser-automation
+version: 1
+description: >
+  Automate web browser tasks using natural language. Fill forms, click buttons,
+  scrape data, and navigate websites without writing code. Powered by Page Agent.
+
+category: automation
+language_support: [english, chinese]
+
+provider_preference: anthropic
+cost_tier: standard
+state: active
+
+triggers:
+  keywords:
+    - browser automation
+    - web scraping
+    - fill form
+    - click button
+    - automate website
+    - page agent
+    - web task
+    - automate browser
+    - screenshot
+    - navigate url
+    - web interaction
+    - form filling
+  patterns:
+    - "fill.*form.*on.*website"
+    - "automate.*browser"
+    - "click.*on.*page"
+    - "scrape.*website"
+    - "navigate.*to.*url"
+    - "web.*automation"
+    - "interact.*with.*page"
+
+execution_config:
+  default_mode: single
+  fallback_mode: single
+  max_budget_usd: 0.50
+  timeout_seconds: 120
+
+context_requirements:
+  required:
+    - task_description
+  optional:
+    - url
+    - form_data
+    - wait_time
+
+output_format:
+  structure:
+    - steps_taken
+    - result
+    - screenshots
+    - data_extracted
+  language: english
+
+compliance:
+  data_sources:
+    - Page Agent npm package
+  disclaimers:
+    - "Respect website terms of service"
+    - "Automate only your own accounts"
+    - "Some sites may block automation"
+
+metrics:
+  success_criteria:
+    - task_completed
+    - data_extracted_correctly
+  tracking:
+    - url
+    - action_type
+    - success_status

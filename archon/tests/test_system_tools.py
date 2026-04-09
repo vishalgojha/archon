@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-import tempfile
 from pathlib import Path
 
-from archon.tooling.base import ToolResult
+import pytest
+
 from archon.tooling.safety import PathPolicy
 from archon.tooling.system_tools import GlobTool, GrepTool, build_system_tool_registry
 

@@ -6,16 +6,16 @@ from typing import Any
 
 from archon.config import ArchonConfig
 from archon.providers import ProviderRouter
-from archon.skills.skill_registry import SkillDefinition, SkillRegistry
 from archon.skills.india_skills import (
     InsuranceAdvisorAgent,
-    VehicleRTOAgent,
-    TelecomAssistantAgent,
     LegalAidAgent,
+    TelecomAssistantAgent,
+    VehicleRTOAgent,
     WaterUtilityAgent,
 )
 from archon.skills.india_skills_batch2 import (
     CustomsImportAgent,
+    ExplainSimplyTheoremAgent,
     ExportComplianceAgent,
     FSSAIComplianceAgent,
     GovtFormAssistantAgent,
@@ -30,8 +30,8 @@ from archon.skills.india_skills_batch2 import (
     SolarAdoptionAgent,
     StartupIndiaAgent,
     UPIFraudDetectionAgent,
-    ExplainSimplyTheoremAgent,
 )
+from archon.skills.skill_registry import SkillRegistry
 
 
 class SkillExecutor:

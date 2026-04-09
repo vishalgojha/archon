@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from archon.swarm.agents.base import BaseAgent
 from archon.swarm.tools.registry import ToolRegistry
 from archon.swarm.types import AgentResult
-from archon.tooling import ToolCallingAgent, ToolRegistry as FunctionToolRegistry
+from archon.tooling import ToolCallingAgent
+from archon.tooling import ToolRegistry as FunctionToolRegistry
 from archon.tooling.adapters import SMBToolAdapter
 
 

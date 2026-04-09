@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from archon.swarm.types import AgentSpec, PoolState, Plan
 from archon.swarm.evolution import EvolutionEngine
+from archon.swarm.types import AgentSpec, Plan, PoolState
 
 
 @dataclass(slots=True)

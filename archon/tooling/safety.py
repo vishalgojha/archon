@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 DEFAULT_WINDOWS_BLOCKLIST = [
     r"C:\\Windows",
     r"C:\\Program Files",

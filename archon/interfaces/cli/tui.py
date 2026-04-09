@@ -39,7 +39,6 @@ from archon.core.orchestrator import Orchestrator
 from archon.core.types import TaskMode
 from archon.logging_utils import append_log, log_path
 from archon.skills.skill_registry import SkillRegistry
-from archon.tooling import build_default_tool_registry
 from archon.versioning import resolve_version
 
 
@@ -73,7 +72,7 @@ def _get_workspace_context() -> dict[str, Any]:
             capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
         )
         if result.returncode == 0:
-            lines = [l for l in result.stdout.strip().splitlines() if l]
+            lines = [line for line in result.stdout.strip().splitlines() if line]
             ctx["git_dirty"] = len(lines) > 0
             ctx["modified_files"] = lines[:10]  # Limit to 10
 
@@ -1309,7 +1308,6 @@ class ArchonTuiApp(App[None]):
             self._flush_audit_log()
 
             # Show thinking indicator
-            log = self.query_one("#evolution-log", RichLog)
             thinking_id = len(self._state.audit_log)
             self._state.audit_log.append(f"[dim][{time.strftime('%H:%M:%S')}] 🤔 Thinking...[/dim]")
             self._flush_audit_log()
