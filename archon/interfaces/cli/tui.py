@@ -578,6 +578,17 @@ class ArchonTuiApp(App[None]):
         padding: 0 1;
     }
 
+    #suggestions-panel {
+        height: 6;
+        background: #1a1a1a;
+        border: solid #2a2a2a;
+        padding: 0 1;
+    }
+
+    #suggestions-panel:focus {
+        border: solid #f5b86c;
+    }
+
     #goal-input:focus {
         border: solid #f5b86c;
     }
@@ -787,8 +798,11 @@ class ArchonTuiApp(App[None]):
             with Container(id="input-bar"):
                 yield Static(id="budget-display")
                 with Horizontal(id="input-container"):
-                    yield Input(placeholder="Message Archon and press Enter...", id="goal-input")
+                    yield Input(placeholder="Message Archon or type / for commands...", id="goal-input")
                     yield Button("Send", id="submit-btn", variant="primary")
+
+            with Container(id="suggestions-panel"):
+                yield Static("💡 Commands: /ollama, /pull <model>, /models, /config", id="suggestions-text")
 
             yield Static(id="status-bar")
 
@@ -1516,9 +1530,34 @@ class ArchonTuiApp(App[None]):
         if not goal:
             return
         event.input.value = ""
+        self._update_suggestions("")
         self._state.log(f"👤 You: {goal}")
         self._flush_audit_log()
         self._schedule_goal(goal)
+
+    def _update_suggestions(self, text: str) -> None:
+        """Update suggestions panel based on input."""
+        panel = self.query_one("#suggestions-text", Static)
+        if text.startswith("/"):
+            cmds = {
+                "/ollama": "List available Ollama models",
+                "/pull": "Pull a model (usage: /pull modelname)",
+                "/models": "Show current model configuration",
+                "/config": "Open config in editor",
+                "/status": "Show runtime status",
+                "/clear": "Clear chat log",
+            }
+            matched = [f"{k}: {v}" for k, v in cmds.items() if k.startswith(text.lower())]
+            if matched:
+                panel.update("\n".join(matched))
+            else:
+                panel.update("💡 Commands: /ollama, /pull <model>, /models, /config")
+        else:
+            panel.update("💡 Commands: /ollama, /pull <model>, /models, /config")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "goal-input":
+            self._update_suggestions(event.value)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "submit-btn":
