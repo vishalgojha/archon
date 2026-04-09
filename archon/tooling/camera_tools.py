@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
 import os
@@ -10,13 +9,11 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from archon.tooling.base import BaseTool, ToolResult
 from archon.tooling.registry import ToolRegistry
 from archon.tooling.safety import PathPolicy
-
 
 ASCII_CHARS = list(" .:-=+*#%@")
 ASCII_PALETTE = ASCII_CHARS * 3
@@ -122,7 +119,6 @@ class CameraStreamTool(BaseTool):
             return ToolResult(ok=False, output="action must be: start, stop, or capture")
 
     def _start_stream(self, kwargs) -> ToolResult:
-        import cv2
 
         if self._stream_active:
             return ToolResult(ok=False, output="Stream already active")

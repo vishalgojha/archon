@@ -6,7 +6,6 @@ The swarm observes outcomes and iteratively rewrites its own prompts.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import time
 import uuid

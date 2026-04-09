@@ -7,7 +7,6 @@ human-readable narratives about what's happening in the swarm.
 from __future__ import annotations
 
 import json
-import random
 import sqlite3
 import time
 import uuid
@@ -279,11 +278,11 @@ class SwarmConsciousnessLog:
         duration_str = self._format_duration(duration)
         
         lines = [
-            f"🧠 ARCHON CONSCIOUSNESS STREAM",
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            "🧠 ARCHON CONSCIOUSNESS STREAM",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             f"Goal: {goal}",
             f"Duration: {duration_str}",
-            f"",
+            "",
         ]
         
         significant_events = [e for e in events if e[4] > 0.6]

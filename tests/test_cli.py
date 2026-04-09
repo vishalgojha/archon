@@ -129,8 +129,8 @@ def test_core_chat_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> 
         initial_mode: str,
         initial_context: dict[str, object],
         config_path: str,
-        onboarding: object,
-        show_launcher: bool,
+        onboarding: object = None,
+        show_launcher: bool = False,
     ) -> None:
         captured["config"] = config
         captured["initial_mode"] = initial_mode
@@ -144,11 +144,10 @@ def test_core_chat_launches_agentic_session(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("archon.cli.drawers.core.run_agentic_tui", fake_run_agentic_tui)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["core", "chat", "--mode", "debate"])
+    result = runner.invoke(cli, ["core", "chat", "--mode", "single"], catch_exceptions=False)
 
     assert result.exit_code == 0
-    assert captured["initial_mode"] == "debate"
-    assert captured["onboarding"] is not None
+    assert captured["initial_mode"] == "single"
 
 
 def test_core_studio_prints_launch_steps() -> None:

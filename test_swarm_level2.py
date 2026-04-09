@@ -3,10 +3,11 @@ Archon Swarm - Level 2 Real Test
 Task: Mumbai Real Estate Broker Outreach
 """
 
+from archon.evolution.adversarial_tester import AdversarialSelfTester
 from archon.evolution.consciousness_log import SwarmConsciousnessLog
 from archon.evolution.genealogy import AgentGenealogy
 from archon.evolution.self_prompt_engineer import SelfPromptEngineer
-from archon.evolution.adversarial_tester import AdversarialSelfTester
+
 
 def run_mumbai_re_swarm():
     print("=" * 80)
@@ -54,7 +55,7 @@ def run_mumbai_re_swarm():
     
     print("=" * 80)
     print("AGENT LINEAGE SPAWNED:")
-    print(f"  Root -> Researcher -> Analyst -> Synthesizer -> Critic")
+    print("  Root -> Researcher -> Analyst -> Synthesizer -> Critic")
     print(f"  DNA IDs: {root_dna[:16]}... -> {researcher_dna[:16]}... -> {analyst_dna[:16]}...")
     print("=" * 80)
     

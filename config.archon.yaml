@@ -4,7 +4,7 @@ byok:
   vision: ollama
   fast: ollama
   embedding: ollama
-  fallback: ""
+  fallback: openrouter
   budget_per_task_usd: 0.5
   budget_per_month_usd: 150.0
   prefer_cheapest: false
