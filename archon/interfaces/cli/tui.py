@@ -990,32 +990,8 @@ class ArchonTuiApp(App[None]):
         background: transparent;
     }
 
-    /* ─────────────────────────────────────────────────────────────────────────────
-       ANIMATIONS
-    ───────────────────────────────────────────────────────────────────────────── */
-    @keyframes pulse-cyan {
-        0%, 100% { text-shadow: 0 0 10px #00ffff; }
-        50% { text-shadow: 0 0 20px #00ffff, 0 0 30px #00ffff; }
-    }
+    """
 
-    @keyframes pulse-magenta {
-        0%, 100% { text-shadow: 0 0 10px #ff00ff; }
-        50% { text-shadow: 0 0 20px #ff00ff, 0 0 30px #ff00ff; }
-    }
-
-    @keyframes scan {
-        0% { transform: translateY(-100%); }
-        100% { transform: translateY(100%); }
-    }
-
-    .animate-pulse {
-        animation: pulse-cyan 2s infinite;
-    }
-
-    .animate-glow {
-        animation: pulse-magenta 1.5s infinite;
-    }
-"""
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
