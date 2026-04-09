@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from typing import TYPE_CHECKING, Any
@@ -882,6 +883,106 @@ class ProviderRouter:
             model=selection.model,
             usage=usage,
             raw=data,
+        )
+
+    async def invoke_with_tools(
+        self,
+        *,
+        role: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        task_id: str | None = None,
+        model_override: str | None = None,
+        provider_override: str | None = None,
+        system_prompt: str | None = None,
+        tool_style: str = "openai",
+        max_tokens: int = 4096,
+    ) -> ProviderResponse:
+        """Execute one LLM request with tool calling support.
+
+        Returns a ProviderResponse with tool_calls populated if the model requests tools.
+        """
+        from archon.providers.types import ProviderToolCall
+
+        selection = self.resolve_provider(
+            role=role,
+            model_override=model_override,
+            provider_override=provider_override,
+        )
+        self._record_task_routing(
+            task_id=task_id,
+            role=role,
+            selection=selection,
+            provider_override=provider_override,
+        )
+
+        # Build payload
+        payload: dict[str, Any] = {
+            "model": selection.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            payload["tools"] = tools
+            if tool_style == "openai":
+                payload["tool_choice"] = "auto"
+
+        headers = {"Content-Type": "application/json"}
+        if selection.api_key and selection.api_key.lower() != "none":
+            headers["Authorization"] = f"Bearer {selection.api_key}"
+
+        url = f"{selection.base_url.rstrip('/')}/chat/completions"
+        res = await self._http.post(url, json=payload, headers=headers, timeout=120.0)
+
+        if res.status_code >= 400:
+            raise ProviderCallError(
+                f"Provider tool call failed ({selection.provider}) with HTTP {res.status_code}: {res.text[:200]}"
+            )
+
+        data = res.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+
+        # Extract text content
+        response_text = message.get("content") or ""
+        if isinstance(response_text, list):
+            response_text = " ".join(
+                part.get("text", "") for part in response_text if isinstance(part, dict)
+            ).strip()
+
+        # Extract tool calls
+        tool_calls: list[ProviderToolCall] = []
+        raw_tool_calls = message.get("tool_calls") or []
+        for tc in raw_tool_calls:
+            tc_id = tc.get("id", "")
+            func = tc.get("function", {})
+            func_name = func.get("name", "")
+            func_args_str = func.get("arguments", "{}")
+            try:
+                func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+            except json.JSONDecodeError:
+                func_args = {"_raw": func_args_str}
+            tool_calls.append(ProviderToolCall(
+                call_id=tc_id,
+                name=func_name,
+                arguments=func_args,
+            ))
+
+        usage_data = data.get("usage") or {}
+        prompt_tokens = int(usage_data.get("prompt_tokens", 0))
+        completion_tokens = int(usage_data.get("completion_tokens", 0))
+        usage = self._usage_for(selection.provider, prompt_tokens, completion_tokens)
+
+        finish_reason = choice.get("finish_reason", "")
+
+        return ProviderResponse(
+            text=response_text,
+            provider=selection.provider,
+            model=selection.model,
+            usage=usage,
+            finish_reason=finish_reason,
+            raw=data,
+            tool_calls=tool_calls if tool_calls else None,
         )
 
     def _should_use_test_mode(self) -> bool:

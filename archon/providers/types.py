@@ -44,6 +44,7 @@ class ProviderResponse:
     usage: dict[str, int]
     finish_reason: str | None = None
     raw: Any | None = None
+    tool_calls: list["ProviderToolCall"] | None = None
 
 
 @dataclass
