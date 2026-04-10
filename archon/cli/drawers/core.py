@@ -315,22 +315,23 @@ class _Status(ArchonCommand):
 class _Chat(ArchonCommand):
     command_id = COMMAND_IDS[3]
 
-    async def run(self, session, *, mode: str, config_path: str):  # type: ignore[no-untyped-def,override]
+    async def run(self, session, *, mode: str, config_path: str, yes: bool = False):  # type: ignore[no-untyped-def,override]
         config = (
             session.run_step(0, self.bindings._load_config, config_path)
             if Path(config_path).exists()
             else self.bindings.load_archon_config("__wizard_defaults__.yaml")
         )
         _onboarding = _build_onboarding_callbacks(self.bindings)
-        session.run_step(1, lambda: None)
-        session.update_step(2, "running")
+        if not yes:
+            session.run_step(1, lambda: None)
+        session.update_step(2 if yes else 1, "running")
         await run_agentic_tui(
             config=config,
             initial_mode=mode,
             initial_context={},
             config_path=config_path,
         )
-        session.update_step(2, "success")
+        session.update_step(2 if yes else 1, "success")
         return {"mode": mode}
 
 
@@ -433,8 +434,9 @@ def build_group(bindings):
         default="chat",
     )
     @click.option("--config", "config_path", default="config.archon.yaml")
-    def chat_command(mode: str, config_path: str) -> None:
-        _Chat(bindings).invoke(mode=mode, config_path=config_path)
+    @click.option("-y", "--yes", is_flag=True, default=False, help="Skip prompts, go directly to chat")
+    def chat_command(mode: str, config_path: str, yes: bool) -> None:
+        _Chat(bindings).invoke(mode=mode, config_path=config_path, yes=yes)
 
     @group.command("studio", help=str(COMMAND_HELP[COMMAND_IDS[4]]))
     @click.option("--api-base", default="http://localhost:8000")
