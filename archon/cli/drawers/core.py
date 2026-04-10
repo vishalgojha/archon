@@ -321,17 +321,15 @@ class _Chat(ArchonCommand):
             if Path(config_path).exists()
             else self.bindings.load_archon_config("__wizard_defaults__.yaml")
         )
-        _onboarding = _build_onboarding_callbacks(self.bindings)
-        if not yes:
-            session.run_step(1, lambda: None)
-        session.update_step(2 if yes else 1, "running")
+        session.run_step(1, lambda: None)
+        session.update_step(1, "running")
         await run_agentic_tui(
             config=config,
             initial_mode=mode,
             initial_context={},
             config_path=config_path,
         )
-        session.update_step(2 if yes else 1, "success")
+        session.update_step(1, "success")
         return {"mode": mode}
 
 
