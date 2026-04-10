@@ -10,11 +10,11 @@ byok:
   prefer_cheapest: false
   free_tier_first: false
   ollama_base_url: http://localhost:11434/v1
-  ollama_primary_model: gemma4:e4b
-  ollama_coding_model: qwen3.5:latest
-  ollama_fast_model: gemma4:e2b
-  ollama_embedding_model: gemma4:e2b
-  ollama_vision_model: gemma4:e4b
+  ollama_primary_model: phi4-mini:latest
+  ollama_coding_model: phi4-mini:latest
+  ollama_fast_model: phi4-mini:latest
+  ollama_embedding_model: nomic-embed-text:v1.5
+  ollama_vision_model: llava:latest
   vision_model: null
   custom_endpoints: []
 budget:
