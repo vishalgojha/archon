@@ -875,7 +875,9 @@ class SkillBatch3Registration:
     """Register all Batch 3 India skills."""
 
     @staticmethod
-    def register(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    def register(
+        registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+    ) -> None:
         skills = [
             SkillDefinition(
                 name="railway-assistant",
@@ -952,7 +954,12 @@ class SkillBatch3Registration:
             SkillDefinition(
                 name="police-service",
                 description="FIR filing, character certificate, cyber crime, and police verification.",
-                trigger_patterns=["fir", "police complaint", "character certificate", "cyber crime"],
+                trigger_patterns=[
+                    "fir",
+                    "police complaint",
+                    "character certificate",
+                    "cyber crime",
+                ],
                 version="1.0.0",
                 provider_preference="anthropic",
                 cost_tier="standard",
@@ -961,7 +968,13 @@ class SkillBatch3Registration:
             SkillDefinition(
                 name="court-efile",
                 description="e-Courts case tracking, e-filing, and legal procedure guidance.",
-                trigger_patterns=["case status", "cause list", "ecourts", "e-filing", "court order"],
+                trigger_patterns=[
+                    "case status",
+                    "cause list",
+                    "ecourts",
+                    "e-filing",
+                    "court order",
+                ],
                 version="1.0.0",
                 provider_preference="anthropic",
                 cost_tier="standard",
@@ -979,7 +992,13 @@ class SkillBatch3Registration:
             SkillDefinition(
                 name="land-record",
                 description="Land records, property registration, stamp duty, and mutation.",
-                trigger_patterns=["land record", "khata", "jamabandi", "property registration", "ec.*land"],
+                trigger_patterns=[
+                    "land record",
+                    "khata",
+                    "jamabandi",
+                    "property registration",
+                    "ec.*land",
+                ],
                 version="1.0.0",
                 provider_preference="anthropic",
                 cost_tier="standard",

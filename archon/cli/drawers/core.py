@@ -434,7 +434,9 @@ def build_group(bindings):
         default="chat",
     )
     @click.option("--config", "config_path", default="config.archon.yaml")
-    @click.option("-y", "--yes", is_flag=True, default=False, help="Skip prompts, go directly to chat")
+    @click.option(
+        "-y", "--yes", is_flag=True, default=False, help="Skip prompts, go directly to chat"
+    )
     def chat_command(mode: str, config_path: str, yes: bool) -> None:
         _Chat(bindings).invoke(mode=mode, config_path=config_path, yes=yes)
 

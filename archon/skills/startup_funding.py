@@ -164,7 +164,9 @@ class StartupFundingRegistration:
     """Register startup funding skill."""
 
     @staticmethod
-    def register(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    def register(
+        registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+    ) -> None:
         skill = SkillDefinition(
             name="startup-funding",
             description="Comprehensive startup funding guidance including government grants, angel investors, VCs, and incubators for Indian entrepreneurs.",

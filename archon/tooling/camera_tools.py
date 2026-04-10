@@ -53,7 +53,9 @@ class CameraTool(BaseTool):
         try:
             import cv2
         except ImportError:
-            return ToolResult(ok=False, output="opencv-python not installed: pip install opencv-python")
+            return ToolResult(
+                ok=False, output="opencv-python not installed: pip install opencv-python"
+            )
 
         try:
             cap = cv2.VideoCapture(0)
@@ -72,13 +74,13 @@ class CameraTool(BaseTool):
                 cv2.imwrite(save_path, frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
                 return ToolResult(ok=True, output=f"Saved to {save_path}")
 
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-            b64 = base64.b64encode(buffer).decode('utf-8')
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            b64 = base64.b64encode(buffer).decode("utf-8")
 
             return ToolResult(
                 ok=True,
                 output=f"data:image/jpeg;base64,{b64}",
-                metadata={"width": width, "height": height}
+                metadata={"width": width, "height": height},
             )
 
         except Exception as exc:
@@ -129,13 +131,14 @@ class CameraStreamTool(BaseTool):
         def stream_loop():
             try:
                 import cv2
+
                 cap = cv2.VideoCapture(0)
                 frame_count = 0
 
                 while self._stream_active and frame_count < max_frames:
                     ret, frame = cap.read()
                     if ret:
-                        _, buffer = cv2.imencode('.jpg', frame)
+                        _, buffer = cv2.imencode(".jpg", frame)
                         CameraStreamTool._latest_frame = buffer.tobytes()
                         frame_count += 1
                     time.sleep(0.1)
@@ -158,11 +161,11 @@ class CameraStreamTool(BaseTool):
 
     def _capture_frame(self) -> ToolResult:
         if self._latest_frame:
-            b64 = base64.b64encode(self._latest_frame).decode('utf-8')
+            b64 = base64.b64encode(self._latest_frame).decode("utf-8")
             return ToolResult(
                 ok=True,
                 output=f"data:image/jpeg;base64,{b64}",
-                metadata={"streaming": self._stream_active}
+                metadata={"streaming": self._stream_active},
             )
         return ToolResult(ok=False, output="No frame captured - start stream first")
 
@@ -235,7 +238,7 @@ class AsciiVideoTool(BaseTool):
                     for y in range(0, new_height, char_height):
                         row = ""
                         for x in range(0, new_width, char_width):
-                            region = frame[y:y+char_height, x:x+char_width]
+                            region = frame[y : y + char_height, x : x + char_width]
                             avg = np.mean(region)
                             char_idx = int((avg / 255) * len(ASCII_CHARS) - 1)
                             char_idx = max(0, min(char_idx, len(ASCII_CHARS) - 1))
@@ -244,7 +247,7 @@ class AsciiVideoTool(BaseTool):
 
                     output = "\033[2J\033[H" + "\n".join(ascii_frame)
 
-                    print(output, end='\r')
+                    print(output, end="\r")
                     time.sleep(1 / fps)
 
                 cap.release()
@@ -259,7 +262,7 @@ class AsciiVideoTool(BaseTool):
 
         return ToolResult(
             ok=True,
-            output=f"ASCII video started: {width}x{height} @ {fps}fps. Use action=stop to end."
+            output=f"ASCII video started: {width}x{height} @ {fps}fps. Use action=stop to end.",
         )
 
     def _stop_ascii_video(self) -> ToolResult:
@@ -306,8 +309,8 @@ class ScreenCaptureTool(BaseTool):
                 return ToolResult(ok=True, output=f"Saved to {save_path}")
 
             buf = io.BytesIO()
-            img.save(buf, format='PNG')
-            b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+            img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
             return ToolResult(ok=True, output=f"data:image/png;base64,{b64}")
 
         except Exception as exc:
@@ -318,7 +321,7 @@ class ScreenCaptureTool(BaseTool):
             result = subprocess.run(
                 ["scrot", "-b", save_path if save_path else "/tmp/archon_screenshot.png"],
                 capture_output=True,
-                timeout=5
+                timeout=5,
             )
             if result.returncode != 0:
                 return ToolResult(ok=False, output=f"scrot failed: {result.stderr.decode()}")
@@ -327,7 +330,7 @@ class ScreenCaptureTool(BaseTool):
                 return ToolResult(ok=True, output=f"Saved to {save_path}")
 
             with open("/tmp/archon_screenshot.png", "rb") as f:
-                b64 = base64.b64encode(f.read()).decode('utf-8')
+                b64 = base64.b64encode(f.read()).decode("utf-8")
             return ToolResult(ok=True, output=f"data:image/png;base64,{b64}")
 
         except FileNotFoundError:

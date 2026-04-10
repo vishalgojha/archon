@@ -959,14 +959,18 @@ class ProviderRouter:
             func_name = func.get("name", "")
             func_args_str = func.get("arguments", "{}")
             try:
-                func_args = json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+                func_args = (
+                    json.loads(func_args_str) if isinstance(func_args_str, str) else func_args_str
+                )
             except json.JSONDecodeError:
                 func_args = {"_raw": func_args_str}
-            tool_calls.append(ProviderToolCall(
-                call_id=tc_id,
-                name=func_name,
-                arguments=func_args,
-            ))
+            tool_calls.append(
+                ProviderToolCall(
+                    call_id=tc_id,
+                    name=func_name,
+                    arguments=func_args,
+                )
+            )
 
         usage_data = data.get("usage") or {}
         prompt_tokens = int(usage_data.get("prompt_tokens", 0))

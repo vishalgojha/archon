@@ -117,7 +117,9 @@ class BrowserAutomationRegistration:
     """Register browser automation skill."""
 
     @staticmethod
-    def register(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    def register(
+        registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+    ) -> None:
         skill = SkillDefinition(
             name="browser-automation",
             description="Automate web browser tasks using natural language with Page Agent. Fill forms, click buttons, scrape data.",

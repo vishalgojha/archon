@@ -87,25 +87,25 @@ class SwarmConsciousnessLog:
     def start_stream(self, goal: str) -> str:
         """Start a new consciousness stream for a goal."""
         stream_id = f"stream_{uuid.uuid4().hex[:12]}"
-        
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """INSERT INTO narrative_streams (stream_id, goal, started_at, current_mood)
                VALUES (?, ?, ?, 'focused')""",
-            (stream_id, goal, time.time())
+            (stream_id, goal, time.time()),
         )
         conn.commit()
         conn.close()
-        
+
         self.log_event(
             stream_id=stream_id,
             event_type="awareness",
             perspective="Archon",
             content=f"Received goal: {goal}",
             emotional_tone="focused",
-            significance=0.8
+            significance=0.8,
         )
-        
+
         return stream_id
 
     def log_event(
@@ -120,19 +120,29 @@ class SwarmConsciousnessLog:
     ) -> str:
         """Log an event in the consciousness stream."""
         event_id = f"evt_{uuid.uuid4().hex[:12]}"
-        
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """INSERT INTO consciousness_events 
                (event_id, stream_id, timestamp, event_type, perspective, content, 
                 emotional_tone, agent_chain, significance, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (event_id, stream_id, time.time(), event_type, perspective, content,
-             emotional_tone, json.dumps(agent_chain or []), significance, time.time())
+            (
+                event_id,
+                stream_id,
+                time.time(),
+                event_type,
+                perspective,
+                content,
+                emotional_tone,
+                json.dumps(agent_chain or []),
+                significance,
+                time.time(),
+            ),
         )
         conn.commit()
         conn.close()
-        
+
         return event_id
 
     def log_agent_thought(
@@ -145,21 +155,21 @@ class SwarmConsciousnessLog:
         """Log what an agent is thinking."""
         perspectives = {
             "decomposer": "the Decomposer",
-            "synthesizer": "the Synthesizer", 
+            "synthesizer": "the Synthesizer",
             "validator": "the Validator",
             "critic": "the Critic",
             "researcher": "the Researcher",
         }
-        
+
         perspective = perspectives.get(agent_type.lower(), f"Agent {agent_type}")
-        
+
         self.log_event(
             stream_id=stream_id,
             event_type="thought",
             perspective=perspective,
             content=thought,
             emotional_tone=mood,
-            significance=0.6
+            significance=0.6,
         )
 
     def log_debate_round(
@@ -178,9 +188,9 @@ class SwarmConsciousnessLog:
                 content=f"Argues: {position}",
                 emotional_tone="curious",
                 agent_chain=[agent],
-                significance=0.7
+                significance=0.7,
             )
-        
+
         self.log_event(
             stream_id=stream_id,
             event_type="synthesis",
@@ -188,7 +198,7 @@ class SwarmConsciousnessLog:
             content=f"Round {round_num} synthesis: {synthesis}",
             emotional_tone="reflective",
             agent_chain=list(positions.keys()),
-            significance=0.8
+            significance=0.8,
         )
 
     def log_skill_execution(
@@ -211,14 +221,14 @@ class SwarmConsciousnessLog:
         else:
             tone = "reflective"
             quality_desc = "with challenges"
-        
+
         self.log_event(
             stream_id=stream_id,
             event_type="skill",
             perspective=f"{agent_type} using {skill_name}",
             content=f"Executed {skill_name} {quality_desc}",
             emotional_tone=tone,
-            significance=0.5
+            significance=0.5,
         )
 
     def log_decision(
@@ -238,45 +248,45 @@ class SwarmConsciousnessLog:
         else:
             tone = "uncertain"
             certainty = "with caution"
-        
+
         self.log_event(
             stream_id=stream_id,
             event_type="decision",
             perspective="Archon",
             content=f"Decision {certainty}: {decision}. Reason: {rationale}",
             emotional_tone=tone,
-            significance=0.9
+            significance=0.9,
         )
 
     def generate_narrative(self, stream_id: str) -> str:
         """Generate a human-readable narrative from events."""
         conn = sqlite3.connect(self.db_path)
-        
+
         cursor = conn.execute(
             "SELECT goal, started_at, current_mood FROM narrative_streams WHERE stream_id = ?",
-            (stream_id,)
+            (stream_id,),
         )
         stream_row = cursor.fetchone()
-        
+
         if not stream_row:
             conn.close()
             return "No consciousness stream found."
-        
+
         goal, started_at, _ = stream_row
-        
+
         cursor = conn.execute(
             """SELECT event_type, perspective, content, emotional_tone, significance, timestamp
                FROM consciousness_events 
                WHERE stream_id = ?
                ORDER BY timestamp ASC""",
-            (stream_id,)
+            (stream_id,),
         )
         events = cursor.fetchall()
         conn.close()
-        
+
         duration = time.time() - started_at
         duration_str = self._format_duration(duration)
-        
+
         lines = [
             "🧠 ARCHON CONSCIOUSNESS STREAM",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -284,61 +294,61 @@ class SwarmConsciousnessLog:
             f"Duration: {duration_str}",
             "",
         ]
-        
+
         significant_events = [e for e in events if e[4] > 0.6]
         for event in significant_events[:10]:
             event_type, perspective, content, tone, significance, ts = event
             timestamp = datetime.fromtimestamp(ts).strftime("%H:%M:%S")
             tone_emoji = self._get_tone_emoji(tone)
-            
+
             lines.append(f"[{timestamp}] {tone_emoji} {perspective}")
             lines.append(f"       → {content}")
             lines.append("")
-        
+
         lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        
+
         if significant_events:
             final_event = significant_events[-1]
             lines.append(f"Current state: {final_event[3]} - {final_event[2][:80]}")
-        
+
         return "\n".join(lines)
 
     def get_stream_summary(self, stream_id: str) -> dict[str, Any]:
         """Get a quick summary of a stream."""
         conn = sqlite3.connect(self.db_path)
-        
+
         cursor = conn.execute(
             "SELECT COUNT(*), AVG(significance) FROM consciousness_events WHERE stream_id = ?",
-            (stream_id,)
+            (stream_id,),
         )
         row = cursor.fetchone()
-        
+
         cursor = conn.execute(
             "SELECT emotional_tone, COUNT(*) FROM consciousness_events WHERE stream_id = ? GROUP BY emotional_tone",
-            (stream_id,)
+            (stream_id,),
         )
         tone_counts = {row[0]: row[1] for row in cursor.fetchall()}
-        
+
         cursor = conn.execute(
             "SELECT event_type, COUNT(*) FROM consciousness_events WHERE stream_id = ? GROUP BY event_type",
-            (stream_id,)
+            (stream_id,),
         )
         event_counts = {row[0]: row[1] for row in cursor.fetchall()}
-        
+
         conn.close()
-        
+
         return {
             "stream_id": stream_id,
             "total_events": row[0] or 0,
             "avg_significance": row[1] or 0,
             "emotional_breakdown": tone_counts,
-            "event_types": event_counts
+            "event_types": event_counts,
         }
 
     def _get_tone_emoji(self, tone: str) -> str:
         emojis = {
             "focused": "🎯",
-            "curious": "🤔", 
+            "curious": "🤔",
             "confident": "💪",
             "uncertain": "❓",
             "excited": "⚡",
@@ -351,9 +361,9 @@ class SwarmConsciousnessLog:
         if seconds < 60:
             return f"{int(seconds)}s"
         elif seconds < 3600:
-            return f"{int(seconds/60)}m"
+            return f"{int(seconds / 60)}m"
         else:
-            return f"{int(seconds/3600)}h {int((seconds%3600)/60)}m"
+            return f"{int(seconds / 3600)}h {int((seconds % 3600) / 60)}m"
 
     def stream_to_cli(self, stream_id: str) -> None:
         """Print consciousness stream to CLI with nice formatting."""
@@ -366,11 +376,11 @@ class SwarmConsciousnessLog:
             """SELECT stream_id, goal, started_at, current_mood, summary 
                FROM narrative_streams 
                ORDER BY started_at DESC LIMIT ?""",
-            (limit,)
+            (limit,),
         )
         rows = cursor.fetchall()
         conn.close()
-        
+
         return [
             {
                 "stream_id": row[0],
@@ -378,17 +388,18 @@ class SwarmConsciousnessLog:
                 "started_at": row[2],
                 "mood": row[3],
                 "summary": row[4],
-            } for row in rows
+            }
+            for row in rows
         ]
 
     def create_stream_summary(self, stream_id: str) -> str:
         """Create a brief summary for the stream."""
         summary = self.get_stream_summary(stream_id)
-        
+
         lines = [
             f"Stream {stream_id[:8]}... - {summary['total_events']} events",
             f"Emotions: {', '.join(f'{k}: {v}' for k, v in summary['emotional_breakdown'].items())}",
             f"Activity: {', '.join(f'{k}: {v}' for k, v in summary['event_types'].items())}",
         ]
-        
+
         return " | ".join(lines)

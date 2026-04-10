@@ -223,8 +223,14 @@ class GlobTool(BaseTool):
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Glob pattern to match."},
-                "path": {"type": "string", "description": "Directory to search in (defaults to current directory)."},
-                "max_results": {"type": "integer", "description": "Maximum number of results to return."},
+                "path": {
+                    "type": "string",
+                    "description": "Directory to search in (defaults to current directory).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return.",
+                },
             },
             "required": ["pattern"],
             "additionalProperties": False,
@@ -255,7 +261,9 @@ class GlobTool(BaseTool):
         if "**" in pattern:
             for path in resolved.rglob("*"):
                 rel = path.relative_to(resolved)
-                if fnmatch.fnmatch(str(rel), pattern) or fnmatch.fnmatch(path.name, pattern.split("/")[-1]):
+                if fnmatch.fnmatch(str(rel), pattern) or fnmatch.fnmatch(
+                    path.name, pattern.split("/")[-1]
+                ):
                     matches.append(str(rel))
                     if len(matches) >= max_results:
                         break
@@ -288,9 +296,18 @@ class GrepTool(BaseTool):
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Regex pattern to search for."},
-                "path": {"type": "string", "description": "Directory to search in (defaults to current directory)."},
-                "include": {"type": "string", "description": "File pattern to include (e.g. *.py, *.{ts,tsx})."},
-                "max_results": {"type": "integer", "description": "Maximum number of matching lines to return."},
+                "path": {
+                    "type": "string",
+                    "description": "Directory to search in (defaults to current directory).",
+                },
+                "include": {
+                    "type": "string",
+                    "description": "File pattern to include (e.g. *.py, *.{ts,tsx}).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of matching lines to return.",
+                },
             },
             "required": ["pattern"],
             "additionalProperties": False,
@@ -352,7 +369,10 @@ class GrepTool(BaseTool):
                         return ToolResult(ok=True, output="\n".join(results))
 
         if not results:
-            return ToolResult(ok=True, output=f"no matches for pattern: {pattern}\n(searched {files_searched} files)")
+            return ToolResult(
+                ok=True,
+                output=f"no matches for pattern: {pattern}\n(searched {files_searched} files)",
+            )
 
         summary = f"\n---\n(searched {files_searched} files, {len(results)} matches)"
         return ToolResult(ok=True, output="\n".join(results) + summary)

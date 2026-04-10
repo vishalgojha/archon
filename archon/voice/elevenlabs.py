@@ -15,19 +15,19 @@ import httpx
 
 # Available ElevenLabs voices
 VOICES = {
-    "rachel": "21m00Tcm4TlvDq8ikWAM",      # Warm, professional
-    "domi": "AZnzlk1XvdvUeBnXmlld",        # Strong, confident
-    "bella": "EXAVITQu4vr4xnSDxMaL",        # Soft, pleasant
-    "antoni": "ErXwobaYiN019PkySvjV",       # Well-rounded
-    "clyde": "MF3mGyEYCl7XYWbV9V6O",        # Echoing
-    "elli": "TxGEqnHWrfWFTfGW9XjX",        # Expressive
-    "josh": "TxGEqnHWrfWFTfGW9XjX",        # Young, natural
-    "arnold": "VR6AewLTigWG4xSOukaG",       # Crisp, authoritative
-    "adam": "pNInz6obpgDQGcFmaJgB",         # Deep, natural
-    "sam": "onwK4e9ZLuTAKqWW03F9",          # Raspy, natural
+    "rachel": "21m00Tcm4TlvDq8ikWAM",  # Warm, professional
+    "domi": "AZnzlk1XvdvUeBnXmlld",  # Strong, confident
+    "bella": "EXAVITQu4vr4xnSDxMaL",  # Soft, pleasant
+    "antoni": "ErXwobaYiN019PkySvjV",  # Well-rounded
+    "clyde": "MF3mGyEYCl7XYWbV9V6O",  # Echoing
+    "elli": "TxGEqnHWrfWFTfGW9XjX",  # Expressive
+    "josh": "TxGEqnHWrfWFTfGW9XjX",  # Young, natural
+    "arnold": "VR6AewLTigWG4xSOukaG",  # Crisp, authoritative
+    "adam": "pNInz6obpgDQGcFmaJgB",  # Deep, natural
+    "sam": "onwK4e9ZLuTAKqWW03F9",  # Raspy, natural
     # Hindi voices
     "hindi_female": "pNInz6obpgDQGcFmaJgB",  # Hindi female
-    "hindi_male": "onwK4e9ZLuTAKqWW03F9",    # Hindi male
+    "hindi_male": "onwK4e9ZLuTAKqWW03F9",  # Hindi male
 }
 
 # Default model for TTS
@@ -37,6 +37,7 @@ DEFAULT_MODEL = "eleven_multilingual_v2"
 @dataclass
 class VoiceConfig:
     """Configuration for voice synthesis."""
+
     voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel
     model: str = DEFAULT_MODEL
     stability: float = 0.5
@@ -48,6 +49,7 @@ class VoiceConfig:
 @dataclass
 class ElevenLabsConfig:
     """ElevenLabs API configuration."""
+
     api_key: str = ""
     base_url: str = "https://api.elevenlabs.io/v1"
     voice: VoiceConfig = field(default_factory=VoiceConfig)
@@ -204,7 +206,8 @@ class VoiceAssistant:
                 "enabled": True,
                 "character_limit": usage.get("character_limit", 0),
                 "characters_used": usage.get("characters_used", 0),
-                "characters_remaining": usage.get("character_limit", 0) - usage.get("characters_used", 0),
+                "characters_remaining": usage.get("character_limit", 0)
+                - usage.get("characters_used", 0),
                 "next_reset": usage.get("next_character_count_reset_unix"),
             }
         except Exception as e:

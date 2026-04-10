@@ -87,9 +87,9 @@ class AgentGenealogy:
         """Spawn a new agent with lineage tracking. Returns (agent_id, dna_id)."""
         agent_id = f"agent_{uuid.uuid4().hex[:12]}"
         dna_id = f"dna_{uuid.uuid4().hex[:12]}"
-        
+
         goal_type = goal.strip().split()[0].lower() if goal else "general"
-        
+
         successful = []
         if parent_id:
             parent_dna = self.get_dna_by_agent_id(parent_id)
@@ -97,73 +97,92 @@ class AgentGenealogy:
                 successful = list(parent_dna.successful_patterns)
                 if inherited_patterns:
                     successful.extend(inherited_patterns)
-        
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """INSERT INTO agent_dna 
                (dna_id, parent_id, goal_type, successful_patterns, failed_patterns, 
                 learned_insights, success_rate, task_count, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (dna_id, parent_id, goal_type, json.dumps(successful), json.dumps([]),
-             json.dumps([]), 0.0, 0, time.time())
+            (
+                dna_id,
+                parent_id,
+                goal_type,
+                json.dumps(successful),
+                json.dumps([]),
+                json.dumps([]),
+                0.0,
+                0,
+                time.time(),
+            ),
         )
         conn.execute(
             """INSERT INTO agent_lineage (agent_id, dna_id, created_at)
                VALUES (?, ?, ?)""",
-            (agent_id, dna_id, time.time())
+            (agent_id, dna_id, time.time()),
         )
         conn.execute(
             """INSERT INTO genealogy_events (event_id, agent_id, event_type, details, timestamp)
                VALUES (?, ?, ?, ?, ?)""",
-            (f"evt_{uuid.uuid4().hex[:8]}", agent_id, "spawned", json.dumps({"parent_id": parent_id}), time.time())
+            (
+                f"evt_{uuid.uuid4().hex[:8]}",
+                agent_id,
+                "spawned",
+                json.dumps({"parent_id": parent_id}),
+                time.time(),
+            ),
         )
         conn.commit()
         conn.close()
-        
+
         return agent_id, dna_id
 
     def record_success(self, agent_id: str, pattern: str, insight: str | None = None) -> None:
         """Record successful execution - propagates to DNA."""
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            "SELECT dna_id FROM agent_lineage WHERE agent_id = ?", (agent_id,)
-        )
+        cursor = conn.execute("SELECT dna_id FROM agent_lineage WHERE agent_id = ?", (agent_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return
-        
+
         dna_id = row[0]
-        
+
         cursor = conn.execute(
             "SELECT successful_patterns, learned_insights, task_count FROM agent_dna WHERE dna_id = ?",
-            (dna_id,)
+            (dna_id,),
         )
         row = cursor.fetchone()
         if not row:
             conn.close()
             return
-        
+
         successful = json.loads(row[0])
         insights = json.loads(row[1])
         count = row[2]
-        
+
         if pattern not in successful:
             successful.append(pattern)
         if insight and insight not in insights:
             insights.append(insight)
-        
+
         new_rate = (count + 1) / (count + 1) if count > 0 else 1.0
-        
+
         conn.execute(
             """UPDATE agent_dna SET successful_patterns = ?, learned_insights = ?, 
                task_count = ?, success_rate = ? WHERE dna_id = ?""",
-            (json.dumps(successful), json.dumps(insights), count + 1, new_rate, dna_id)
+            (json.dumps(successful), json.dumps(insights), count + 1, new_rate, dna_id),
         )
         conn.execute(
             """INSERT INTO genealogy_events (event_id, agent_id, event_type, details, timestamp)
                VALUES (?, ?, ?, ?, ?)""",
-            (f"evt_{uuid.uuid4().hex[:8]}", agent_id, "success", json.dumps({"pattern": pattern}), time.time())
+            (
+                f"evt_{uuid.uuid4().hex[:8]}",
+                agent_id,
+                "success",
+                json.dumps({"pattern": pattern}),
+                time.time(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -171,42 +190,45 @@ class AgentGenealogy:
     def record_failure(self, agent_id: str, failed_pattern: str, reason: str) -> None:
         """Record failed execution."""
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            "SELECT dna_id FROM agent_lineage WHERE agent_id = ?", (agent_id,)
-        )
+        cursor = conn.execute("SELECT dna_id FROM agent_lineage WHERE agent_id = ?", (agent_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return
-        
+
         dna_id = row[0]
-        
+
         cursor = conn.execute(
-            "SELECT failed_patterns, task_count FROM agent_dna WHERE dna_id = ?",
-            (dna_id,)
+            "SELECT failed_patterns, task_count FROM agent_dna WHERE dna_id = ?", (dna_id,)
         )
         row = cursor.fetchone()
         if not row:
             conn.close()
             return
-        
+
         failed = json.loads(row[0])
         count = row[1]
-        
+
         if failed_pattern not in failed:
             failed.append(failed_pattern)
-        
+
         new_rate = 0.0 if count == 0 else (count - 1) / count
-        
+
         conn.execute(
             """UPDATE agent_dna SET failed_patterns = ?, task_count = ?, 
                success_rate = ? WHERE dna_id = ?""",
-            (json.dumps(failed), count + 1, new_rate, dna_id)
+            (json.dumps(failed), count + 1, new_rate, dna_id),
         )
         conn.execute(
             """INSERT INTO genealogy_events (event_id, agent_id, event_type, details, timestamp)
                VALUES (?, ?, ?, ?, ?)""",
-            (f"evt_{uuid.uuid4().hex[:8]}", agent_id, "failure", json.dumps({"pattern": failed_pattern, "reason": reason}), time.time())
+            (
+                f"evt_{uuid.uuid4().hex[:8]}",
+                agent_id,
+                "failure",
+                json.dumps({"pattern": failed_pattern, "reason": reason}),
+                time.time(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -220,14 +242,14 @@ class AgentGenealogy:
                FROM agent_dna d
                JOIN agent_lineage l ON d.dna_id = l.dna_id
                WHERE l.agent_id = ?""",
-            (agent_id,)
+            (agent_id,),
         )
         row = cursor.fetchone()
         conn.close()
-        
+
         if not row:
             return None
-        
+
         return AgentDNA(
             dna_id=row[0],
             parent_id=row[1],
@@ -237,14 +259,14 @@ class AgentGenealogy:
             learned_insights=json.loads(row[5]),
             success_rate=row[6],
             task_count=row[7],
-            created_at=row[8]
+            created_at=row[8],
         )
 
     def get_lineage(self, agent_id: str) -> list[AgentDNA]:
         """Trace full ancestry of an agent."""
         lineage = []
         current_id = agent_id
-        
+
         conn = sqlite3.connect(self.db_path)
         while True:
             cursor = conn.execute(
@@ -253,24 +275,26 @@ class AgentGenealogy:
                    FROM agent_dna d
                    JOIN agent_lineage l ON d.dna_id = l.dna_id
                    WHERE l.agent_id = ?""",
-                (current_id,)
+                (current_id,),
             )
             row = cursor.fetchone()
             if not row:
                 break
-            
-            lineage.append(AgentDNA(
-                dna_id=row[0],
-                parent_id=row[1],
-                goal_type=row[2],
-                successful_patterns=json.loads(row[3]),
-                failed_patterns=json.loads(row[4]),
-                learned_insights=json.loads(row[5]),
-                success_rate=row[6],
-                task_count=row[7],
-                created_at=row[8]
-            ))
-            
+
+            lineage.append(
+                AgentDNA(
+                    dna_id=row[0],
+                    parent_id=row[1],
+                    goal_type=row[2],
+                    successful_patterns=json.loads(row[3]),
+                    failed_patterns=json.loads(row[4]),
+                    learned_insights=json.loads(row[5]),
+                    success_rate=row[6],
+                    task_count=row[7],
+                    created_at=row[8],
+                )
+            )
+
             if row[1]:
                 cursor = conn.execute(
                     "SELECT agent_id FROM agent_lineage WHERE dna_id = ?", (row[1],)
@@ -279,7 +303,7 @@ class AgentGenealogy:
                 current_id = parent_row[0] if parent_row else None
             else:
                 break
-        
+
         conn.close()
         return lineage
 
@@ -292,38 +316,40 @@ class AgentGenealogy:
                WHERE d.goal_type = ? AND d.success_rate > 0.5
                ORDER BY d.success_rate DESC
                LIMIT ?""",
-            (goal_type, limit)
+            (goal_type, limit),
         )
         rows = cursor.fetchall()
         conn.close()
-        
+
         patterns = []
         for row in rows:
             patterns.extend(json.loads(row[0]))
-        
+
         return patterns[:limit]
 
     def explain_decision(self, agent_id: str) -> str:
         """Explain why an agent made a decision based on lineage."""
         lineage = self.get_lineage(agent_id)
-        
+
         if not lineage:
             return f"Agent {agent_id}: No lineage - spawned fresh"
-        
+
         lines = [f"Agent {agent_id} lineage:"]
         for i, dna in enumerate(lineage):
-            lines.append(f"  Gen {i}: {dna.goal_type} (rate: {dna.success_rate:.0%}, {dna.task_count} tasks)")
+            lines.append(
+                f"  Gen {i}: {dna.goal_type} (rate: {dna.success_rate:.0%}, {dna.task_count} tasks)"
+            )
             if dna.successful_patterns:
                 lines.append(f"    ✓ Learned: {', '.join(dna.successful_patterns[-3:])}")
             if dna.failed_patterns:
                 lines.append(f"    ✗ Avoided: {', '.join(dna.failed_patterns[-3:])}")
-        
+
         return "\n".join(lines)
 
     def find_similar_successful_ancestor(self, goal: str, failed_agent_id: str) -> str | None:
         """Find ancestor that succeeded on similar goal - for resurrection."""
         goal_type = goal.strip().split()[0].lower() if goal else "general"
-        
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
             """SELECT l.agent_id, d.success_rate 
@@ -332,9 +358,9 @@ class AgentGenealogy:
                WHERE d.goal_type = ? AND d.success_rate > 0.7
                ORDER BY d.success_rate DESC
                LIMIT 1""",
-            (goal_type,)
+            (goal_type,),
         )
         row = cursor.fetchone()
         conn.close()
-        
+
         return row[0] if row else None

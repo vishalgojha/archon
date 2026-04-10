@@ -445,7 +445,7 @@ class PMKISANAgent(BaseAgent):
 
         prompt = f"""PM-KISAN Samman Nidhi Assistant
 Request: {request_type}
-Farmer ID: {farmer_id[:4] if farmer_id != 'not provided' else 'not provided'}XXXX
+Farmer ID: {farmer_id[:4] if farmer_id != "not provided" else "not provided"}XXXX
 State: {state}
 
 Provide:
@@ -944,7 +944,9 @@ class SkillBatch4Registration:
     """Register all Batch 4 India skills."""
 
     @staticmethod
-    def register(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    def register(
+        registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+    ) -> None:
         skills = [
             SkillDefinition(
                 name="digilocker",
@@ -1111,7 +1113,12 @@ class SkillBatch4Registration:
             SkillDefinition(
                 name="e-district",
                 description="e-District certificate services (income, caste, domicile).",
-                trigger_patterns=["e-district", "income certificate", "caste certificate", "domicile"],
+                trigger_patterns=[
+                    "e-district",
+                    "income certificate",
+                    "caste certificate",
+                    "domicile",
+                ],
                 version="1.0.0",
                 provider_preference="fast",
                 cost_tier="low",
@@ -1120,7 +1127,12 @@ class SkillBatch4Registration:
             SkillDefinition(
                 name="irctc-tourism",
                 description="IRCTC tourism trains, packages, and e-catering services.",
-                trigger_patterns=["maharajas express", "irctc tourism", "golden chariot", "e-catering"],
+                trigger_patterns=[
+                    "maharajas express",
+                    "irctc tourism",
+                    "golden chariot",
+                    "e-catering",
+                ],
                 version="1.0.0",
                 provider_preference="openai",
                 cost_tier="low",

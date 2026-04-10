@@ -35,24 +35,26 @@ class Particle:
 
 class ParticleSystem:
     """Animated particle system for visual effects."""
-    
+
     def __init__(self, width: int = 80, height: int = 24):
         self.width = width
         self.height = height
         self.particles: list[Particle] = []
-    
+
     def spawn(self, count: int = 5) -> None:
         for _ in range(count):
-            self.particles.append(Particle(
-                x=random.random() * self.width,
-                y=random.random() * self.height,
-                vx=(random.random() - 0.5) * 0.5,
-                vy=(random.random() - 0.5) * 0.5,
-                color=random.choice(PARTICLE_COLORS),
-                size=random.randint(1, 3),
-                life=random.random() * 100 + 50
-            ))
-    
+            self.particles.append(
+                Particle(
+                    x=random.random() * self.width,
+                    y=random.random() * self.height,
+                    vx=(random.random() - 0.5) * 0.5,
+                    vy=(random.random() - 0.5) * 0.5,
+                    color=random.choice(PARTICLE_COLORS),
+                    size=random.randint(1, 3),
+                    life=random.random() * 100 + 50,
+                )
+            )
+
     def update(self) -> list[Particle]:
         for p in self.particles[:]:
             p.x += p.vx
@@ -63,7 +65,7 @@ class ParticleSystem:
         if len(self.particles) < 20:
             self.spawn(3)
         return self.particles
-    
+
     def render(self) -> str:
         grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
         for p in self.particles:
@@ -83,21 +85,21 @@ class RadarBlip:
 
 class RadarWidget:
     """Animated radar display for tracking agents/tasks."""
-    
+
     def __init__(self, radius: int = 10):
         self.radius = radius
         self.blips: list[RadarBlip] = []
         self.sweep_angle = 0.0
-    
+
     def add_blip(self, angle: float, distance: float, label: str = "") -> None:
         self.blips.append(RadarBlip(angle, distance, label))
-    
+
     def clear_blips(self) -> None:
         self.blips.clear()
-    
+
     def update(self) -> None:
         self.sweep_angle = (self.sweep_angle + 5) % 360
-    
+
     def render(self) -> str:
         lines = []
         center = self.radius + 1
@@ -173,7 +175,10 @@ def _get_workspace_context() -> dict[str, Any]:
         # Get branch
         result = subprocess.run(
             [git, "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=ctx["dir"],
         )
         if result.returncode == 0:
             ctx["git_branch"] = result.stdout.strip()
@@ -181,7 +186,10 @@ def _get_workspace_context() -> dict[str, Any]:
         # Get dirty status
         result = subprocess.run(
             [git, "status", "--porcelain"],
-            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=ctx["dir"],
         )
         if result.returncode == 0:
             lines = [line for line in result.stdout.strip().splitlines() if line]
@@ -191,7 +199,10 @@ def _get_workspace_context() -> dict[str, Any]:
         # Get ahead count
         result = subprocess.run(
             [git, "rev-list", "--count", "HEAD..@{upstream}"],
-            capture_output=True, text=True, timeout=2, cwd=ctx["dir"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=ctx["dir"],
         )
         if result.returncode == 0 and result.stdout.strip().isdigit():
             ctx["git_ahead"] = int(result.stdout.strip())
@@ -447,7 +458,8 @@ class CommandPaletteScreen(ModalScreen[str | None]):
             self._filtered = list(self._commands)
         else:
             self._filtered = [
-                (name, icon, desc) for name, icon, desc in self._commands
+                (name, icon, desc)
+                for name, icon, desc in self._commands
                 if query in name.lower() or query in desc.lower()
             ]
         self._selected_index = 0
@@ -992,7 +1004,6 @@ class ArchonTuiApp(App[None]):
 
     """
 
-
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+p", "command_palette", "Palette"),
@@ -1035,7 +1046,7 @@ class ArchonTuiApp(App[None]):
         self._chat_runtime: ChatRuntime | None = None
         self._chat_session: ChatSession | None = None
         self._initialize_providers()
-        
+
         # ════════════════════════════════════════════════════════════════════════
         # CYBERPUNK VISUAL EFFECTS - PARTICLES & RADAR
         # ════════════════════════════════════════════════════════════════════════
@@ -1100,7 +1111,9 @@ class ArchonTuiApp(App[None]):
 
                     with ScrollableContainer(id="files-panel"):
                         yield Label("File Browser", id="files-label")
-                        yield Input(placeholder="Glob pattern (e.g. **/*.py)...", id="files-search-input")
+                        yield Input(
+                            placeholder="Glob pattern (e.g. **/*.py)...", id="files-search-input"
+                        )
                         yield DataTable(id="files-table")
 
                 with Container(id="side-panel"):
@@ -1446,6 +1459,7 @@ class ArchonTuiApp(App[None]):
 
     async def action_command_palette(self) -> None:
         """Open the command palette."""
+
         def on_dismiss(command: str | None) -> None:
             if not command:
                 return
@@ -1487,6 +1501,7 @@ class ArchonTuiApp(App[None]):
     def _show_ollama_info(self) -> None:
         """Show Ollama info in log."""
         from archon.cli.drawers.providers import _probe_ollama
+
         probe = _probe_ollama(self._config.byok.ollama_base_url)
         reachable = probe.get("reachable", False)
         models = probe.get("models", [])
@@ -1497,6 +1512,7 @@ class ArchonTuiApp(App[None]):
     def _validate_config(self) -> None:
         """Run config validation."""
         from archon.validate_config import validate_config
+
         self._state.log("✓ Validating config...")
         report = validate_config(self._config_path)
         status = "PASSED" if report.ok else "FAILED"
@@ -1505,6 +1521,7 @@ class ArchonTuiApp(App[None]):
     def _open_config_editor(self) -> None:
         """Open config in default editor."""
         import subprocess
+
         editor = os.environ.get("EDITOR", "notepad")
         try:
             subprocess.Popen([editor, self._config_path])
@@ -1673,7 +1690,9 @@ class ArchonTuiApp(App[None]):
             self._state.activity = "🦙 Fetching models..."
             self._flush_audit_log()
             try:
-                response = httpx.get(f"{self._config.byok.ollama_base_url.rstrip('/v1')}/api/tags", timeout=10)
+                response = httpx.get(
+                    f"{self._config.byok.ollama_base_url.rstrip('/v1')}/api/tags", timeout=10
+                )
                 response.raise_for_status()
                 models = response.json().get("models", [])
                 self._state.activity = ""
@@ -1696,12 +1715,13 @@ class ArchonTuiApp(App[None]):
             self._flush_audit_log()
             try:
                 import subprocess
+
                 result = subprocess.run(["ollama", "pull", arg], capture_output=True, text=True)
                 self._state.activity = ""
                 if result.returncode == 0:
                     self._state.log(f"✅ Successfully pulled {arg}")
                     self._state.log("Analyzing model for best role...")
-                    
+
                     model_lower = arg.lower()
                     role = "primary"
                     if any(x in model_lower for x in ["code", "coder", "qwen"]):
@@ -1712,15 +1732,16 @@ class ArchonTuiApp(App[None]):
                         role = "embedding"
                     elif any(x in model_lower for x in ["3b", "1b", "2b", "mini", "small"]):
                         role = "fast"
-                    
+
                     config_path = self._config_path
                     with open(config_path, "r") as f:
                         import yaml
+
                         cfg = yaml.safe_load(f)
-                    
+
                     role_map = {
                         "primary": "ollama_primary_model",
-                        "coding": "ollama_coding_model", 
+                        "coding": "ollama_coding_model",
                         "fast": "ollama_fast_model",
                         "vision": "ollama_vision_model",
                         "embedding": "ollama_embedding_model",
@@ -1728,10 +1749,10 @@ class ArchonTuiApp(App[None]):
                     key = role_map.get(role, "ollama_primary_model")
                     old_model = cfg["byok"].get(key, "")
                     cfg["byok"][key] = arg
-                    
+
                     with open(config_path, "w") as f:
                         yaml.dump(cfg, f, default_flow_style=False)
-                    
+
                     self._state.log(f"🔧 Auto-configured {arg} as {role} (was: {old_model})")
                     self._state.log("Config updated! Restart chat or run /models to verify.")
                 else:
@@ -1741,13 +1762,21 @@ class ArchonTuiApp(App[None]):
 
         elif cmd == "/models":
             byok = self._config.byok
-            self._state.log(f"📋 Current config:\n  primary: {byok.ollama_primary_model}\n  coding: {byok.ollama_coding_model}\n  fast: {byok.ollama_fast_model}\n  vision: {byok.ollama_vision_model}")
+            self._state.log(
+                f"📋 Current config:\n  primary: {byok.ollama_primary_model}\n  coding: {byok.ollama_coding_model}\n  fast: {byok.ollama_fast_model}\n  vision: {byok.ollama_vision_model}"
+            )
 
         elif cmd == "/config":
             self._state.activity = "📝 Opening config..."
             self._flush_audit_log()
             import subprocess
-            editor = subprocess.run(["cmd", "/c", "echo %EDITOR%"], capture_output=True, text=True).stdout.strip() or "notepad"
+
+            editor = (
+                subprocess.run(
+                    ["cmd", "/c", "echo %EDITOR%"], capture_output=True, text=True
+                ).stdout.strip()
+                or "notepad"
+            )
             if editor == "notepad":
                 subprocess.Popen(["notepad", self._config_path])
             else:

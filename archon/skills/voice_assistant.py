@@ -74,7 +74,9 @@ class VoiceAssistantRegistration:
     """Register voice assistant skill."""
 
     @staticmethod
-    def register(registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter) -> None:
+    def register(
+        registry: SkillRegistry, config: ArchonConfig, provider_router: ProviderRouter
+    ) -> None:
         skill = SkillDefinition(
             name="voice-assistant",
             description="Text-to-speech and voice synthesis using ElevenLabs. Convert AI responses to natural speech.",
